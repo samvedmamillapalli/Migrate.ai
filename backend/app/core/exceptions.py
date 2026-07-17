@@ -19,3 +19,35 @@ class ValidationError(AppError):
 
 class ConflictError(AppError):
     """Raised when an operation conflicts with current state."""
+
+
+class ReadWriteCredentialsError(AppError):
+    """Raised when customer database credentials allow writes."""
+
+
+class SchemaConnectionError(AppError):
+    """Base error for customer-database connectivity failures."""
+
+
+class SchemaAuthenticationError(SchemaConnectionError):
+    """Invalid username or password."""
+
+
+class SchemaDatabaseNotFoundError(SchemaConnectionError):
+    """Target database does not exist."""
+
+
+class SchemaTimeoutError(SchemaConnectionError):
+    """Connection or discovery timed out."""
+
+
+class SchemaSSLError(SchemaConnectionError):
+    """TLS/SSL handshake or certificate validation failed."""
+
+
+class SchemaNetworkError(SchemaConnectionError):
+    """Host unreachable, connection refused, or similar network failure."""
+
+
+class UnsupportedDatabaseError(SchemaConnectionError):
+    """Database engine or URL scheme is not supported."""

@@ -1,0 +1,58 @@
+from __future__ import annotations
+
+from fastapi import FastAPI, Request, status
+from fastapi.responses import JSONResponse
+
+from app.core.exceptions import (
+    AppError,
+    ConflictError,
+    NotFoundError,
+    ReadWriteCredentialsError,
+    SchemaAuthenticationError,
+    SchemaConnectionError,
+    SchemaDatabaseNotFoundError,
+    SchemaNetworkError,
+    SchemaSSLError,
+    SchemaTimeoutError,
+    UnsupportedDatabaseError,
+    ValidationError,
+)
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
+
+_HTTP_422_UNPROCESSABLE = 422
+
+_STATUS_BY_ERROR: dict[type[AppError], int] = {
+    NotFoundError: status.HTTP_404_NOT_FOUND,
+    ValidationError: _HTTP_422_UNPROCESSABLE,
+    ConflictError: status.HTTP_409_CONFLICT,
+    ReadWriteCredentialsError: status.HTTP_403_FORBIDDEN,
+    SchemaAuthenticationError: status.HTTP_401_UNAUTHORIZED,
+    SchemaDatabaseNotFoundError: status.HTTP_404_NOT_FOUND,
+    SchemaTimeoutError: status.HTTP_408_REQUEST_TIMEOUT,
+    SchemaSSLError: status.HTTP_400_BAD_REQUEST,
+    SchemaNetworkError: status.HTTP_503_SERVICE_UNAVAILABLE,
+    UnsupportedDatabaseError: status.HTTP_400_BAD_REQUEST,
+    SchemaConnectionError: status.HTTP_400_BAD_REQUEST,
+}
+
+
+def register_exception_handlers(app: FastAPI) -> None:
+    @app.exception_handler(AppError)
+    async def handle_app_error(_: Request, exc: AppError) -> JSONResponse:
+        status_code = status.HTTP_400_BAD_REQUEST
+        for error_type in type(exc).__mro__:
+            if error_type in _STATUS_BY_ERROR:
+                status_code = _STATUS_BY_ERROR[error_type]
+                break
+
+        if status_code >= status.HTTP_500_INTERNAL_SERVER_ERROR:
+            logger.exception(
+                "Unhandled application error",
+                extra={"error": exc.message},
+            )
+        return JSONResponse(
+            status_code=status_code,
+            content={"detail": exc.message},
+        )

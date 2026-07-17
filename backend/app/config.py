@@ -32,6 +32,10 @@ class Settings(BaseSettings):
         )
     )
 
+    # Customer schema discovery timeouts (seconds)
+    schema_connection_timeout_seconds: int = Field(default=30, ge=1, le=300)
+    schema_discovery_timeout_seconds: int = Field(default=60, ge=1, le=600)
+
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, value: str) -> str:

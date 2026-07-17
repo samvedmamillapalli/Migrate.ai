@@ -57,6 +57,7 @@ async def test_create_migration_run_persists_pending(
     repository.create.assert_awaited_once()
     created_arg = repository.create.await_args.args[0]
     assert created_arg.migration_sql == "ALTER TABLE t ADD COLUMN c INT"
+    assert created_arg.schema_discovery_status.value == "pending"
     session.commit.assert_awaited_once()
 
 

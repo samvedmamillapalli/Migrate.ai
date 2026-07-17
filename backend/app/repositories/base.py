@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
-
 from sqlalchemy import Select, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -62,10 +60,13 @@ class BaseRepository[ModelT: Base]:
         return int(result.scalar_one())
 
     async def update(self, entity: ModelT) -> ModelT:
-        merged = await self._session.merge(entity)
+        # Prefer flush on the caller's attached instance. merge() can detach/reattach
+        # identity and complicate rollback/expiry behavior under async sessions.
+        if entity not in self._session:
+            entity = await self._session.merge(entity)
         await self._session.flush()
-        await self._session.refresh(merged)
-        return merged
+        await self._session.refresh(entity)
+        return entity
 
     async def delete(self, entity: ModelT) -> None:
         await self._session.delete(entity)

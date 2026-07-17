@@ -6,7 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ConflictError, ValidationError
 from app.core.logging import get_logger
-from app.database.models import MigrationRun, MigrationRunStatus
+from app.database.models import MigrationRun, MigrationRunStatus, SchemaDiscoveryStatus
+from app.database.retry import with_txn_retry
 from app.repositories.migration_run_repository import MigrationRunRepository
 
 logger = get_logger(__name__)
@@ -51,13 +52,21 @@ class MigrationRunService:
         if not normalized_sql:
             raise ValidationError("migration_sql must not be empty")
 
-        run = MigrationRun(
-            migration_sql=normalized_sql,
-            status=MigrationRunStatus.PENDING,
+        async def _commit() -> MigrationRun:
+            run = MigrationRun(
+                migration_sql=normalized_sql,
+                status=MigrationRunStatus.PENDING,
+                schema_discovery_status=SchemaDiscoveryStatus.PENDING,
+            )
+            created = await self._repository.create(run)
+            await self._session.commit()
+            await self._session.refresh(created)
+            return created
+
+        created = await with_txn_retry(
+            _commit,
+            on_retry=self._session.rollback,
         )
-        created = await self._repository.create(run)
-        await self._session.commit()
-        await self._session.refresh(created)
 
         logger.info(
             "Created migration run",
@@ -94,19 +103,33 @@ class MigrationRunService:
             status=status,
         )
 
+    async def count_migration_runs(
+        self,
+        *,
+        status: MigrationRunStatus | None = None,
+    ) -> int:
+        return await self._repository.count(status=status)
+
     async def update_status(
         self,
         run_id: uuid.UUID,
         new_status: MigrationRunStatus,
     ) -> MigrationRun:
-        run = await self._repository.get_by_id_or_raise(run_id)
-        self._validate_status_transition(run.status, new_status)
+        async def _commit() -> tuple[MigrationRun, MigrationRunStatus]:
+            run = await self._repository.get_by_id_or_raise(run_id)
+            self._validate_status_transition(run.status, new_status)
 
-        previous = run.status
-        run.status = new_status
-        updated = await self._repository.update(run)
-        await self._session.commit()
-        await self._session.refresh(updated)
+            previous = run.status
+            run.status = new_status
+            updated = await self._repository.update(run)
+            await self._session.commit()
+            await self._session.refresh(updated)
+            return updated, previous
+
+        updated, previous = await with_txn_retry(
+            _commit,
+            on_retry=self._session.rollback,
+        )
 
         logger.info(
             "Updated migration run status",
@@ -119,8 +142,14 @@ class MigrationRunService:
         return updated
 
     async def delete_migration_run(self, run_id: uuid.UUID) -> None:
-        await self._repository.delete_by_id(run_id)
-        await self._session.commit()
+        async def _commit() -> None:
+            await self._repository.delete_by_id(run_id)
+            await self._session.commit()
+
+        await with_txn_retry(
+            _commit,
+            on_retry=self._session.rollback,
+        )
         logger.info("Deleted migration run", extra={"run_id": str(run_id)})
 
     @staticmethod

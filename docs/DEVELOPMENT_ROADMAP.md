@@ -144,21 +144,15 @@ Database schema successfully migrated.
 
 ---
 
-# Phase 4 — Repository & Service Layer
+# Phase 4 — Repository & Service Layer ✅
 
-Goal:
+Completed.
 
-Separate business logic from persistence.
-
-Implement:
-
-Repositories
+Includes:
 
 - BaseRepository
 
 - MigrationRunRepository
-
-Services
 
 - MigrationRunService
 
@@ -170,65 +164,43 @@ Services
 
 - Unit tests for repository and service behavior
 
-Architecture
-
-API
-
-↓
-
-Service
-
-↓
-
-Repository
-
-↓
-
-CockroachDB
-
-No API routes should directly access SQLAlchemy.
-
 Checkpoint:
 
 Business logic separated from persistence.
 
 ---
 
-# Phase 5 — REST API
+# Phase 5 — REST API ✅
 
-Goal:
+Completed.
 
-Expose application functionality.
+Includes:
 
-Endpoints:
+- GET /
 
-GET /
+- GET /health
 
-GET /health
+- POST /runs
 
-POST /runs
+- GET /runs/{id}
 
-GET /runs/{id}
+- GET /runs
 
-GET /runs
+- PATCH /runs/{id}
 
-PATCH /runs/{id}
+- Pydantic request/response models
 
-Validation:
+- Domain error → HTTP status mapping
 
-- Pydantic models
+- Pagination for GET /runs
 
-- Proper HTTP status codes
+Documented in `docs/API.md`.
 
-- Error handling
+Still deferred from the original Phase 5 stretch goals:
 
 - Clerk authentication and server-side user scoping
 
 - Idempotency keys for `POST /runs`
-
-- Structured request and `run_id` logging
-
-- Pagination for `GET /runs`
 
 Checkpoint:
 
@@ -236,35 +208,52 @@ Migration runs can be created and queried.
 
 ---
 
-# Phase 6 — Database Schema Discovery
+# Phase 6 — Database Schema Discovery ✅
 
 Goal:
 
 Read customer database metadata.
 
-Implement:
+Completed (`app/schema_analysis/` + application wiring):
 
-- DatabaseConnection model
+- Async PostgreSQL / CockroachDB connection management
 
-- Schema discovery
+- Schema / table / column / index / constraint discovery
 
-- Table discovery
+- Estimated row counts
 
-- Column discovery
+- Estimated table and database sizes when the engine exposes them
 
-- Index discovery
+- Strongly typed Pydantic metadata models (`DatabaseMetadata`, …)
 
-- Database statistics
+- `DatabaseConnection` application model (URL built internally; credentials never logged)
 
-- Enforced read-only connection validation
+- Read-only validation: DDL write probe (always rolled back) + DML privilege scan +
+  session `default_transaction_read_only`
 
-- Active write probe that rejects write-capable credentials
+- CockroachDB dialect fallback on the discovery path
+
+- Serialization-failure (40001) retry on service commits
+
+- JSONB schema snapshot + discovery metadata persisted on `MigrationRun`
+
+- Configurable connection and discovery timeouts
+
+- List API omits full `schema_snapshot` (`has_schema_snapshot` instead)
+
+- Production verification via `scripts/verify_phase6_checklist.py`,
+  `scripts/verify_phase6_schema_analysis.py`, and `scripts/verify_phase6_remaining.py`
+
+Documented in `docs/SCHEMA_ANALYSIS.md`.
+
+Schema discovery application status: **complete for Phase 6 inspection + persistence**
+(excluding AWS Secrets Manager).
+
+Still deferred from this phase:
 
 - Secrets Manager storage for customer database credentials
 
-- Persisted JSONB schema snapshot on each MigrationRun
-
-- Connection and discovery timeouts
+- Dedicated HTTP discovery endpoint (service is wired; route deferred to a later phase)
 
 Checkpoint:
 

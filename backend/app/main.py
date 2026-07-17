@@ -9,7 +9,9 @@ if sys.platform == "win32":
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.errors import register_exception_handlers
 from app.api.routes.health import router as health_router
+from app.api.routes.runs import router as runs_router
 from app.config import get_settings
 from app.core.logging import get_logger, setup_logging
 from app.database import DatabaseSessionManager
@@ -56,7 +58,9 @@ def create_app() -> FastAPI:
     def root() -> dict[str, str]:
         return {"name": settings.app_name, "status": "healthy"}
 
+    register_exception_handlers(app)
     app.include_router(health_router)
+    app.include_router(runs_router)
 
     return app
 

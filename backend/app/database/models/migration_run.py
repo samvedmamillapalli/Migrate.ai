@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import enum
-from typing import TYPE_CHECKING
+from datetime import datetime
+from typing import Any, TYPE_CHECKING
 
-from sqlalchemy import Enum, Index, Text
+from sqlalchemy import DateTime, Enum, Float, Index, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -24,11 +26,19 @@ class MigrationRunStatus(str, enum.Enum):
     FAILED = "failed"
 
 
+class SchemaDiscoveryStatus(str, enum.Enum):
+    PENDING = "pending"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    REJECTED = "rejected"
+
+
 class MigrationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "migration_runs"
     __table_args__ = (
         Index("ix_migration_runs_status", "status"),
         Index("ix_migration_runs_created_at", "created_at"),
+        Index("ix_migration_runs_schema_discovery_status", "schema_discovery_status"),
     )
 
     migration_sql: Mapped[str] = mapped_column(Text, nullable=False)
@@ -43,6 +53,26 @@ class MigrationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         default=MigrationRunStatus.PENDING,
         server_default=MigrationRunStatus.PENDING.value,
+    )
+
+    # Schema discovery snapshot (customer DB metadata). Credentials are never stored.
+    schema_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    schema_discovered_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    schema_discovery_duration_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    schema_database_engine: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    schema_database_version: Mapped[str | None] = mapped_column(Text, nullable=True)
+    schema_discovery_status: Mapped[SchemaDiscoveryStatus | None] = mapped_column(
+        Enum(
+            SchemaDiscoveryStatus,
+            name="schema_discovery_status",
+            native_enum=False,
+            length=32,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=True,
     )
 
     prediction: Mapped[Prediction | None] = relationship(

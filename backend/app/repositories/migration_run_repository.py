@@ -3,8 +3,7 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import Select, select
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
+from sqlalchemy.orm import defer, selectinload
 
 from app.core.exceptions import NotFoundError
 from app.database.models import MigrationRun, MigrationRunStatus
@@ -16,11 +15,15 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
 
     model = MigrationRun
 
-    def __init__(self, session: AsyncSession) -> None:
-        super().__init__(session)
-
-    def _base_query(self, *, load_children: bool = False) -> Select[tuple[MigrationRun]]:
+    def _base_query(
+        self,
+        *,
+        load_children: bool = False,
+        include_schema_snapshot: bool = True,
+    ) -> Select[tuple[MigrationRun]]:
         query = select(MigrationRun)
+        if not include_schema_snapshot:
+            query = query.options(defer(MigrationRun.schema_snapshot))
         if load_children:
             query = query.options(
                 selectinload(MigrationRun.prediction),
@@ -65,12 +68,23 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         status: MigrationRunStatus | None = None,
         load_children: bool = False,
     ) -> list[MigrationRun]:
-        query = self._base_query(load_children=load_children).order_by(
-            MigrationRun.created_at.desc()
-        )
+        query = self._base_query(
+            load_children=load_children,
+            include_schema_snapshot=False,
+        ).order_by(MigrationRun.created_at.desc())
         if status is not None:
             query = query.where(MigrationRun.status == status)
         return await super().list(offset=offset, limit=limit, statement=query)
+
+    async def count(
+        self,
+        *,
+        status: MigrationRunStatus | None = None,
+    ) -> int:
+        query = select(MigrationRun)
+        if status is not None:
+            query = query.where(MigrationRun.status == status)
+        return await super().count(query)
 
     async def update(self, entity: MigrationRun) -> MigrationRun:
         return await super().update(entity)

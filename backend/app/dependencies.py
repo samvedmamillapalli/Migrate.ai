@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import DatabaseSessionManager
 from app.repositories.migration_run_repository import MigrationRunRepository
 from app.services.migration_run_service import MigrationRunService
+from app.services.schema_discovery_service import SchemaDiscoveryService
 
 
 async def get_db_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
@@ -43,3 +44,16 @@ def get_migration_run_service(
 
 
 MigrationRunSvc = Annotated[MigrationRunService, Depends(get_migration_run_service)]
+
+
+def get_schema_discovery_service(
+    session: DbSession,
+    repository: MigrationRunRepo,
+) -> SchemaDiscoveryService:
+    return SchemaDiscoveryService(repository=repository, session=session)
+
+
+SchemaDiscoverySvc = Annotated[
+    SchemaDiscoveryService,
+    Depends(get_schema_discovery_service),
+]
