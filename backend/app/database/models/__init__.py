@@ -8,9 +8,16 @@ from app.database.models.migration_run import (
     SchemaDiscoveryStatus,
 )
 from app.database.models.prediction import Prediction, RollbackRisk
-from app.database.models.shadow_cluster import ShadowCluster, ShadowClusterStatus
+from app.database.models.shadow_cluster import (
+    ACTIVE_SHADOW_STATUSES,
+    TERMINAL_SHADOW_STATUSES,
+    ShadowCluster,
+    ShadowClusterStatus,
+)
 
 __all__ = [
+    "ACTIVE_SHADOW_STATUSES",
+    "TERMINAL_SHADOW_STATUSES",
     "Base",
     "ExecutionResult",
     "LearnedOutcome",

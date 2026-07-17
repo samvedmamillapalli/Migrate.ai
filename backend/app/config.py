@@ -36,6 +36,53 @@ class Settings(BaseSettings):
     schema_connection_timeout_seconds: int = Field(default=30, ge=1, le=300)
     schema_discovery_timeout_seconds: int = Field(default=60, ge=1, le=600)
 
+    # --- Phase 7: Shadow cluster orchestration ---
+    # Provider selection:
+    #   "ccloud_api" - real CockroachDB Cloud REST API provisioning (Phase 7A-7C
+    #                  verified). Default: every shadow cluster is a real,
+    #                  disposable CockroachDB Cloud cluster.
+    #   "mock"       - isolated scratch database on the control-plane cluster.
+    #                  Offline-only, kept for optional local demos; not used by
+    #                  default and not exercised by the Phase 7 verification.
+    #   "ccloud"     - ccloud CLI (interactive browser auth only; not headless).
+    shadow_provider: str = Field(default="ccloud_api")
+    # Tag/name prefix applied to every shadow cluster so the sweeper can find
+    # orphans that belong to this application.
+    shadow_app_tag: str = Field(default="migration-oracle", min_length=1)
+    # Single-region provisioning; colocated with the AWS services used elsewhere.
+    shadow_cluster_cloud: str = Field(default="aws")
+    shadow_cluster_region: str = Field(default="us-east-1")
+    # Concurrency cap: at most this many simultaneous shadow clusters. Overflow
+    # waits for a free slot (see ShadowSlotManager) rather than provisioning.
+    shadow_max_concurrent: int = Field(default=2, ge=1, le=10)
+    # Max cluster lifetime; the sweeper reaps active app-tagged clusters older
+    # than this, catching leaks from processes that died before teardown.
+    shadow_max_lifetime_minutes: int = Field(default=30, ge=1, le=1440)
+    # How long a caller will wait for a concurrency slot before giving up.
+    shadow_slot_wait_timeout_seconds: int = Field(default=600, ge=1, le=3600)
+    shadow_slot_poll_interval_seconds: float = Field(default=2.0, ge=0.1, le=60.0)
+    # Provisioning latency is the biggest unknown in this phase; measure it for
+    # real. These are safety ceilings, not promises.
+    shadow_provision_timeout_seconds: int = Field(default=600, ge=1, le=3600)
+    shadow_ready_poll_interval_seconds: float = Field(default=5.0, ge=0.5, le=120.0)
+    shadow_seed_timeout_seconds: int = Field(default=300, ge=1, le=3600)
+    shadow_migrate_timeout_seconds: int = Field(default=600, ge=1, le=3600)
+    # ccloud CLI executable (interactive-auth path only; kept for optional demos).
+    ccloud_binary: str = Field(default="ccloud")
+    # CockroachDB Cloud service-account credential. ``ccloud_api_secret`` is the
+    # Bearer token used by the REST provider; ``ccloud_api_key`` is the key id.
+    # Secrets: never logged, never committed. Later phases move to Secrets Manager.
+    ccloud_api_key: SecretStr | None = Field(default=None)
+    ccloud_api_secret: SecretStr | None = Field(default=None)
+    # CockroachDB Cloud REST API.
+    ccloud_api_base_url: str = Field(default="https://cockroachlabs.cloud")
+    # Cluster plan for shadow provisioning: BASIC is usage-billed (free allowance).
+    shadow_cluster_plan: str = Field(default="BASIC")
+    # REST client resiliency.
+    ccloud_api_timeout_seconds: float = Field(default=30.0, ge=1.0, le=300.0)
+    ccloud_api_max_retries: int = Field(default=4, ge=0, le=10)
+    ccloud_api_backoff_base_seconds: float = Field(default=0.5, ge=0.05, le=10.0)
+
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, value: str) -> str:

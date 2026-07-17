@@ -3,9 +3,10 @@ from __future__ import annotations
 import enum
 import uuid
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, UniqueConstraint
+from sqlalchemy import DateTime, Enum, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -16,16 +17,51 @@ if TYPE_CHECKING:
 
 
 class ShadowClusterStatus(str, enum.Enum):
+    """Lifecycle state of a disposable shadow cluster.
+
+    The orchestration walks these states in order:
+    PROVISIONING -> READY -> SEEDING -> MIGRATING -> DESTROYING -> DESTROYED.
+    Any stage may transition to FAILED, after which teardown still runs and the
+    row lands in DESTROYED (or FAILED if teardown itself could not complete).
+    """
+
     PROVISIONING = "provisioning"
     READY = "ready"
-    RUNNING = "running"
+    SEEDING = "seeding"
+    MIGRATING = "migrating"
     DESTROYING = "destroying"
     DESTROYED = "destroyed"
     FAILED = "failed"
 
 
+# States in which a shadow cluster may still be holding real cloud resources.
+# Used for the concurrency cap and the orphan sweeper.
+ACTIVE_SHADOW_STATUSES: frozenset[ShadowClusterStatus] = frozenset(
+    {
+        ShadowClusterStatus.PROVISIONING,
+        ShadowClusterStatus.READY,
+        ShadowClusterStatus.SEEDING,
+        ShadowClusterStatus.MIGRATING,
+        ShadowClusterStatus.DESTROYING,
+    }
+)
+
+TERMINAL_SHADOW_STATUSES: frozenset[ShadowClusterStatus] = frozenset(
+    {
+        ShadowClusterStatus.DESTROYED,
+        ShadowClusterStatus.FAILED,
+    }
+)
+
+
 class ShadowCluster(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Metadata for the temporary CockroachDB cluster used during verification."""
+    """Metadata for the temporary CockroachDB cluster used during verification.
+
+    Credentials for the shadow cluster are never persisted here; only the
+    non-secret identity (provider cluster id, human-readable name, region) and
+    lifecycle bookkeeping are stored. The connection string lives in memory for
+    the duration of a single lifecycle run.
+    """
 
     __tablename__ = "shadow_clusters"
     __table_args__ = (
@@ -39,13 +75,21 @@ class ShadowCluster(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         Index("ix_shadow_clusters_status", "status"),
         Index("ix_shadow_clusters_created_at", "created_at"),
+        Index("ix_shadow_clusters_expires_at", "expires_at"),
     )
 
     migration_run_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("migration_runs.id", ondelete="CASCADE"),
         nullable=False,
     )
-    cluster_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Nullable because the row is created (PROVISIONING) before the provider
+    # returns a cluster id, so the sweeper/concurrency accounting can already
+    # see the in-flight cluster. A UNIQUE constraint still allows many NULLs.
+    cluster_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Human-readable, app-tagged name we assign at creation (e.g.
+    # "mo-shadow-<run-short>"). This is what the sweeper matches on to find
+    # orphans belonging to this application.
+    cluster_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     provider: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
@@ -65,6 +109,20 @@ class ShadowCluster(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=ShadowClusterStatus.PROVISIONING,
         server_default=ShadowClusterStatus.PROVISIONING.value,
     )
+    # Synthetic-data sizing tier chosen from the Phase 6 snapshot row counts.
+    scale_tier: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Max-lifetime deadline (created_at + configured lifetime). The sweeper
+    # reaps any active app-tagged cluster past this, catching processes that
+    # died before teardown.
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    # Per-stage wall-clock timings (provision/ready/seed/migrate/teardown), in
+    # milliseconds. Provisioning latency is a real unknown, so we always record
+    # measured numbers rather than assume them.
+    stage_timings: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     destroyed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,

@@ -8,8 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import DatabaseSessionManager
 from app.repositories.migration_run_repository import MigrationRunRepository
+from app.repositories.shadow_cluster_repository import ShadowClusterRepository
 from app.services.migration_run_service import MigrationRunService
 from app.services.schema_discovery_service import SchemaDiscoveryService
+from app.services.shadow_cluster_service import ShadowClusterService
 
 
 async def get_db_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
@@ -56,4 +58,27 @@ def get_schema_discovery_service(
 SchemaDiscoverySvc = Annotated[
     SchemaDiscoveryService,
     Depends(get_schema_discovery_service),
+]
+
+
+def get_shadow_cluster_repository(session: DbSession) -> ShadowClusterRepository:
+    return ShadowClusterRepository(session)
+
+
+ShadowClusterRepo = Annotated[
+    ShadowClusterRepository,
+    Depends(get_shadow_cluster_repository),
+]
+
+
+def get_shadow_cluster_service(
+    session: DbSession,
+    repository: ShadowClusterRepo,
+) -> ShadowClusterService:
+    return ShadowClusterService(repository=repository, session=session)
+
+
+ShadowClusterSvc = Annotated[
+    ShadowClusterService,
+    Depends(get_shadow_cluster_service),
 ]
