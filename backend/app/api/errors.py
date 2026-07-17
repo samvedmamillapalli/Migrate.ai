@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
+from app.aws.exceptions import AwsConfigurationError, AwsConnectivityError
 from app.core.exceptions import (
     AppError,
     ConflictError,
@@ -35,6 +36,8 @@ _STATUS_BY_ERROR: dict[type[AppError], int] = {
     SchemaNetworkError: status.HTTP_503_SERVICE_UNAVAILABLE,
     UnsupportedDatabaseError: status.HTTP_400_BAD_REQUEST,
     SchemaConnectionError: status.HTTP_400_BAD_REQUEST,
+    AwsConfigurationError: status.HTTP_503_SERVICE_UNAVAILABLE,
+    AwsConnectivityError: status.HTTP_503_SERVICE_UNAVAILABLE,
 }
 
 

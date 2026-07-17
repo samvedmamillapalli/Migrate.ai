@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
-from app.database.models import MigrationRunStatus, SchemaDiscoveryStatus
+from app.database.models import MigrationRunStatus, SchemaDiscoveryStatus, WorkflowStatus
 
 
 class MigrationRunCreateRequest(BaseModel):
@@ -39,6 +39,10 @@ class MigrationRunResponse(BaseModel):
     schema_database_engine: str | None = None
     schema_database_version: str | None = None
     schema_discovery_status: SchemaDiscoveryStatus | None = None
+    sfn_execution_arn: str | None = None
+    workflow_status: WorkflowStatus = WorkflowStatus.NOT_STARTED
+    workflow_started_at: datetime | None = None
+    workflow_finished_at: datetime | None = None
 
 
 class MigrationRunSummaryResponse(BaseModel):
@@ -56,6 +60,10 @@ class MigrationRunSummaryResponse(BaseModel):
     schema_database_engine: str | None = None
     schema_database_version: str | None = None
     schema_discovery_status: SchemaDiscoveryStatus | None = None
+    sfn_execution_arn: str | None = None
+    workflow_status: WorkflowStatus = WorkflowStatus.NOT_STARTED
+    workflow_started_at: datetime | None = None
+    workflow_finished_at: datetime | None = None
 
     @computed_field
     @property

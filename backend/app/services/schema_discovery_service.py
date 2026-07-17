@@ -96,6 +96,31 @@ class SchemaDiscoveryService:
         )
         return updated
 
+    async def persist_metadata_snapshot(
+        self,
+        run_id: uuid.UUID,
+        metadata: DatabaseMetadata,
+        *,
+        duration_ms: float = 0.0,
+    ) -> MigrationRun:
+        """Persist an already-built metadata snapshot (idempotent local/fixture path).
+
+        Prefer ``discover_and_persist`` for live customer databases. This method
+        exists so Lambda/local runners can store a validated snapshot without
+        duplicating MigrationRun field assignment.
+        """
+        run = await self._repository.get_by_id_or_raise(run_id)
+        if (
+            run.schema_discovery_status == SchemaDiscoveryStatus.SUCCEEDED
+            and run.schema_snapshot
+        ):
+            return run
+        return await self._persist_success(
+            run,
+            metadata=metadata,
+            duration_ms=duration_ms,
+        )
+
     async def _persist_success(
         self,
         run: MigrationRun,

@@ -6,6 +6,7 @@ from app.database.models.migration_run import (
     MigrationRun,
     MigrationRunStatus,
     SchemaDiscoveryStatus,
+    WorkflowStatus,
 )
 from app.database.models.prediction import Prediction, RollbackRisk
 from app.database.models.shadow_cluster import (
@@ -30,4 +31,5 @@ __all__ = [
     "ShadowClusterStatus",
     "TimestampMixin",
     "UUIDPrimaryKeyMixin",
+    "WorkflowStatus",
 ]

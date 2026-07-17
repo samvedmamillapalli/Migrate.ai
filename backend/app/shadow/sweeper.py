@@ -34,11 +34,13 @@ class ShadowClusterSweeper:
         provider: ShadowClusterProvider,
         app_tag: str,
         max_lifetime_minutes: int,
+        observability: Any | None = None,
     ) -> None:
         self._service = service
         self._provider = provider
         self._app_tag = app_tag
         self._max_lifetime = timedelta(minutes=max_lifetime_minutes)
+        self._observability = observability
 
     async def sweep(self) -> dict[str, Any]:
         now = datetime.now(UTC)
@@ -46,10 +48,21 @@ class ShadowClusterSweeper:
             "swept_db_rows": [],
             "swept_provider_clusters": [],
             "errors": [],
+            "orphan_candidates": 0,
         }
 
-        await self._sweep_db_rows(now, report)
+        expired = await self._service.list_expired_active(now)
+        report["orphan_candidates"] = len(expired)
+        await self._sweep_db_rows(now, report, expired)
         await self._sweep_provider(now, report)
+
+        if self._observability is not None:
+            try:
+                await self._observability.record_orphaned_shadow_clusters(
+                    float(report["orphan_candidates"])
+                )
+            except Exception:  # noqa: BLE001 - metrics must not break sweeping
+                logger.warning("Unable to publish orphaned-cluster metric")
 
         logger.info(
             "Shadow sweeper finished",
@@ -57,13 +70,19 @@ class ShadowClusterSweeper:
                 "db_rows": len(report["swept_db_rows"]),
                 "provider_clusters": len(report["swept_provider_clusters"]),
                 "errors": len(report["errors"]),
+                "orphan_candidates": report["orphan_candidates"],
             },
         )
         return report
 
-    async def _sweep_db_rows(self, now: datetime, report: dict[str, Any]) -> None:
-        expired = await self._service.list_expired_active(now)
-        for row in expired:
+    async def _sweep_db_rows(
+        self,
+        now: datetime,
+        report: dict[str, Any],
+        expired: list | None = None,
+    ) -> None:
+        rows = expired if expired is not None else await self._service.list_expired_active(now)
+        for row in rows:
             try:
                 await self._service.transition(
                     row.id, ShadowClusterStatus.DESTROYING

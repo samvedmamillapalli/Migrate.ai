@@ -4,6 +4,8 @@ import sys
 from datetime import UTC, datetime
 from typing import Any
 
+from app.aws.correlation import get_correlation_fields
+
 _LOG_RECORD_STANDARD_ATTRS = {
     "args",
     "asctime",
@@ -39,6 +41,10 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+
+        # Correlation fields (run_id, lambda, sfn) — never overwrite explicit extras.
+        for key, value in get_correlation_fields().items():
+            payload.setdefault(key, value)
 
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)

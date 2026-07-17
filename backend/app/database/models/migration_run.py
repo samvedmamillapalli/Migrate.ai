@@ -33,12 +33,29 @@ class SchemaDiscoveryStatus(str, enum.Enum):
     REJECTED = "rejected"
 
 
+class WorkflowStatus(str, enum.Enum):
+    """Durable Step Functions execution status mirrored in CockroachDB."""
+
+    NOT_STARTED = "not_started"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    TIMED_OUT = "timed_out"
+    ABORTED = "aborted"
+
+
 class MigrationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __tablename__ = "migration_runs"
     __table_args__ = (
         Index("ix_migration_runs_status", "status"),
         Index("ix_migration_runs_created_at", "created_at"),
         Index("ix_migration_runs_schema_discovery_status", "schema_discovery_status"),
+        Index("ix_migration_runs_workflow_status", "workflow_status"),
+        Index(
+            "ix_migration_runs_sfn_execution_arn",
+            "sfn_execution_arn",
+            unique=True,
+        ),
     )
 
     migration_sql: Mapped[str] = mapped_column(Text, nullable=False)
@@ -72,6 +89,29 @@ class MigrationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
             length=32,
             values_callable=lambda enum_cls: [member.value for member in enum_cls],
         ),
+        nullable=True,
+    )
+
+    # Phase 8B: durable Step Functions orchestration metadata (no credentials).
+    sfn_execution_arn: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    workflow_status: Mapped[WorkflowStatus] = mapped_column(
+        Enum(
+            WorkflowStatus,
+            name="workflow_status",
+            native_enum=False,
+            length=32,
+            values_callable=lambda enum_cls: [member.value for member in enum_cls],
+        ),
+        nullable=False,
+        default=WorkflowStatus.NOT_STARTED,
+        server_default=WorkflowStatus.NOT_STARTED.value,
+    )
+    workflow_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    workflow_finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
         nullable=True,
     )
 
