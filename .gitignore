@@ -12,6 +12,8 @@ node_modules/
 .env.*
 !.env.example
 .vscode/
+.local_secrets/
+backend/.local_secrets/
 
 # OS files
 .DS_Store

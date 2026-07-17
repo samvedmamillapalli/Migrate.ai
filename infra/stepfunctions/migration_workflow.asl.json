@@ -1,0 +1,295 @@
+{
+  "Comment": "Migration Oracle Phase 8B — durable migration execution workflow. Lambda Task resources are substituted at deploy/validate time; Lambda business logic is Phase 8C+. Every Task is keyed by run_id for idempotency. Failures always route to Cleanup before terminal Fail.",
+  "StartAt": "DiscoverSchema",
+  "TimeoutSeconds": 3600,
+  "States": {
+    "DiscoverSchema": {
+      "Type": "Task",
+      "Comment": "Inspect customer DB schema (read-only). Idempotent on run_id.",
+      "Resource": "${DiscoverSchemaFunctionArn}",
+      "Parameters": {
+        "run_id.$": "$.run_id",
+        "connection_secret_arn.$": "$.connection_secret_arn",
+        "artifacts_bucket.$": "$.artifacts_bucket"
+      },
+      "ResultPath": "$.step_results.discover_schema",
+      "TimeoutSeconds": 300,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "MarkFailed"
+        }
+      ],
+      "Next": "ProvisionShadowCluster"
+    },
+    "ProvisionShadowCluster": {
+      "Type": "Task",
+      "Comment": "Provision temporary CockroachDB shadow cluster. Idempotent on run_id.",
+      "Resource": "${ProvisionShadowClusterFunctionArn}",
+      "Parameters": {
+        "run_id.$": "$.run_id",
+        "connection_secret_arn.$": "$.connection_secret_arn",
+        "artifacts_bucket.$": "$.artifacts_bucket",
+        "discover_schema.$": "$.step_results.discover_schema"
+      },
+      "ResultPath": "$.step_results.provision_shadow_cluster",
+      "TimeoutSeconds": 900,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 5,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "MarkFailed"
+        }
+      ],
+      "Next": "LoadSchema"
+    },
+    "LoadSchema": {
+      "Type": "Task",
+      "Comment": "Load discovered schema onto the shadow cluster. Idempotent on run_id.",
+      "Resource": "${LoadSchemaFunctionArn}",
+      "Parameters": {
+        "run_id.$": "$.run_id",
+        "artifacts_bucket.$": "$.artifacts_bucket",
+        "discover_schema.$": "$.step_results.discover_schema",
+        "provision_shadow_cluster.$": "$.step_results.provision_shadow_cluster"
+      },
+      "ResultPath": "$.step_results.load_schema",
+      "TimeoutSeconds": 600,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 3,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "MarkFailed"
+        }
+      ],
+      "Next": "ExecuteMigration"
+    },
+    "ExecuteMigration": {
+      "Type": "Task",
+      "Comment": "Run migration SQL on the shadow cluster. Idempotent on run_id.",
+      "Resource": "${ExecuteMigrationFunctionArn}",
+      "Parameters": {
+        "run_id.$": "$.run_id",
+        "artifacts_bucket.$": "$.artifacts_bucket",
+        "provision_shadow_cluster.$": "$.step_results.provision_shadow_cluster",
+        "load_schema.$": "$.step_results.load_schema"
+      },
+      "ResultPath": "$.step_results.execute_migration",
+      "TimeoutSeconds": 900,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 5,
+          "BackoffRate": 2,
+          "MaxAttempts": 2
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "MarkFailed"
+        }
+      ],
+      "Next": "CollectMetrics"
+    },
+    "CollectMetrics": {
+      "Type": "Task",
+      "Comment": "Collect runtime and storage metrics from the shadow run. Idempotent on run_id.",
+      "Resource": "${CollectMetricsFunctionArn}",
+      "Parameters": {
+        "run_id.$": "$.run_id",
+        "artifacts_bucket.$": "$.artifacts_bucket",
+        "provision_shadow_cluster.$": "$.step_results.provision_shadow_cluster",
+        "execute_migration.$": "$.step_results.execute_migration"
+      },
+      "ResultPath": "$.step_results.collect_metrics",
+      "TimeoutSeconds": 300,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "MarkFailed"
+        }
+      ],
+      "Next": "PersistResults"
+    },
+    "PersistResults": {
+      "Type": "Task",
+      "Comment": "Persist execution results to CockroachDB. Idempotent on run_id.",
+      "Resource": "${PersistResultsFunctionArn}",
+      "Parameters": {
+        "run_id.$": "$.run_id",
+        "artifacts_bucket.$": "$.artifacts_bucket",
+        "step_results.$": "$.step_results"
+      },
+      "ResultPath": "$.step_results.persist_results",
+      "TimeoutSeconds": 120,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 2,
+          "BackoffRate": 2,
+          "MaxAttempts": 3
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.error",
+          "Next": "MarkFailed"
+        }
+      ],
+      "Next": "MarkSucceeded"
+    },
+    "MarkSucceeded": {
+      "Type": "Pass",
+      "Comment": "Tag successful path before guaranteed cleanup.",
+      "Result": {
+        "workflow_failed": false
+      },
+      "ResultPath": "$.outcome",
+      "Next": "Cleanup"
+    },
+    "MarkFailed": {
+      "Type": "Pass",
+      "Comment": "Preserve error context, then always run Cleanup.",
+      "Result": {
+        "workflow_failed": true
+      },
+      "ResultPath": "$.outcome",
+      "Next": "Cleanup"
+    },
+    "Cleanup": {
+      "Type": "Task",
+      "Comment": "Tear down shadow cluster and temporary resources. Always attempted. Idempotent on run_id.",
+      "Resource": "${CleanupFunctionArn}",
+      "Parameters": {
+        "run_id.$": "$.run_id",
+        "artifacts_bucket.$": "$.artifacts_bucket",
+        "outcome.$": "$.outcome",
+        "error.$": "$.error",
+        "step_results.$": "$.step_results"
+      },
+      "ResultPath": "$.step_results.cleanup",
+      "TimeoutSeconds": 600,
+      "Retry": [
+        {
+          "ErrorEquals": [
+            "Lambda.ServiceException",
+            "Lambda.AWSLambdaException",
+            "Lambda.SdkClientException",
+            "Lambda.TooManyRequestsException",
+            "States.Timeout"
+          ],
+          "IntervalSeconds": 5,
+          "BackoffRate": 2,
+          "MaxAttempts": 4
+        }
+      ],
+      "Catch": [
+        {
+          "ErrorEquals": ["States.ALL"],
+          "ResultPath": "$.cleanup_error",
+          "Next": "CleanupFailed"
+        }
+      ],
+      "Next": "ChooseOutcome"
+    },
+    "ChooseOutcome": {
+      "Type": "Choice",
+      "Comment": "After cleanup, fail the execution if any prior step failed.",
+      "Choices": [
+        {
+          "Variable": "$.outcome.workflow_failed",
+          "BooleanEquals": true,
+          "Next": "WorkflowFailed"
+        }
+      ],
+      "Default": "WorkflowSucceeded"
+    },
+    "WorkflowSucceeded": {
+      "Type": "Succeed",
+      "Comment": "Migration workflow completed; cleanup succeeded."
+    },
+    "WorkflowFailed": {
+      "Type": "Fail",
+      "Error": "MigrationWorkflowFailed",
+      "Cause": "A workflow step failed; cleanup was attempted"
+    },
+    "CleanupFailed": {
+      "Type": "Fail",
+      "Error": "CleanupFailed",
+      "Cause": "Cleanup failed after workflow success or failure; sweeper must reclaim orphans"
+    }
+  }
+}
