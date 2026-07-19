@@ -34,6 +34,7 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
         "storage_growth_mb": float(execute.get("storage_growth_mb") or 0.0),
         "rollback_required": bool(execute.get("rollback_required")),
         "error_message": execute.get("error_message"),
+        "timed_out": bool(execute.get("timed_out")),
     }
     logger.info(
         "CollectMetrics completed",

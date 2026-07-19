@@ -155,6 +155,42 @@ class AwsSettings(BaseSettings):
         validation_alias="AWS_SECRETS_CACHE_TTL_SECONDS",
     )
 
+    # --- Phase 9: Amazon Bedrock (prediction + recommendation) ---
+    # Model access must be requested in the Bedrock console for this region
+    # before live invocations succeed. Leave blank until access is granted.
+    bedrock_prediction_model_id: str | None = Field(
+        default=None,
+        validation_alias="BEDROCK_PREDICTION_MODEL_ID",
+    )
+    bedrock_recommendation_model_id: str | None = Field(
+        default=None,
+        validation_alias="BEDROCK_RECOMMENDATION_MODEL_ID",
+    )
+    # Defaults to AWS_DEFAULT_REGION; override only if Bedrock is enabled elsewhere.
+    bedrock_region: str = Field(
+        default="us-east-1",
+        validation_alias="BEDROCK_REGION",
+    )
+    bedrock_embedding_model_id: str = Field(
+        default="amazon.titan-embed-text-v2:0",
+        validation_alias="BEDROCK_EMBEDDING_MODEL_ID",
+        description="Set via BEDROCK_EMBEDDING_MODEL_ID (never omit in deploy)",
+    )
+
+    # When true (or environment is production/demo/staging), refuse startup if
+    # MIGRATION_WORKFLOW_ARN / RUN_ARTIFACTS_BUCKET are missing while AWS is on.
+    require_workflow_config: bool = Field(
+        default=False,
+        validation_alias="AWS_REQUIRE_WORKFLOW_CONFIG",
+    )
+
+    @field_validator("bedrock_embedding_model_id", mode="before")
+    @classmethod
+    def embedding_model_id_default(cls, value: object) -> object:
+        if value is None or (isinstance(value, str) and not value.strip()):
+            return "amazon.titan-embed-text-v2:0"
+        return value
+
     # Alarms — any cleanup failure; orphaned cluster count >= 1
     alarm_cleanup_failed_threshold: int = Field(
         default=1,
@@ -226,6 +262,8 @@ class AwsSettings(BaseSettings):
         "secrets_manager_endpoint_url",
         "cloudwatch_log_group",
         "cloudwatch_endpoint_url",
+        "bedrock_prediction_model_id",
+        "bedrock_recommendation_model_id",
         mode="before",
     )
     @classmethod
@@ -243,12 +281,12 @@ class AwsSettings(BaseSettings):
             raise ValueError("AWS_ACCOUNT_ID must be a 12-digit account id")
         return value
 
-    @field_validator("region")
+    @field_validator("region", "bedrock_region")
     @classmethod
     def validate_region(cls, value: str) -> str:
         normalized = value.strip()
         if not normalized:
-            raise ValueError("AWS_DEFAULT_REGION must not be empty")
+            raise ValueError("AWS region settings must not be empty")
         return normalized
 
     @model_validator(mode="after")
@@ -278,15 +316,23 @@ class AwsSettings(BaseSettings):
         return "default_chain"
 
     def production_required_missing(self) -> list[str]:
-        """Names of resource settings required before production workflows."""
+        """Names of resource settings required before durable workflows."""
         missing: list[str] = []
         if not self.migration_workflow_arn:
             missing.append("MIGRATION_WORKFLOW_ARN")
         if not self.run_artifacts_bucket:
             missing.append("RUN_ARTIFACTS_BUCKET")
-        if not self.cloudwatch_log_group:
-            missing.append("AWS_CLOUDWATCH_LOG_GROUP")
         return missing
+
+    def workflow_config_required(self, environment: str) -> bool:
+        if self.require_workflow_config:
+            return True
+        return environment.strip().lower() in {
+            "production",
+            "prod",
+            "demo",
+            "staging",
+        }
 
 
 @lru_cache

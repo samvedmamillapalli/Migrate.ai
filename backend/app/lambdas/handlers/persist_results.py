@@ -1,4 +1,4 @@
-"""PersistResults Lambda — write ExecutionResult via ExecutionService."""
+"""PersistResults Lambda — write ExecutionResult, then grade + remember."""
 
 from __future__ import annotations
 
@@ -13,8 +13,15 @@ from app.lambdas.runtime import (
     run_async,
     with_session,
 )
+from app.memory.embedding_client import AwsTitanEmbeddingClient, MockEmbeddingClient
+from app.memory.writer import MemoryWriteService
+from app.prediction.bedrock_client import AwsBedrockClient, MockBedrockClient
 from app.repositories.execution_result_repository import ExecutionResultRepository
+from app.repositories.grade_repository import GradeRepository
+from app.repositories.migration_memory_repository import MigrationMemoryRepository
+from app.repositories.migration_run_repository import MigrationRunRepository
 from app.services.execution_service import ExecutionService
+from app.services.grading_pipeline_service import GradingPipelineService
 
 logger = get_logger(__name__)
 
@@ -43,6 +50,43 @@ def _extract_metrics(event: dict[str, Any]) -> dict[str, Any]:
     raise LambdaValidationError("collect_metrics or execute_migration metrics required")
 
 
+def _build_grading_pipeline(session, runtime) -> GradingPipelineService:
+    aws = runtime.aws_settings
+    # Prefer live clients when configured; fall back to mocks in local mode.
+    bedrock: Any
+    embedding: Any
+    try:
+        if aws.bedrock_prediction_model_id:
+            bedrock = AwsBedrockClient(settings=aws)
+        else:
+            bedrock = MockBedrockClient()
+    except Exception:  # noqa: BLE001
+        bedrock = MockBedrockClient()
+    try:
+        if aws.aws_enabled and not __import__(
+            "app.lambdas.runtime", fromlist=["is_local_mode"]
+        ).is_local_mode():
+            embedding = AwsTitanEmbeddingClient(settings=aws)
+        else:
+            embedding = MockEmbeddingClient()
+    except Exception:  # noqa: BLE001
+        embedding = MockEmbeddingClient()
+
+    return GradingPipelineService(
+        session=session,
+        migration_run_repository=MigrationRunRepository(session),
+        grade_repository=GradeRepository(session),
+        memory_write_service=MemoryWriteService(
+            session=session,
+            repository=MigrationMemoryRepository(session),
+            embedding_client=embedding,
+            embedding_model_id=aws.bedrock_embedding_model_id,
+        ),
+        bedrock_client=bedrock,
+        prose_model_id=aws.bedrock_prediction_model_id or "mock-model",
+    )
+
+
 async def _handle(event: dict[str, Any]) -> dict[str, Any]:
     run_id = parse_run_id(event)
     metrics = _extract_metrics(event)
@@ -51,9 +95,11 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
     logger.info("PersistResults started")
 
     async def _run(session):
+        grading = _build_grading_pipeline(session, runtime)
         service = ExecutionService(
             repository=ExecutionResultRepository(session),
             session=session,
+            grading_pipeline=grading,
         )
         result = await service.record_execution(
             run_id,
@@ -62,6 +108,8 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
             storage_mb=float(metrics.get("storage_growth_mb") or 0.0),
             rollback_required=bool(metrics.get("rollback_required")),
             error_message=metrics.get("error_message"),
+            timed_out=bool(metrics.get("timed_out")),
+            grade=True,
         )
         report = {
             "run_id": str(run_id),
@@ -70,7 +118,9 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
             "duration_seconds": result.actual_duration_seconds,
             "storage_mb": result.actual_storage_mb,
             "rollback_required": result.rollback_required,
+            "timed_out": result.timed_out,
             "error_message": result.error_message,
+            "graded": True,
         }
         artifact = None
         if runtime.artifacts is not None:
@@ -93,6 +143,7 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
         extra={
             "success": payload.get("success"),
             "execution_result_id": payload.get("execution_result_id"),
+            "timed_out": payload.get("timed_out"),
         },
     )
     return payload

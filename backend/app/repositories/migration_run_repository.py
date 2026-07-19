@@ -30,6 +30,9 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
                 selectinload(MigrationRun.execution_result),
                 selectinload(MigrationRun.learned_outcome),
                 selectinload(MigrationRun.shadow_cluster),
+                selectinload(MigrationRun.approval),
+                selectinload(MigrationRun.grade),
+                selectinload(MigrationRun.memory),
             )
         return query
 
@@ -45,8 +48,27 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         if not load_children:
             return await super().get_by_id(entity_id)
 
+        # If the run is already in the identity map with children loaded as
+        # None (common after grade/memory writes in the same session), expire
+        # those relationships so selectinload sees the new rows.
+        existing = await self._session.get(MigrationRun, entity_id)
+        if existing is not None:
+            for rel in (
+                "prediction",
+                "execution_result",
+                "learned_outcome",
+                "shadow_cluster",
+                "approval",
+                "grade",
+                "memory",
+            ):
+                if rel in existing.__dict__:
+                    self._session.expire(existing, [rel])
+
         query = self._base_query(load_children=True).where(MigrationRun.id == entity_id)
-        result = await self._session.execute(query)
+        result = await self._session.execute(
+            query.execution_options(populate_existing=True)
+        )
         return result.scalar_one_or_none()
 
     async def get_by_id_or_raise(

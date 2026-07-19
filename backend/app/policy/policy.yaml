@@ -1,0 +1,141 @@
+# Migration Oracle — deterministic risk & policy configuration
+#
+# This file is safety infrastructure around the predict → verify → grade →
+# remember loop. It does not learn from outcomes; it is static for auditability.
+#
+# Aggregation: the most restrictive contributing policy_decision wins
+# (block > allow_with_warning > allow).
+#
+# Severity escalation uses estimated_row_count from the Phase 6 schema snapshot.
+# When a table has no row count, findings say so explicitly.
+
+version: 1
+
+defaults:
+  # Applied when a rule does not set its own policy_decision contribution.
+  policy_decision: allow_with_warning
+  # Row-count thresholds used by rules that scale severity with table size.
+  row_count_thresholds:
+    medium: 10000
+    high: 1000000
+
+# Decision precedence (most restrictive wins). Do not reorder casually.
+decision_precedence:
+  - allow
+  - allow_with_warning
+  - block
+
+rules:
+  drop_table:
+    enabled: true
+    title: "DROP TABLE"
+    base_severity: high
+    policy_decision: block
+    requires_manual_review: true
+    requires_expand_contract: false
+    compatibility_risk: high
+    explanation: >
+      DROP TABLE is destructive and generally irreversible without a backup.
+      Blast radius includes data loss and rollback safety.
+
+  drop_column:
+    enabled: true
+    title: "DROP COLUMN"
+    base_severity: high
+    policy_decision: block
+    requires_manual_review: true
+    requires_expand_contract: true
+    compatibility_risk: high
+    explanation: >
+      DROP COLUMN is destructive and breaks any application code still reading
+      that column. Prefer expand/contract: stop reading, then drop later.
+
+  primary_key_change:
+    enabled: true
+    title: "Primary key change"
+    base_severity: high
+    policy_decision: block
+    requires_manual_review: true
+    requires_expand_contract: false
+    compatibility_risk: high
+    escalate_by_row_count: true
+    explanation: >
+      In CockroachDB a primary key change rewrites the table and rebuilds
+      secondary indexes. Blast radius scales with backfill work and storage
+      growth on large tables.
+
+  foreign_key_add:
+    enabled: true
+    title: "Foreign key addition"
+    base_severity: medium
+    policy_decision: allow_with_warning
+    requires_manual_review: false
+    requires_expand_contract: false
+    compatibility_risk: medium
+    escalate_by_row_count: true
+    explanation: >
+      Adding a foreign key validates existing rows against the referenced table.
+      Background work is proportional to table size (resource saturation risk).
+
+  index_creation:
+    enabled: true
+    title: "Index creation / backfill"
+    base_severity: low
+    policy_decision: allow
+    requires_manual_review: false
+    requires_expand_contract: false
+    compatibility_risk: low
+    escalate_by_row_count: true
+    explanation: >
+      Creating an index backfills it across every existing row. Severity scales
+      with estimated row count from the schema snapshot.
+
+  table_rewrite:
+    enabled: true
+    title: "Table rewrite pattern"
+    base_severity: high
+    policy_decision: allow_with_warning
+    requires_manual_review: true
+    requires_expand_contract: false
+    compatibility_risk: medium
+    escalate_by_row_count: true
+    explanation: >
+      Column type changes and similar operations force a table rewrite rather
+      than an in-place modification. Expect backfill duration and storage growth.
+
+  long_running_backfill:
+    enabled: true
+    title: "Long-running backfill candidate"
+    base_severity: medium
+    policy_decision: allow_with_warning
+    requires_manual_review: false
+    requires_expand_contract: false
+    compatibility_risk: low
+    escalate_by_row_count: true
+    explanation: >
+      Operations whose work is proportional to row count (for example adding a
+      column with a non-null default) drive backfill duration and resource use.
+
+  backward_incompatible:
+    enabled: true
+    title: "Backward-incompatible change"
+    base_severity: medium
+    policy_decision: allow_with_warning
+    requires_manual_review: true
+    requires_expand_contract: true
+    compatibility_risk: high
+    explanation: >
+      Renames, NOT NULL on existing columns, and constraint tightening can break
+      deploys where old application code is still running. Prefer expand/contract.
+
+  parse_failure:
+    enabled: true
+    title: "SQL parse failure"
+    base_severity: high
+    policy_decision: allow_with_warning
+    requires_manual_review: true
+    requires_expand_contract: false
+    compatibility_risk: medium
+    explanation: >
+      The migration SQL could not be fully understood. Manual review is required;
+      the system will not silently bless an unparsed change.

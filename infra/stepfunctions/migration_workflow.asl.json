@@ -1,11 +1,11 @@
 {
-  "Comment": "Migration Oracle Phase 8B — durable migration execution workflow. Lambda Task resources are substituted at deploy/validate time; Lambda business logic is Phase 8C+. Every Task is keyed by run_id for idempotency. Failures always route to Cleanup before terminal Fail.",
+  "Comment": "Migration Oracle durable verify workflow. Phase 9 predict+approve MUST complete before this state machine is started (enforced by WorkflowOrchestrationService.require_prediction_and_approval). Start only after POST /runs/{id}/approve with decision=proceed (or POST /runs/{id}/start-workflow). Hackathon tools: CRDB Distributed Vector Index (memory) + Managed MCP / job-watch surface during ExecuteMigration; AWS Lambda+SFN+S3+Secrets+CloudWatch+Bedrock.",
   "StartAt": "DiscoverSchema",
   "TimeoutSeconds": 3600,
   "States": {
     "DiscoverSchema": {
       "Type": "Task",
-      "Comment": "Inspect customer DB schema (read-only). Idempotent on run_id.",
+      "Comment": "Inspect customer DB schema (read-only). Idempotent on run_id. Prediction and human approval are API-side gates before this workflow starts — not waitForTaskToken.",
       "Resource": "${DiscoverSchemaFunctionArn}",
       "Parameters": {
         "run_id.$": "$.run_id",

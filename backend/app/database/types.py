@@ -18,6 +18,10 @@ class Vector(UserDefinedType):
 
     def bind_processor(self, dialect: object):  # noqa: ANN001
         def process(value: object) -> object:
+            if value is None:
+                return None
+            if isinstance(value, (list, tuple)):
+                return "[" + ",".join(str(float(v)) for v in value) + "]"
             return value
 
         return process

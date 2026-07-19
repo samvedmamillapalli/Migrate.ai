@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import enum
 import uuid
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
-from sqlalchemy import Enum, Float, ForeignKey, Index, Text, UniqueConstraint
+from sqlalchemy import Enum, Float, ForeignKey, Index, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -21,7 +22,13 @@ class RollbackRisk(str, enum.Enum):
 
 
 class Prediction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """AI prediction captured before shadow execution."""
+    """AI prediction captured before shadow execution.
+
+    Estimates describe the *shadow* run outcome (absolute seconds and MB), not
+    a separate production prediction. ``confidence_score`` is the hybrid value
+    after deterministic reduction; ``raw_confidence_score`` is the model's
+    proposal before adjustment.
+    """
 
     __tablename__ = "predictions"
     __table_args__ = (
@@ -50,7 +57,28 @@ class Prediction(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
     )
     confidence_score: Mapped[float] = mapped_column(Float, nullable=False)
+    raw_confidence_score: Mapped[float] = mapped_column(Float, nullable=False)
+    confidence_adjustments: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+    )
+    # Prose explanation (spec: risk_explanation). Kept as ``reasoning`` for
+    # backward compatibility with the Phase 3 column name.
     reasoning: Mapped[str] = mapped_column(Text, nullable=False)
+    key_assumptions: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+    )
+    uncertainty_notes: Mapped[list[str]] = mapped_column(
+        JSONB,
+        nullable=False,
+        default=list,
+    )
+    # Combined Bedrock model id + prompt template version for auditability.
+    model_version: Mapped[str] = mapped_column(String(256), nullable=False)
+    prompt_template_version: Mapped[str] = mapped_column(String(64), nullable=False)
 
     migration_run: Mapped[MigrationRun] = relationship(
         "MigrationRun",

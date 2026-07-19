@@ -19,6 +19,12 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.core.logging import get_logger
+from app.policy.config import PolicyConfigError
+from app.grading.config import GradingConfigError
+from app.prediction.bedrock_client import BedrockAccessError, BedrockInvocationError
+from app.prediction.predictor import PredictionValidationError
+from app.prediction.recommender import RecommendationValidationError
+from app.memory.embedding_client import EmbeddingAccessError, EmbeddingInvocationError
 
 logger = get_logger(__name__)
 
@@ -38,6 +44,14 @@ _STATUS_BY_ERROR: dict[type[AppError], int] = {
     SchemaConnectionError: status.HTTP_400_BAD_REQUEST,
     AwsConfigurationError: status.HTTP_503_SERVICE_UNAVAILABLE,
     AwsConnectivityError: status.HTTP_503_SERVICE_UNAVAILABLE,
+    BedrockAccessError: status.HTTP_503_SERVICE_UNAVAILABLE,
+    BedrockInvocationError: status.HTTP_502_BAD_GATEWAY,
+    PredictionValidationError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    RecommendationValidationError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    PolicyConfigError: status.HTTP_500_INTERNAL_SERVER_ERROR,
+    GradingConfigError: status.HTTP_500_INTERNAL_SERVER_ERROR,
+    EmbeddingAccessError: status.HTTP_503_SERVICE_UNAVAILABLE,
+    EmbeddingInvocationError: status.HTTP_502_BAD_GATEWAY,
 }
 
 

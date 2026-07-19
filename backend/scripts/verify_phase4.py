@@ -103,6 +103,7 @@ async def check_repo_service_flow() -> None:
             assert updated_entity.migration_sql == "ALTER TABLE t ADD COLUMN y INT"
 
             await svc.update_status(run_id, MigrationRunStatus.PREDICTING)
+            await svc.update_status(run_id, MigrationRunStatus.AWAITING_APPROVAL)
             await svc.update_status(run_id, MigrationRunStatus.RUNNING)
             await svc.update_status(run_id, MigrationRunStatus.COMPLETED)
 

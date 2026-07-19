@@ -1,0 +1,17 @@
+version = 0.1
+
+[default.global.parameters]
+region = "us-east-1"
+
+[default.build.parameters]
+use_container = true
+
+[default.deploy.parameters]
+stack_name = "migration-oracle"
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM"
+confirm_changeset = true
+resolve_s3 = true
+# Parameter overrides are supplied on the CLI or via `sam deploy --guided`.
+# Example (do not commit secrets):
+# parameter_overrides = "ProjectName=migration-oracle EnvironmentName=demo DatabaseUrl=... CCloudApiSecret=..."

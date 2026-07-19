@@ -40,6 +40,8 @@ class SchemaDiscoveryService:
         self,
         run_id: uuid.UUID,
         connection: DatabaseConnection,
+        *,
+        connection_secret_arn: str | None = None,
     ) -> MigrationRun:
         run = await self._repository.get_by_id_or_raise(run_id)
         started = perf_counter()
@@ -86,6 +88,7 @@ class SchemaDiscoveryService:
             run,
             metadata=metadata,
             duration_ms=duration_ms,
+            connection_secret_arn=connection_secret_arn,
         )
         logger.info(
             "Schema discovery succeeded",
@@ -127,6 +130,7 @@ class SchemaDiscoveryService:
         *,
         metadata: DatabaseMetadata,
         duration_ms: float,
+        connection_secret_arn: str | None = None,
     ) -> MigrationRun:
         run_id = run.id
 
@@ -138,6 +142,8 @@ class SchemaDiscoveryService:
             entity.schema_database_engine = _infer_engine(metadata.server_version)
             entity.schema_database_version = metadata.server_version
             entity.schema_discovery_status = SchemaDiscoveryStatus.SUCCEEDED
+            if connection_secret_arn:
+                entity.connection_secret_arn = connection_secret_arn
 
             updated = await self._repository.update(entity)
             await self._session.commit()

@@ -83,6 +83,17 @@ class Settings(BaseSettings):
     ccloud_api_max_retries: int = Field(default=4, ge=0, le=10)
     ccloud_api_backoff_base_seconds: float = Field(default=0.5, ge=0.05, le=10.0)
 
+    # Demo deploy gate (optional). When set, API routes require X-API-Key.
+    demo_api_key: str | None = Field(default=None, validation_alias="DEMO_API_KEY")
+
+    # CockroachDB Managed MCP endpoint (hackathon tool #2 alongside Vector Index).
+    # Used for documentation and optional job-watch correlation; IDE config lives
+    # in .cursor/mcp.json. Runtime job watch uses CRDB SQL (same job surface).
+    cockroach_mcp_url: str = Field(
+        default="https://cockroachlabs.cloud/mcp",
+        validation_alias="COCKROACH_MCP_URL",
+    )
+
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, value: str) -> str:

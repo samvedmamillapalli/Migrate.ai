@@ -1,11 +1,28 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
+from urllib.parse import urlparse
 
-from fastapi import APIRouter, Query, status
+from fastapi import APIRouter, Depends, Query, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.exceptions import NotFoundError, ValidationError
 from app.database.models import MigrationRunStatus
-from app.dependencies import MigrationRunSvc
+from app.dependencies import (
+    ApprovalSvc,
+    ClosedLoopSvc,
+    GradingPipelineSvc,
+    MemoryWriteSvc,
+    MigrationRunSvc,
+    PredictionPipelineSvc,
+    SchemaDiscoverySvc,
+    WorkflowOrchestrationSvc,
+    get_db_session,
+)
+from app.memory.metrics import fetch_accuracy_metrics
+from app.schemas.approval import ApprovalCreateRequest, ApprovalResponse
+from app.schemas.grade import GradeResponse, MemoryResponse, RepairEmbeddingsRequest
 from app.schemas.migration_run import (
     MigrationRunCreateRequest,
     MigrationRunListResponse,
@@ -13,6 +30,9 @@ from app.schemas.migration_run import (
     MigrationRunStatusUpdateRequest,
     MigrationRunSummaryResponse,
 )
+from app.schemas.workflow import DiscoverSchemaRequest, StartWorkflowRequest
+from app.schema_analysis.database_connection import DatabaseConnection, SslMode
+from app.services.closed_loop_service import ClosedLoopRequest
 
 router = APIRouter(prefix="/runs", tags=["migration-runs"])
 
@@ -26,7 +46,11 @@ async def create_run(
     payload: MigrationRunCreateRequest,
     service: MigrationRunSvc,
 ) -> MigrationRunResponse:
-    run = await service.create_migration_run(payload.migration_sql)
+    run = await service.create_migration_run(
+        payload.migration_sql,
+        owner_identity=payload.owner_identity,
+        revises_run_id=payload.revises_run_id,
+    )
     return MigrationRunResponse.model_validate(run)
 
 
@@ -51,6 +75,14 @@ async def list_runs(
     )
 
 
+@router.get("/metrics/accuracy")
+async def get_accuracy_metrics(
+    session: AsyncSession = Depends(get_db_session),
+) -> dict[str, Any]:
+    """Plain SQL accuracy / learning metrics (Phase 11 chart source)."""
+    return await fetch_accuracy_metrics(session)
+
+
 @router.get("/{run_id}", response_model=MigrationRunResponse)
 async def get_run(
     run_id: uuid.UUID,
@@ -68,3 +100,269 @@ async def update_run_status(
 ) -> MigrationRunResponse:
     run = await service.update_status(run_id, payload.status)
     return MigrationRunResponse.model_validate(run)
+
+
+@router.post(
+    "/{run_id}/discover",
+    response_model=MigrationRunResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def discover_schema(
+    run_id: uuid.UUID,
+    payload: DiscoverSchemaRequest,
+    discovery: SchemaDiscoverySvc,
+    request: Request,
+) -> MigrationRunResponse:
+    """Discover customer schema (read-only) and store connection_secret_arn pointer."""
+    secret_arn = payload.connection_secret_arn
+    if payload.database_url:
+        secret_arn = await _store_connection_url(request, run_id, payload.database_url)
+
+    assert secret_arn is not None
+    connection = await _load_connection(request, secret_arn)
+    run = await discovery.discover_and_persist(
+        run_id,
+        connection,
+        connection_secret_arn=secret_arn,
+    )
+    return MigrationRunResponse.model_validate(run)
+
+
+@router.post(
+    "/{run_id}/predict",
+    response_model=MigrationRunResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def run_prediction_pipeline(
+    run_id: uuid.UUID,
+    service: PredictionPipelineSvc,
+) -> MigrationRunResponse:
+    """Run Phase 9 policy → predict → recommend and stop at awaiting_approval."""
+    run = await service.run_prediction_pipeline(run_id)
+    return MigrationRunResponse.model_validate(run)
+
+
+@router.post(
+    "/{run_id}/approve",
+    response_model=MigrationRunResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def approve_run(
+    run_id: uuid.UUID,
+    payload: ApprovalCreateRequest,
+    service: ApprovalSvc,
+) -> MigrationRunResponse:
+    """Record approval. On proceed, auto-starts the verify workflow when configured."""
+    run = await service.approve(
+        run_id,
+        decision=payload.decision,
+        approver_identity=payload.approver_identity,
+        override_rationale=payload.override_rationale,
+        connection_secret_arn=payload.connection_secret_arn,
+        start_workflow=payload.start_workflow,
+    )
+    return MigrationRunResponse.model_validate(run)
+
+
+@router.post(
+    "/{run_id}/closed-loop",
+    response_model=MigrationRunResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def run_closed_loop(
+    run_id: uuid.UUID,
+    payload: ClosedLoopRequest,
+    service: ClosedLoopSvc,
+) -> MigrationRunResponse:
+    """Predict (if needed) → proceed → start SFN when ARN + connection secret exist."""
+    run = await service.run(run_id, payload)
+    return MigrationRunResponse.model_validate(run)
+
+
+@router.post(
+    "/{run_id}/start-workflow",
+    response_model=MigrationRunResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def start_workflow(
+    run_id: uuid.UUID,
+    payload: StartWorkflowRequest,
+    service: WorkflowOrchestrationSvc,
+    run_service: MigrationRunSvc,
+) -> MigrationRunResponse:
+    """Start Step Functions verify after prediction + proceed approval."""
+    run = await run_service.get_migration_run(run_id, load_children=True)
+    secret = (payload.connection_secret_arn or run.connection_secret_arn or "").strip()
+    if not secret:
+        raise ValidationError(
+            "connection_secret_arn is required (pass in body or POST /discover first)"
+        )
+    updated = await service.start_for_run(
+        run_id,
+        connection_secret_arn=secret,
+        require_prediction_and_approval=True,
+    )
+    return MigrationRunResponse.model_validate(updated)
+
+
+@router.post(
+    "/{run_id}/sync-workflow",
+    response_model=MigrationRunResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def sync_workflow(
+    run_id: uuid.UUID,
+    service: WorkflowOrchestrationSvc,
+) -> MigrationRunResponse:
+    run = await service.sync_status(run_id)
+    return MigrationRunResponse.model_validate(run)
+
+
+@router.get("/{run_id}/approval", response_model=ApprovalResponse)
+async def get_approval(
+    run_id: uuid.UUID,
+    service: MigrationRunSvc,
+) -> ApprovalResponse:
+    run = await service.get_migration_run(run_id, load_children=True)
+    if run.approval is None:
+        raise NotFoundError(f"No approval recorded for MigrationRun {run_id}")
+    return ApprovalResponse.model_validate(run.approval)
+
+
+@router.post(
+    "/{run_id}/grade",
+    response_model=MigrationRunResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def grade_run(
+    run_id: uuid.UUID,
+    service: GradingPipelineSvc,
+) -> MigrationRunResponse:
+    run = await service.grade_run(run_id)
+    return MigrationRunResponse.model_validate(run)
+
+
+@router.get("/{run_id}/grade", response_model=GradeResponse)
+async def get_grade(
+    run_id: uuid.UUID,
+    service: MigrationRunSvc,
+) -> GradeResponse:
+    run = await service.get_migration_run(run_id, load_children=True)
+    if run.grade is None:
+        raise NotFoundError(f"No grade recorded for MigrationRun {run_id}")
+    return GradeResponse.model_validate(run.grade)
+
+
+@router.get("/{run_id}/memory", response_model=MemoryResponse)
+async def get_memory(
+    run_id: uuid.UUID,
+    service: MigrationRunSvc,
+) -> MemoryResponse:
+    run = await service.get_migration_run(run_id, load_children=True)
+    if run.memory is None:
+        raise NotFoundError(f"No memory recorded for MigrationRun {run_id}")
+    return MemoryResponse.from_orm_memory(run.memory)
+
+
+@router.post(
+    "/memories/repair-embeddings",
+    status_code=status.HTTP_200_OK,
+)
+async def repair_embeddings(
+    payload: RepairEmbeddingsRequest,
+    service: MemoryWriteSvc,
+) -> dict[str, Any]:
+    repaired = await service.repair_pending_embedding(
+        memory_id=payload.memory_id,
+        run_id=payload.run_id,
+        limit=payload.limit,
+    )
+    return {
+        "repaired": [
+            {
+                "id": str(m.id),
+                "migration_run_id": str(m.migration_run_id),
+                "embedding_status": m.embedding_status,
+                "embedding_error": m.embedding_error,
+            }
+            for m in repaired
+        ]
+    }
+
+
+def _parse_database_url(url: str) -> DatabaseConnection:
+    parsed = urlparse(url)
+    if not parsed.hostname:
+        raise ValidationError("database_url must include a host")
+    database = (parsed.path or "/").lstrip("/") or "defaultdb"
+    query = dict(
+        part.split("=", 1) for part in (parsed.query or "").split("&") if "=" in part
+    )
+    ssl_raw = (query.get("sslmode") or "require").replace("_", "-")
+    try:
+        ssl_mode = SslMode(ssl_raw)
+    except ValueError:
+        ssl_mode = SslMode.REQUIRE
+    return DatabaseConnection(
+        host=parsed.hostname,
+        port=parsed.port or 26257,
+        database=database,
+        username=parsed.username or "root",
+        password=parsed.password or "",
+        ssl_mode=ssl_mode,
+    )
+
+
+async def _store_connection_url(
+    request: Request,
+    run_id: uuid.UUID,
+    database_url: str,
+) -> str:
+    """Store URL in local/AWS secret store; return ARN/name pointer."""
+    name = f"migration-oracle/connections/{run_id}"
+    payload = {"database_url": database_url}
+    try:
+        from app.lambdas.runtime import get_runtime
+
+        runtime = get_runtime()
+        return await runtime.secrets.put_json(name, payload)
+    except Exception:
+        request.app.state._demo_secrets = getattr(request.app.state, "_demo_secrets", {})
+        request.app.state._demo_secrets[name] = payload
+        return name
+
+
+async def _load_connection(request: Request, secret_arn: str) -> DatabaseConnection:
+    demo = getattr(request.app.state, "_demo_secrets", {})
+    if secret_arn in demo:
+        url = demo[secret_arn].get("database_url")
+        if not url:
+            raise ValidationError("Stored secret missing database_url")
+        return _parse_database_url(url)
+
+    try:
+        from app.lambdas.runtime import get_runtime
+
+        runtime = get_runtime()
+        raw = await runtime.secrets.get_json(secret_arn)
+        if isinstance(raw, dict) and raw.get("database_url"):
+            return _parse_database_url(str(raw["database_url"]))
+        if isinstance(raw, dict) and raw.get("host"):
+            ssl_raw = str(raw.get("sslmode") or raw.get("ssl_mode") or "require")
+            try:
+                ssl_mode = SslMode(ssl_raw.replace("_", "-"))
+            except ValueError:
+                ssl_mode = SslMode.REQUIRE
+            return DatabaseConnection(
+                host=str(raw["host"]),
+                port=int(raw.get("port") or 26257),
+                database=str(raw.get("database") or "defaultdb"),
+                username=str(raw.get("username") or "root"),
+                password=str(raw.get("password") or ""),
+                ssl_mode=ssl_mode,
+            )
+        raise ValidationError("Secret must contain database_url or connection fields")
+    except ValidationError:
+        raise
+    except Exception as exc:
+        raise ValidationError(f"Unable to load connection secret: {exc}") from exc

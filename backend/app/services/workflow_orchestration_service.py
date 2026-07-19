@@ -73,11 +73,16 @@ class WorkflowOrchestrationService:
         run_id: uuid.UUID,
         *,
         connection_secret_arn: str,
+        require_prediction_and_approval: bool = True,
     ) -> MigrationRun:
         """Start (or attach to) the Step Functions execution for ``run_id``.
 
         Idempotent: if the run already has an execution ARN, sync and return it.
         Execution name is the run UUID so AWS rejects duplicate starts.
+
+        When ``require_prediction_and_approval`` is True (default), refuses to
+        start unless the run has a prediction and a ``proceed`` approval —
+        preventing SFN from skipping Phase 9.
         """
         secret = connection_secret_arn.strip()
         if not secret:
@@ -91,7 +96,7 @@ class WorkflowOrchestrationService:
                 "RUN_ARTIFACTS_BUCKET is required to start workflows"
             )
 
-        run = await self._repository.get_by_id_or_raise(run_id)
+        run = await self._repository.get_by_id_or_raise(run_id, load_children=True)
         if run.sfn_execution_arn:
             logger.info(
                 "Workflow already started; syncing status",
@@ -106,6 +111,35 @@ class WorkflowOrchestrationService:
             raise ConflictError(
                 f"Cannot start workflow for terminal run status={run.status.value}"
             )
+
+        if require_prediction_and_approval:
+            if run.prediction is None:
+                raise ConflictError(
+                    f"Cannot start workflow for MigrationRun {run_id}: "
+                    "prediction is required (POST /runs/{id}/predict first)"
+                )
+            if run.approval is None:
+                raise ConflictError(
+                    f"Cannot start workflow for MigrationRun {run_id}: "
+                    "human approval is required (POST /runs/{id}/approve)"
+                )
+            from app.database.models import ApprovalDecision
+
+            if run.approval.decision != ApprovalDecision.PROCEED:
+                raise ConflictError(
+                    f"Cannot start workflow: approval decision is "
+                    f"'{run.approval.decision.value}', need 'proceed'"
+                )
+
+        # Persist secret pointer for retries / approve auto-start.
+        if not run.connection_secret_arn:
+            async def _save_secret() -> None:
+                current = await self._repository.get_by_id_or_raise(run_id)
+                current.connection_secret_arn = secret
+                await self._repository.update(current)
+                await self._session.commit()
+
+            await with_txn_retry(_save_secret, on_retry=self._session.rollback)
 
         start_input = WorkflowStartInput(
             run_id=str(run_id),
@@ -133,13 +167,16 @@ class WorkflowOrchestrationService:
                     "Migration run already linked to a different workflow execution"
                 )
             current.sfn_execution_arn = execution.execution_arn
+            current.connection_secret_arn = secret
             current.workflow_status = _to_db_status(execution.status)
             current.workflow_started_at = (
                 _parse_iso(execution.start_date) or datetime.now(tz=UTC)
             )
-            if current.status == MigrationRunStatus.PENDING:
-                current.status = MigrationRunStatus.RUNNING
-            elif current.status == MigrationRunStatus.PREDICTING:
+            if current.status in {
+                MigrationRunStatus.PENDING,
+                MigrationRunStatus.PREDICTING,
+                MigrationRunStatus.AWAITING_APPROVAL,
+            }:
                 current.status = MigrationRunStatus.RUNNING
             updated = await self._repository.update(current)
             await self._session.commit()

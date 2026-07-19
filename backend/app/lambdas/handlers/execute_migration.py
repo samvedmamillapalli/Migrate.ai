@@ -71,6 +71,11 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
             "storage_growth_mb": outcome.storage_growth_mb,
             "rollback_required": outcome.rollback_required,
             "error_message": outcome.error_message,
+            "timed_out": outcome.timed_out,
+            "job_watch": outcome.job_watch or [],
+            "cockroachdb_tools": (
+                "Distributed Vector Indexing + Managed MCP / SQL job watch"
+            ),
         }
 
     try:

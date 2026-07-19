@@ -21,7 +21,17 @@ ALLOWED_STATUS_TRANSITIONS: dict[MigrationRunStatus, frozenset[MigrationRunStatu
     ),
     MigrationRunStatus.PREDICTING: frozenset(
         {
+            MigrationRunStatus.AWAITING_APPROVAL,
+            MigrationRunStatus.FAILED,
+        }
+    ),
+    MigrationRunStatus.AWAITING_APPROVAL: frozenset(
+        {
+            # proceed → shadow execution
             MigrationRunStatus.RUNNING,
+            # accept_recommended → end this run (no AI SQL executed)
+            MigrationRunStatus.COMPLETED,
+            # cancel
             MigrationRunStatus.FAILED,
         }
     ),
@@ -47,16 +57,31 @@ class MigrationRunService:
         self._repository = repository
         self._session = session
 
-    async def create_migration_run(self, migration_sql: str) -> MigrationRun:
+    async def create_migration_run(
+        self,
+        migration_sql: str,
+        *,
+        owner_identity: str = "anonymous",
+        revises_run_id: uuid.UUID | None = None,
+    ) -> MigrationRun:
         normalized_sql = migration_sql.strip()
         if not normalized_sql:
             raise ValidationError("migration_sql must not be empty")
+        identity = (owner_identity or "anonymous").strip() or "anonymous"
+        if len(identity) > 256:
+            raise ValidationError("owner_identity must be at most 256 characters")
+
+        if revises_run_id is not None:
+            # Ensure the referenced run exists (soft link; no cascade).
+            await self._repository.get_by_id_or_raise(revises_run_id)
 
         async def _commit() -> MigrationRun:
             run = MigrationRun(
                 migration_sql=normalized_sql,
                 status=MigrationRunStatus.PENDING,
                 schema_discovery_status=SchemaDiscoveryStatus.PENDING,
+                owner_identity=identity,
+                revises_run_id=revises_run_id,
             )
             created = await self._repository.create(run)
             await self._session.commit()
@@ -70,7 +95,12 @@ class MigrationRunService:
 
         logger.info(
             "Created migration run",
-            extra={"run_id": str(created.id), "status": created.status.value},
+            extra={
+                "run_id": str(created.id),
+                "status": created.status.value,
+                "owner_identity": identity,
+                "revises_run_id": str(revises_run_id) if revises_run_id else None,
+            },
         )
         return created
 

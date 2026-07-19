@@ -1,0 +1,68 @@
+# Phase 10 grading bands and hybrid retrieval weights.
+# Validated at startup — malformed config fails loud (no permissive fallback).
+#
+# Framing: blast radius = backfill duration, storage growth, resource
+# saturation, rollback safety. Never lock duration.
+
+version: 1
+
+# Near-zero actuals: percentage error is undefined below this threshold.
+pct_error_min_actual:
+  duration_seconds: 1.0
+  storage_mb: 1.0
+
+# Acceptable absolute / relative error bands per scale tier.
+# A dimension is within band when abs_error <= max_abs OR
+# (pct_error is defined AND pct_error <= max_pct).
+error_bands:
+  small:
+    duration:
+      max_abs_seconds: 15.0
+      max_pct: 50.0
+    storage:
+      max_abs_mb: 32.0
+      max_pct: 50.0
+  medium:
+    duration:
+      max_abs_seconds: 45.0
+      max_pct: 40.0
+    storage:
+      max_abs_mb: 128.0
+      max_pct: 40.0
+  large:
+    duration:
+      max_abs_seconds: 120.0
+      max_pct: 35.0
+    storage:
+      max_abs_mb: 512.0
+      max_pct: 35.0
+
+# Rollback consistency mapping (predicted vs demonstrated outcome).
+# actual_class: low = clean reversible success; high = failed/irreversible;
+# medium = mixed (e.g. success but rollback_required flagged unexpectedly).
+rollback:
+  consistent_pairs:
+    - [low, low]
+    - [medium, medium]
+    - [medium, low]
+    - [high, high]
+  # medium predicted vs high actual is inconsistent (underestimated risk)
+  # low predicted vs medium/high is inconsistent
+
+# Hybrid retrieval: vector candidates first, then deterministic re-rank.
+retrieval:
+  candidate_pool_size: 20
+  final_limit: 5
+  # Similarity below this (and empty results) trigger weak_retrieval reduction.
+  weak_similarity_threshold: 0.45
+  # Weights for re-ranking score (normalized in code).
+  weights:
+    semantic_similarity: 0.45
+    migration_type_match: 0.20
+    scale_tier_proximity: 0.15
+    schema_shape: 0.10
+    risk_flag_overlap: 0.10
+  # Adjacent tier pairs for proximity scoring (exact=1.0, adjacent=0.5, else=0).
+  adjacent_tiers:
+    - [small, medium]
+    - [medium, large]

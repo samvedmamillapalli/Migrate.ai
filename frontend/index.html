@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Migration Oracle — Debug Console</title>
+  <link rel="stylesheet" href="/ui/styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div>
+      <p class="brand">Migration Oracle</p>
+      <p class="sub">Debug console · inspect migration runs through the closed loop</p>
+    </div>
+    <div class="api-bar">
+      <label>
+        API base
+        <input id="apiBase" type="text" value="" placeholder="http://127.0.0.1:8000" />
+      </label>
+      <label>
+        X-API-Key
+        <input id="apiKey" type="password" value="" placeholder="if DEMO_API_KEY set" autocomplete="off" />
+      </label>
+      <button type="button" id="btnHealth">Probe health</button>
+      <button type="button" id="btnClearLog">Clear log</button>
+    </div>
+  </header>
+
+  <section class="loop-banner">
+    <p class="loop-title">Closed loop (what this product is)</p>
+    <ol class="loop-steps" id="loopSteps">
+      <li data-stage="predict" class="active"><strong>Predict</strong><span>Phase 9 · policy + Bedrock estimate</span></li>
+      <li data-stage="approve"><strong>Approve</strong><span>Phase 9 · human gate → SFN</span></li>
+      <li data-stage="verify"><strong>Verify</strong><span>Phase 7–8 · shadow execution</span></li>
+      <li data-stage="grade"><strong>Grade</strong><span>Phase 10 · predicted vs actual</span></li>
+      <li data-stage="remember"><strong>Remember</strong><span>Phase 10 · vector memory</span></li>
+    </ol>
+    <p class="loop-note">
+      A <strong>migration run</strong> is one attempt to analyze (and later verify) a single SQL migration.
+      This console talks to the same FastAPI control plane the real app uses. It does not invent UI-only state.
+    </p>
+  </section>
+
+  <main class="layout">
+    <aside class="col-left">
+      <section class="panel">
+        <h2>Infrastructure probe</h2>
+        <p class="explain">
+          Maps to Phases 1–2 (API + CockroachDB) and AWS wiring from Phase 8.
+          If this fails, create/predict/approve will fail too — fix health first.
+        </p>
+        <div id="healthBadges" class="badges"></div>
+        <pre id="healthOut" class="out muted">Not probed yet.</pre>
+      </section>
+
+      <section class="panel">
+        <h2>Submit migration SQL</h2>
+        <p class="explain">
+          Maps to Phases 3–5. Creates a <code>MigrationRun</code> row in CockroachDB with status
+          <code>pending</code>. Nothing is predicted or executed yet — this is only “register the attempt.”
+        </p>
+        <textarea id="migrationSql" rows="7" spellcheck="false">CREATE INDEX idx_users_email ON users(email);</textarea>
+        <div class="row">
+          <button type="button" id="btnCreate" class="primary">Create run</button>
+          <button type="button" id="btnRefresh">Refresh runs</button>
+        </div>
+      </section>
+
+      <section class="panel grow">
+        <h2>Migration runs</h2>
+        <p class="explain">
+          Each card is one persisted <code>MigrationRun</code>. Status is the lifecycle position
+          (<code>pending → predicting → awaiting_approval → running → completed/failed</code>.
+          Click a run to inspect policy, prediction, recommendation, and explainability.
+        </p>
+        <div id="runList" class="run-list"></div>
+      </section>
+    </aside>
+
+    <section class="col-right">
+      <section class="panel">
+        <h2>Session debug log</h2>
+        <p class="explain">
+          Chronological record of API calls from this browser session: when they ran, PASS/FAIL,
+          HTTP status, duration, and error detail. Use this like a debugger output panel.
+        </p>
+        <div class="log-stats" id="logStats">
+          <span data-k="total">0 events</span>
+          <span data-k="pass" class="pass">0 pass</span>
+          <span data-k="fail" class="fail">0 fail</span>
+        </div>
+        <div id="eventLog" class="event-log"></div>
+      </section>
+
+      <section class="panel" id="inspector">
+        <h2>Run inspector</h2>
+        <p class="explain">
+          Deep view of the selected run. Phase 9 fills policy + prediction +
+          recommendation + explainability. Phase 10 fills grade + stored memory;
+          retrieval attribution appears under Explainability when memories are used.
+        </p>
+        <div id="selectedMeta" class="meta">No run selected</div>
+        <div id="stageStrip" class="stage-strip"></div>
+
+        <div class="actions" id="runActions" hidden>
+          <h3>Closed-loop actions</h3>
+          <p class="explain">
+            <strong>Run prediction</strong> → <code>POST /predict</code>.
+            <strong>Approve proceed</strong> starts Step Functions when configured
+            (<code>connection_secret_arn</code> from discover / approve body).
+          </p>
+          <div class="row">
+            <button type="button" id="btnPredict" class="primary">Run prediction</button>
+            <button type="button" id="btnGrade">Refresh grade/memory</button>
+          </div>
+          <p class="explain">
+            Proceed → <code>running</code> (+ workflow). Accept recommended →
+            <code>completed</code> (no AI SQL executed). Cancel → <code>failed</code>.
+          </p>
+          <div class="approve-box">
+            <label>
+              Approver identity
+              <input id="approver" type="text" value="smoke-tester" />
+            </label>
+            <label>
+              Connection secret ARN (optional)
+              <input id="connectionSecret" type="text" placeholder="from POST /discover or Secrets Manager" />
+            </label>
+            <label>
+              Override rationale
+              <input id="overrideRationale" type="text" placeholder="Required if proceeding against policy=block" />
+            </label>
+            <div class="row">
+              <button type="button" id="btnProceed">Proceed (→ running / SFN)</button>
+              <button type="button" id="btnAccept">Accept recommended (→ completed)</button>
+              <button type="button" id="btnCancel">Cancel (→ failed)</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="inspect-grid">
+          <article class="inspect-card">
+            <h3>Policy (deterministic)</h3>
+            <p class="tiny">Safety layer before the model. Authoritative over Bedrock.</p>
+            <pre id="policyOut" class="out muted">—</pre>
+          </article>
+          <article class="inspect-card">
+            <h3>Prediction (Bedrock #1)</h3>
+            <p class="tiny">Shadow-run estimates: seconds, MB, rollback risk, hybrid confidence.</p>
+            <pre id="predictionOut" class="out muted">—</pre>
+          </article>
+          <article class="inspect-card">
+            <h3>Recommendation (Bedrock #2)</h3>
+            <p class="tiny">Separate call: strategy, steps, monitoring, safer alternative (prose only).</p>
+            <pre id="recommendationOut" class="out muted">—</pre>
+          </article>
+          <article class="inspect-card">
+            <h3>Explainability + retrieval attribution</h3>
+            <p class="tiny">Confidence adjustments; memory ranks / factors when hybrid retrieval hits.</p>
+            <pre id="explainOut" class="out muted">—</pre>
+          </article>
+          <article class="inspect-card">
+            <h3>Grade · Phase 10</h3>
+            <p class="tiny">Predicted vs actual bands, scalar accuracy, surprise / lessons.</p>
+            <pre id="gradeOut" class="out muted">No grade yet — complete shadow verify or POST /grade.</pre>
+          </article>
+          <article class="inspect-card">
+            <h3>Memory · Phase 10</h3>
+            <p class="tiny">Stored agentic memory for this run (vector index when embedding ready).</p>
+            <pre id="memoryOut" class="out muted">No memory row yet.</pre>
+          </article>
+        </div>
+
+        <h3>Raw run JSON</h3>
+        <pre id="detailOut" class="out muted">Select a run.</pre>
+      </section>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>Closed loop: predict → approve → verify → grade → remember · CRDB Vector Index + job-watch / MCP</span>
+    <span>Blast radius = backfill duration, storage growth, resource saturation, rollback safety</span>
+  </footer>
+
+  <script src="/ui/app.js"></script>
+</body>
+</html>

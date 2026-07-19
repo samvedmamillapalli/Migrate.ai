@@ -45,6 +45,13 @@ class ExecutionResult(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         default=False,
         server_default=text("false"),
     )
+    # Timeout is graded as signal (duration unverifiable), not discarded.
+    timed_out: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
 
     migration_run: Mapped[MigrationRun] = relationship(
         "MigrationRun",

@@ -17,13 +17,13 @@ Migration SQL (user submitted)
         v
 Deterministic Risk and Policy Layer   <- Phase 9, code only, no model
         v
-Memory retrieval                       <- Phase 9 builds the interface, Phase 10 fills it
+Memory retrieval                      <- Phase 9 builds the interface, Phase 10 fills it
         v
-AI Prediction (Bedrock call #1)        <- Phase 9
+AI Prediction (Bedrock call #1)       <- Phase 9
         v
 Recommendation Generation (Bedrock call #2)  <- Phase 9
         v
-Human approval gate                    <- Phase 9
+Human approval gate                   <- Phase 9
         v
 Shadow execution (Phase 7 / Phase 8)
 ```

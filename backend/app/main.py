@@ -8,8 +8,10 @@ if sys.platform == "win32":
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.errors import register_exception_handlers
+from app.api.middleware import DemoApiKeyMiddleware
 from app.api.routes.health import router as health_router
 from app.api.routes.runs import router as runs_router
 from app.aws import (
@@ -18,11 +20,14 @@ from app.aws import (
     get_aws_settings,
     validate_aws_startup,
 )
-from app.config import get_settings
+from app.config import PROJECT_ROOT, get_settings
 from app.core.logging import get_logger, setup_logging
 from app.database import DatabaseSessionManager
+from app.prediction.bedrock_client import MockBedrockClient
 
 logger = get_logger(__name__)
+
+FRONTEND_DIR = PROJECT_ROOT / "frontend"
 
 
 @asynccontextmanager
@@ -33,6 +38,18 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.database = database
     app.state.aws_settings = aws_settings
     app.state.aws_clients = None
+    app.state.bedrock_client = None
+
+    # Development convenience: injectable mock Bedrock so Phase 9 can be
+    # exercised from the smoke UI without live model access.
+    if (
+        settings.environment.strip().lower() in {"development", "dev", "local", "test"}
+        and not aws_settings.bedrock_prediction_model_id
+    ):
+        app.state.bedrock_client = MockBedrockClient()
+        logger.info(
+            "Using MockBedrockClient (no BEDROCK_PREDICTION_MODEL_ID in development)"
+        )
 
     if aws_settings.aws_enabled:
         try:
@@ -66,6 +83,29 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         environment=settings.environment,
     )
 
+    # Phase 9: load and validate the committed policy YAML at startup.
+    # Malformed policy must fail loudly — no permissive fallback.
+    from app.policy import get_policy_file
+    from app.grading import get_grading_file
+
+    policy = get_policy_file()
+    grading = get_grading_file()
+    logger.info(
+        "Loaded migration policy",
+        extra={
+            "policy_version": policy.version,
+            "policy_rule_count": len(policy.rules),
+        },
+    )
+    logger.info(
+        "Loaded grading config",
+        extra={
+            "grading_version": grading.version,
+            "retrieval_final_limit": grading.retrieval.final_limit,
+            "candidate_pool_size": grading.retrieval.candidate_pool_size,
+        },
+    )
+
     try:
         yield
     finally:
@@ -93,6 +133,8 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+    # Outer-most after CORS: gate mutating API when DEMO_API_KEY is set.
+    app.add_middleware(DemoApiKeyMiddleware)
 
     @app.get("/")
     def root() -> dict[str, str]:
@@ -101,6 +143,13 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     app.include_router(health_router)
     app.include_router(runs_router)
+
+    if FRONTEND_DIR.is_dir():
+        app.mount(
+            "/ui",
+            StaticFiles(directory=str(FRONTEND_DIR), html=True),
+            name="smoke-ui",
+        )
 
     return app
 
