@@ -15,6 +15,7 @@ from app.prediction.confidence import adjust_confidence
 from app.prediction.memory import MemoryRetrievalResult
 from app.prediction.models import AdjustedPrediction, ModelPredictionOutput
 from app.prediction.prompts import PREDICTION_PROMPT_VERSION, load_prompt
+from app.prediction.trace import build_trace, timed_generate
 from app.schema_analysis.models import DatabaseMetadata
 from app.shadow.models import ScaleTier
 
@@ -51,6 +52,7 @@ class PredictionEngine:
         self._model_id = model_id
         self._prompt_version = prompt_version
         self._system_prompt = load_prompt(prompt_version)
+        self.last_trace: dict[str, Any] | None = None
 
     @property
     def model_version_label(self) -> str:
@@ -73,15 +75,28 @@ class PredictionEngine:
             scale_tier=scale_tier,
         )
 
-        raw_text = self._client.generate_json(
+        raw_text, latency_ms, inp, out = timed_generate(
+            self._client,
             system_prompt=self._system_prompt,
             user_prompt=user_prompt,
             model_id=self._model_id,
         )
+        attempts: list[dict[str, Any]] = [
+            {
+                "raw_response": raw_text,
+                "parsed": None,
+                "validation_error": None,
+                "latency_ms": latency_ms,
+                "input_tokens": inp,
+                "output_tokens": out,
+            }
+        ]
         parsed, repair_retried = self._parse_with_optional_repair(
             raw_text=raw_text,
             user_prompt=user_prompt,
+            attempts=attempts,
         )
+        attempts[0]["parsed"] = parsed.model_dump(mode="json")
 
         snapshot_rows = _total_estimated_rows(snapshot)
         adjusted_score, adjustments = adjust_confidence(
@@ -102,7 +117,7 @@ class PredictionEngine:
             if note not in uncertainty:
                 uncertainty.append(note)
 
-        return AdjustedPrediction(
+        result = AdjustedPrediction(
             estimated_duration_seconds=parsed.estimated_duration_seconds,
             estimated_storage_mb=parsed.estimated_storage_mb,
             rollback_risk=parsed.rollback_risk,
@@ -116,17 +131,30 @@ class PredictionEngine:
             prompt_template_version=self._prompt_version,
             repair_retried=repair_retried,
         )
+        self.last_trace = build_trace(
+            kind="prediction",
+            model_id=self._model_id,
+            prompt_template_version=self._prompt_version,
+            system_prompt=self._system_prompt,
+            user_prompt=user_prompt,
+            attempts=attempts,
+            repair_retried=repair_retried,
+            final_parsed=parsed.model_dump(mode="json"),
+        )
+        return result
 
     def _parse_with_optional_repair(
         self,
         *,
         raw_text: str,
         user_prompt: str,
+        attempts: list[dict[str, Any]],
     ) -> tuple[ModelPredictionOutput, bool]:
         global _REPAIR_RETRY_COUNT
         try:
             return self._validate_text(raw_text), False
         except (ValueError, ValidationError) as first_error:
+            attempts[0]["validation_error"] = str(first_error)
             logger.warning(
                 "Prediction output failed validation; attempting one repair retry",
                 extra={"error": str(first_error)},
@@ -144,14 +172,28 @@ class PredictionEngine:
                 f"Your previous response failed validation:\n{first_error}\n\n"
                 "Return ONLY a corrected JSON object matching the required schema."
             )
-            repaired_text = self._client.generate_json(
+            repaired_text, latency_ms, inp, out = timed_generate(
+                self._client,
                 system_prompt=self._system_prompt,
                 user_prompt=repair_prompt,
                 model_id=self._model_id,
             )
+            repair_attempt: dict[str, Any] = {
+                "raw_response": repaired_text,
+                "parsed": None,
+                "validation_error": None,
+                "latency_ms": latency_ms,
+                "input_tokens": inp,
+                "output_tokens": out,
+                "repair": True,
+            }
+            attempts.append(repair_attempt)
             try:
-                return self._validate_text(repaired_text), True
+                parsed = self._validate_text(repaired_text)
+                repair_attempt["parsed"] = parsed.model_dump(mode="json")
+                return parsed, True
             except (ValueError, ValidationError) as second_error:
+                repair_attempt["validation_error"] = str(second_error)
                 raise PredictionValidationError(
                     "Prediction model output failed validation twice. "
                     f"First error: {first_error}. Second error: {second_error}. "

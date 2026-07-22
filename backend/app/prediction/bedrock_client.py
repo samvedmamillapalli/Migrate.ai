@@ -125,6 +125,7 @@ class AwsBedrockClient(BedrockClient):
         boto3_client: Any | None = None,
     ) -> None:
         self._settings = settings
+        self.last_usage: dict[str, Any] | None = None
         if not settings.bedrock_prediction_model_id:
             raise AwsConfigurationError(
                 "BEDROCK_PREDICTION_MODEL_ID is not set. Add the Bedrock model "
@@ -199,6 +200,13 @@ class AwsBedrockClient(BedrockClient):
                 text = _extract_converse_text(response)
                 if not text.strip():
                     raise BedrockInvocationError("Bedrock returned an empty response")
+                usage = response.get("usage") or {}
+                self.last_usage = {
+                    "inputTokens": usage.get("inputTokens"),
+                    "outputTokens": usage.get("outputTokens"),
+                    "totalTokens": usage.get("totalTokens"),
+                    "model_id": mid,
+                }
                 return text
             except ClientError as exc:
                 last_error = exc
@@ -289,6 +297,12 @@ class MockBedrockClient(BedrockClient):
         self._always_malformed = always_malformed
         self._call_count = 0
         self.calls: list[dict[str, str]] = []
+        self.last_usage: dict[str, Any] = {
+            "inputTokens": 100,
+            "outputTokens": 50,
+            "totalTokens": 150,
+            "model_id": "mock",
+        }
 
     def generate_json(
         self,
@@ -298,6 +312,12 @@ class MockBedrockClient(BedrockClient):
         model_id: str | None = None,
     ) -> str:
         self._call_count += 1
+        self.last_usage = {
+            "inputTokens": 100,
+            "outputTokens": 50,
+            "totalTokens": 150,
+            "model_id": model_id or "mock",
+        }
         self.calls.append(
             {
                 "system_prompt": system_prompt,

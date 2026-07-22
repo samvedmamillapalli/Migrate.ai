@@ -114,6 +114,8 @@ class ExplainabilityBundle(BaseModel):
     recommendation: dict[str, Any] | None
     memory: dict[str, Any]
     confidence: dict[str, Any]
+    # Phase 11: durable Bedrock I/O traces (prompt, raw, parsed, latency, tokens).
+    bedrock_traces: dict[str, Any] | None = None
     framing_note: Literal[
         "Blast radius means backfill duration, storage growth, "
         "resource saturation, and rollback safety."

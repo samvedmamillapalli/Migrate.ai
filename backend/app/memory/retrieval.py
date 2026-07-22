@@ -280,6 +280,8 @@ class HybridMemoryRetrieval(MemoryRetrieval):
                 "truncated_candidates": truncated,
             },
             weak_similarity_threshold=threshold,
+            retrieval_attempted=True,
+            retrieval_mode="hybrid",
         )
         weak = result.is_empty or all(
             m.similarity_score < threshold for m in result.memories

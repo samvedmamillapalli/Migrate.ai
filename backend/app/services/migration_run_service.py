@@ -4,10 +4,13 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from datetime import datetime, timezone
+
 from app.core.exceptions import ConflictError, ValidationError
 from app.core.logging import get_logger
 from app.database.models import MigrationRun, MigrationRunStatus, SchemaDiscoveryStatus
 from app.database.retry import with_txn_retry
+from app.debug.fake_migration import build_fake_schema_snapshot, pick_fake_migration
 from app.repositories.migration_run_repository import MigrationRunRepository
 
 logger = get_logger(__name__)
@@ -100,6 +103,47 @@ class MigrationRunService:
                 "status": created.status.value,
                 "owner_identity": identity,
                 "revises_run_id": str(revises_run_id) if revises_run_id else None,
+            },
+        )
+        return created
+
+    async def create_debug_fake_migration(
+        self,
+        *,
+        owner_identity: str = "debug",
+    ) -> MigrationRun:
+        """Create a pending run with random SQL + synthetic schema (debug only).
+
+        Does not write grades or memories. Schema is clearly marked debug_synthetic.
+        """
+        picked = pick_fake_migration()
+        snapshot = build_fake_schema_snapshot()
+        identity = (owner_identity or "debug").strip() or "debug"
+
+        async def _commit() -> MigrationRun:
+            run = MigrationRun(
+                migration_sql=picked["migration_sql"],
+                status=MigrationRunStatus.PENDING,
+                owner_identity=identity,
+                schema_snapshot=snapshot,
+                schema_discovery_status=SchemaDiscoveryStatus.SUCCEEDED,
+                schema_discovered_at=datetime.now(timezone.utc),
+                schema_discovery_duration_ms=0.0,
+                schema_database_engine="cockroachdb",
+                schema_database_version="debug-synthetic",
+            )
+            created = await self._repository.create(run)
+            await self._session.commit()
+            await self._session.refresh(created)
+            return created
+
+        created = await with_txn_retry(_commit, on_retry=self._session.rollback)
+        logger.info(
+            "Created debug fake migration run",
+            extra={
+                "run_id": str(created.id),
+                "kind": picked["kind"],
+                "debug": True,
             },
         )
         return created

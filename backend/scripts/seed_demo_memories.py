@@ -1,7 +1,14 @@
 #!/usr/bin/env python3
-"""Seed a handful of graded memories so hybrid retrieval is non-empty in demos.
+"""OFFLINE-ONLY helper: seed graded memories for retrieval plumbing tests.
 
-Creates synthetic completed runs with grades + memories (no live shadow).
+WARNING (Phase 10 / Phase 11): This creates *synthetic* completed runs without a
+real shadow verify. Do NOT use these rows for the hackathon demo accuracy curve
+or as evidence of learning. Prefer real closed-loop graded runs.
+
+Phase 10 fix: owner_identity must be CORPUS_OWNER_IDENTITY
+(__migration_oracle_corpus__), not the legacy string "demo-corpus", or hybrid
+retrieval will never treat the rows as shared corpus.
+
 Embeddings stay pending until POST /runs/memories/repair-embeddings (or live Titan).
 """
 
@@ -18,7 +25,9 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-OWNER = "demo-corpus"
+from app.memory.constants import CORPUS_OWNER_IDENTITY  # noqa: E402
+
+OWNER = CORPUS_OWNER_IDENTITY
 SEED_SQL = [
     ("CREATE INDEX idx_users_email ON users (email);", "small"),
     ("CREATE INDEX idx_orders_created_at ON orders (created_at);", "medium"),

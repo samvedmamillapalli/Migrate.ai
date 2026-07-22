@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     cors_origins_value: str = Field(
-        default="http://localhost:3000",
+        default="http://localhost:3000,http://127.0.0.1:3000",
         validation_alias="CORS_ORIGINS",
         exclude=True,
     )

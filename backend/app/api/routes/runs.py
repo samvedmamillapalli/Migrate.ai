@@ -30,6 +30,10 @@ from app.schemas.migration_run import (
     MigrationRunStatusUpdateRequest,
     MigrationRunSummaryResponse,
 )
+from app.schemas.observability import (
+    ExecutionResultResponse,
+    ShadowClusterResponse,
+)
 from app.schemas.workflow import DiscoverSchemaRequest, StartWorkflowRequest
 from app.schema_analysis.database_connection import DatabaseConnection, SslMode
 from app.services.closed_loop_service import ClosedLoopRequest
@@ -81,6 +85,23 @@ async def get_accuracy_metrics(
 ) -> dict[str, Any]:
     """Plain SQL accuracy / learning metrics (Phase 11 chart source)."""
     return await fetch_accuracy_metrics(session)
+
+
+@router.post(
+    "/debug/fake-migration",
+    response_model=MigrationRunResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_debug_fake_migration(
+    service: MigrationRunSvc,
+    owner_identity: str = Query(default="debug", min_length=1, max_length=256),
+) -> MigrationRunResponse:
+    """Debug helper: random SQL + synthetic schema so predict works without a real DB.
+
+    Does not create graded memories. Not for the hackathon accuracy curve.
+    """
+    run = await service.create_debug_fake_migration(owner_identity=owner_identity)
+    return MigrationRunResponse.model_validate(run)
 
 
 @router.get("/{run_id}", response_model=MigrationRunResponse)
@@ -262,6 +283,50 @@ async def get_memory(
     if run.memory is None:
         raise NotFoundError(f"No memory recorded for MigrationRun {run_id}")
     return MemoryResponse.from_orm_memory(run.memory)
+
+
+@router.get("/{run_id}/shadow-cluster", response_model=ShadowClusterResponse)
+async def get_shadow_cluster(
+    run_id: uuid.UUID,
+    service: MigrationRunSvc,
+) -> ShadowClusterResponse:
+    """Read-only shadow cluster lifecycle row (Phase 7 data; Phase 11 exposure)."""
+    run = await service.get_migration_run(run_id, load_children=True)
+    if run.shadow_cluster is None:
+        raise NotFoundError(f"No shadow cluster recorded for MigrationRun {run_id}")
+    return ShadowClusterResponse.from_orm(run.shadow_cluster)
+
+
+@router.get("/{run_id}/execution-result", response_model=ExecutionResultResponse)
+async def get_execution_result(
+    run_id: uuid.UUID,
+    service: MigrationRunSvc,
+) -> ExecutionResultResponse:
+    """Read-only shadow execution actuals (Phase 8 data; Phase 11 exposure)."""
+    run = await service.get_migration_run(run_id, load_children=True)
+    if run.execution_result is None:
+        raise NotFoundError(f"No execution result recorded for MigrationRun {run_id}")
+    return ExecutionResultResponse.model_validate(run.execution_result)
+
+
+@router.get("/{run_id}/model-traces")
+async def get_model_traces(
+    run_id: uuid.UUID,
+    service: MigrationRunSvc,
+) -> dict[str, Any]:
+    """Durable Bedrock traces from explainability (prediction + recommendation)."""
+    run = await service.get_migration_run(run_id, load_children=True)
+    explain = run.explainability or {}
+    traces = explain.get("bedrock_traces")
+    if not traces:
+        raise NotFoundError(
+            f"No Bedrock model traces recorded for MigrationRun {run_id}. "
+            "Traces are stored on predict for runs created after Phase 11."
+        )
+    return {
+        "migration_run_id": str(run_id),
+        "traces": traces,
+    }
 
 
 @router.post(

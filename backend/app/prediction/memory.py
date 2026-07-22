@@ -42,6 +42,9 @@ class MemoryRetrievalResult(BaseModel):
     # so the Phase 9 stub stays simple; hybrid retrieval fills this in.
     attribution: dict[str, Any] | None = None
     weak_similarity_threshold: float = 0.5
+    # Phase 11: distinguish empty retrieval from never-attempted.
+    retrieval_attempted: bool = True
+    retrieval_mode: str = "hybrid"  # hybrid | stub | skipped
 
     @property
     def is_empty(self) -> bool:
@@ -55,11 +58,18 @@ class MemoryRetrievalResult(BaseModel):
             m.similarity_score < self.weak_similarity_threshold for m in self.memories
         )
         base: dict[str, Any] = {
+            "retrieval_attempted": self.retrieval_attempted,
+            "retrieval_mode": self.retrieval_mode,
             "retrieved_count": len(self.memories),
             "memories": [m.model_dump(mode="json") for m in self.memories],
             "query_summary": self.query_summary,
-            "weak_retrieval": weak,
+            "weak_retrieval": weak if self.retrieval_attempted else None,
             "weak_similarity_threshold": self.weak_similarity_threshold,
+            "empty_vs_never_attempted": (
+                "never_attempted"
+                if not self.retrieval_attempted
+                else ("empty" if self.is_empty else "hits")
+            ),
         }
         if self.attribution:
             base["attribution"] = self.attribution
@@ -99,6 +109,8 @@ class StubMemoryRetrieval(MemoryRetrieval):
                 f"types={statement_types})"
             ),
             weak_similarity_threshold=0.5,
+            retrieval_attempted=True,
+            retrieval_mode="stub",
         )
         logger.info(
             "Memory retrieval attempt",
@@ -110,6 +122,7 @@ class StubMemoryRetrieval(MemoryRetrieval):
                 "limit": limit,
                 "stub": True,
                 "empty": True,
+                "retrieval_mode": "stub",
             },
         )
         return result

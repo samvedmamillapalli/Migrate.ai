@@ -140,6 +140,7 @@ class PredictionPipelineService:
             )
 
             recommendation: RecommendationOutput | None = None
+            recommender: RecommendationEngine | None = None
             # Skip recommendation only when policy blocks AND user already cancelled.
             # In all other cases (including block awaiting decision), recommend.
             if not (
@@ -165,6 +166,10 @@ class PredictionPipelineService:
                 recommendation=recommendation,
                 memories=memories,
                 scale_tier=tier,
+                prediction_trace=predictor.last_trace,
+                recommendation_trace=(
+                    recommender.last_trace if recommender is not None else None
+                ),
             )
 
             persisted = await self._persist_success(
@@ -308,8 +313,15 @@ class PredictionPipelineService:
         recommendation: RecommendationOutput | None,
         memories: MemoryRetrievalResult,
         scale_tier: ScaleTier | str,
+        prediction_trace: dict[str, Any] | None = None,
+        recommendation_trace: dict[str, Any] | None = None,
     ) -> ExplainabilityBundle:
         tier = scale_tier.value if isinstance(scale_tier, ScaleTier) else str(scale_tier)
+        traces: dict[str, Any] = {}
+        if prediction_trace:
+            traces["prediction"] = prediction_trace
+        if recommendation_trace:
+            traces["recommendation"] = recommendation_trace
         return ExplainabilityBundle(
             policy={
                 **policy.to_persistable(),
@@ -349,4 +361,5 @@ class PredictionPipelineService:
                     for a in prediction.confidence_adjustments
                 ],
             },
+            bedrock_traces=traces or None,
         )

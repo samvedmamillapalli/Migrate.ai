@@ -504,6 +504,7 @@ async def main(*, skip_lambda_chain: bool) -> int:
             # create fresh run to exercise the full valid transition path
             run = await svc.create_migration_run(MIGRATION_SQL)
             await svc.update_status(run.id, MigrationRunStatus.PREDICTING)
+            await svc.update_status(run.id, MigrationRunStatus.AWAITING_APPROVAL)
             await svc.update_status(run.id, MigrationRunStatus.RUNNING)
             await svc.update_status(run.id, MigrationRunStatus.COMPLETED)
             # invalid: completed is terminal

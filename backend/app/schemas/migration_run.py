@@ -114,6 +114,20 @@ class MigrationRunSummaryResponse(BaseModel):
     def has_schema_snapshot(self) -> bool:
         return self.schema_discovery_status == SchemaDiscoveryStatus.SUCCEEDED
 
+    @computed_field
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in {
+            MigrationRunStatus.COMPLETED,
+            MigrationRunStatus.FAILED,
+        }
+
+    @computed_field
+    @property
+    def sql_snippet(self) -> str:
+        one = " ".join((self.migration_sql or "").split())
+        return one if len(one) <= 96 else f"{one[:93]}..."
+
 
 class MigrationRunListResponse(BaseModel):
     items: list[MigrationRunSummaryResponse]

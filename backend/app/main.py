@@ -13,6 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from app.api.errors import register_exception_handlers
 from app.api.middleware import DemoApiKeyMiddleware
 from app.api.routes.health import router as health_router
+from app.api.routes.memories import router as memories_router
 from app.api.routes.runs import router as runs_router
 from app.aws import (
     AwsClientFactory,
@@ -143,6 +144,7 @@ def create_app() -> FastAPI:
     register_exception_handlers(app)
     app.include_router(health_router)
     app.include_router(runs_router)
+    app.include_router(memories_router)
 
     if FRONTEND_DIR.is_dir():
         app.mount(

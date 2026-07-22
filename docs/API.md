@@ -468,6 +468,65 @@ Returns scalar accuracy trend, confidence calibration, recommendation
 acceptance/success rates (with denominators), memory corpus counts,
 high-risk flag precision/recall, and retrieval-usefulness vs accuracy correlation.
 
+### Shadow cluster (read-only)
+
+- **Endpoint:** `/runs/{run_id}/shadow-cluster`
+- **Method:** `GET`
+
+Returns the Phase 7 shadow cluster lifecycle row (status, stage_timings,
+error_message, destroyed_at). `404` if provision never created a row.
+
+### Execution result (read-only)
+
+- **Endpoint:** `/runs/{run_id}/execution-result`
+- **Method:** `GET`
+
+Returns measured shadow actuals (`actual_duration_seconds`, `actual_storage_mb`,
+`success`, `timed_out`, `error_message`). `404` if verify never persisted.
+
+### Model traces (Bedrock I/O)
+
+- **Endpoint:** `/runs/{run_id}/model-traces`
+- **Method:** `GET`
+
+Returns durable prediction/recommendation traces from
+`explainability.bedrock_traces` (system/user prompts, raw responses, parsed
+JSON, latency, token counts when available, repair attempts). `404` if the run
+was predicted before Phase 11 tracing.
+
+## Memories / corpus browser
+
+### Corpus health
+
+- **Endpoint:** `/memories/health`
+- **Method:** `GET`
+
+Structured health: totals, counts by owner and embedding status, missing
+embeddings / scale_tier / migration_type, legacy `demo-corpus` count, reserved
+corpus ready count, and a loud `problems` list. Also available via:
+
+```bash
+cd backend && python scripts/corpus_health.py
+```
+
+### List memories
+
+- **Endpoint:** `/memories`
+- **Method:** `GET`
+
+Query params: `owner_identity` (use `__migration_oracle_corpus__` for the
+shared corpus), `embedding_status`, `limit`, `offset`. Each item includes
+verbatim `embed_text`. Response embeds the same health summary.
+
+### Reserved corpus identity
+
+- **Endpoint:** `/memories/corpus-identity`
+- **Method:** `GET`
+
+```json
+{ "corpus_owner_identity": "__migration_oracle_corpus__" }
+```
+
 ### Closed-loop shortcut
 
 - **Endpoint:** `/runs/{run_id}/closed-loop`

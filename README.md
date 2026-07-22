@@ -10,7 +10,7 @@ Built for the [CockroachDB × AWS Hackathon](https://cockroachdb-ai.devpost.com/
 | --- | --- |
 | API | FastAPI (Python) |
 | Control-plane DB | CockroachDB Cloud |
-| UI | Static debug console at `/ui` (no Next.js) |
+| UI | Operator console at `/ui` (static; same-origin with API) |
 | AI | Amazon Bedrock (Claude predict/recommend, Titan embeddings) |
 | Orchestration | AWS Lambda + Step Functions + S3 + Secrets Manager + CloudWatch |
 | Shadow verify | CockroachDB Cloud clusters (`SHADOW_PROVIDER=ccloud_api` by default) |
@@ -56,7 +56,66 @@ alembic upgrade head
 uvicorn app.main:app --reload --app-dir .
 ```
 
-Open `http://127.0.0.1:8000/ui` and `http://127.0.0.1:8000/docs`.
+Open `http://127.0.0.1:8000/ui` (operator console) and `http://127.0.0.1:8000/docs`.
+
+## Fresh Clone Dev Setup (requirements.txt path)
+
+Use this if you want a simple `requirements.txt` installation flow.
+
+```bash
+cp .env.example .env
+# paste your working .env values (DATABASE_URL + AWS + Bedrock + CCloud values)
+
+cd backend
+python -m venv .venv
+# Windows:
+# .\.venv\Scripts\activate
+# macOS/Linux:
+# source .venv/bin/activate
+
+pip install -r requirements.txt
+alembic upgrade head
+uvicorn app.main:app --reload --app-dir .
+```
+
+With valid `.env` values and cloud access, this is enough to run the app locally and develop against real services.
+
+## See All Steps Working (Dev Verification)
+
+From `backend/`:
+
+```bash
+# API + service correctness
+pytest -q
+python scripts/verify_api.py
+python scripts/verify_phase6_schema_analysis.py
+python scripts/verify_phase9_ai_prediction.py
+python scripts/verify_phase10_grading_memory.py
+
+# Full HTTP operator path (debug fake migration -> predict -> approve -> verify -> grade -> memory)
+python scripts/verify_e2e_http.py
+```
+
+For durable AWS execution-plane checks (Step Functions/Lambda/S3/Secrets/CloudWatch):
+
+```bash
+python scripts/verify_phase8_full.py --skip-lambda-chain
+```
+
+For a real browser walk-through:
+
+1. Open `http://127.0.0.1:8000/ui`
+2. Click **Make a fake migration**
+3. Click **Read schema & predict**
+4. Click **Run shadow test**
+5. Inspect results via `/runs/{id}`, `/runs/{id}/grade`, and `/runs/{id}/memory` in `http://127.0.0.1:8000/docs`
+
+Corpus health from the terminal (no browser):
+
+```bash
+cd backend
+python scripts/corpus_health.py
+```
 
 ### Demo API gate
 
