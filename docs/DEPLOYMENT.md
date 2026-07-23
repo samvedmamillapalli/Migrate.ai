@@ -1,5 +1,11 @@
 # Deploying the Migration Oracle execution plane (us-east-1)
 
+> **Teammates:** you usually **skip this file**. The shared stack
+> `migration-oracle` is already up. Put the team's filled `.env` at the repo
+> root, then run:
+> `python scripts/dev.py setup` and `python scripts/dev.py restart`.
+> Only re-deploy here when Lambda / ASL / stack params change.
+
 One-command repeatable deploy for: **S3 artifacts bucket**, **seven workflow
 Lambdas** (ZIP packages using `SHADOW_PROVIDER=ccloud_api`), **EventBridge orphan
 sweeper**, and the **Step Functions** state machine whose ASL is
@@ -16,6 +22,8 @@ Region is **us-east-1** everywhere (Bedrock + shadow cluster defaults).
 ## Prerequisites
 
 1. AWS CLI v2 configured for an account that can create IAM, Lambda, SFN, S3, EventBridge (region `us-east-1`).
+   - Runtime user `migration-oracle-backend` cannot deploy alone — it needs `iam:CreateRole` (attach `infra/sam/iam/deployer-policy.json` as admin, or use an admin principal).
+   - Prefer `.\deploy.ps1` on Windows: it survives missing `DescribeStackEvents` and writes stack outputs into `.env`.
 2. [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) installed and on `PATH`.
 
    **Windows (winget):**
@@ -42,11 +50,15 @@ Region is **us-east-1** everywhere (Bedrock + shadow cluster defaults).
    - Confirm: `docker info` (should not say “cannot connect to the docker API”).
    - If `~/.docker/config.json` is invalid JSON, Docker will fail even when open — fix/remove trailing commas.
 
-   Temporary native build (no Docker):
+   Windows native build (no Docker) — preferred on this repo:
 
    ```powershell
-   sam build --use-container=false
+   winget install -e --id ezwinports.make   # once
+   cd infra\sam
+   .\build.ps1
    ```
+
+   (`build.ps1` uses a thin `lambda_src/` CodeUri so SAM does not copy all of `backend/`.)
 4. CockroachDB Cloud control-plane `DATABASE_URL` (same DB Alembic migrated).
 5. CockroachDB Cloud **service account secret** for `ccloud_api` (`CCLOUD_API_SECRET`).
 6. Bedrock model access in **us-east-1** for:
@@ -72,7 +84,9 @@ From the repo root (PowerShell or bash):
 ```bash
 cd infra/sam
 
-sam build
+# Windows: .\build.ps1
+# Linux/macOS (Docker): sam build --use-container
+sam build --no-use-container
 
 sam deploy \
   --stack-name migration-oracle \

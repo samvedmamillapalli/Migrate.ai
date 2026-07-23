@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Any
 
 from app.core.logging import get_logger
@@ -77,10 +78,15 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
 
         connection_url = await runtime.secrets.get_string(str(shadow_secret_arn))
         loader = ShadowSchemaLoader()
+        t0 = perf_counter()
         report = await loader.load(
             connection_url,
             metadata,
             statement_timeout_ms=int(settings.shadow_seed_timeout_seconds * 1000),
+        )
+        await shadow_service.merge_timings(
+            shadow.id,
+            seed_ms=round((perf_counter() - t0) * 1000.0, 1),
         )
         return {
             "run_id": str(run_id),

@@ -229,10 +229,10 @@ class ShadowSeeder:
 
     @staticmethod
     def _safe_index_name(table: TableMetadata, index: IndexMetadata) -> str:
-        # Index names are unique per-table in CockroachDB; keep the original but
-        # ensure it is scoped so recreation across tables never collides.
-        raw = index.name or "_".join(index.columns)
-        return f"{table.name}_{raw}"[:120]
+        # Prefer the snapshot's real index name so migrations that DROP/CREATE
+        # by name match what was loaded onto the shadow cluster.
+        raw = (index.name or "_".join(index.columns) or f"{table.name}_idx").strip()
+        return raw[:120]
 
 
 def _type_family(column: ColumnMetadata) -> str:

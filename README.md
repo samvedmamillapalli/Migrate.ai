@@ -42,43 +42,69 @@ POST /runs/{id}/closed-loop
 
 `WorkflowOrchestrationService.start_for_run(..., require_prediction_and_approval=True)` refuses to start SFN unless prediction + `proceed` approval exist.
 
-## Quick start
+## Quick start (teammates)
+
+The AWS stack (`migration-oracle`) is **already deployed** and shared. You do
+**not** run `sam deploy`, Docker, or AWS CLI for normal local use.
+
+### What you need besides `.env`
+
+| Need | Notes |
+| --- | --- |
+| **Git** | Clone / pull this branch |
+| **Python 3.12+** | On `PATH` as `python` (or `python3`) |
+| **Network** | Reach AWS `us-east-1` + CockroachDB Cloud |
+| **Team `.env`** | Filled file at repo root (out of band — never commit) |
+
+That is everything beyond your IDE. No Docker, SAM CLI, AWS CLI, Node, or Make for the normal demo path. The Cockroach CA cert ships in `certs/cockroach-cloud-ca.crt`; `setup` installs it for you.
+
+### Run it
+
+1. Clone/pull this branch (`Samved`).
+2. Place the team filled `.env` at the repo root (same folder as this README). Never commit it.
+3. From the repo root, run **two commands**:
 
 ```bash
-cp .env.example .env
-# set DATABASE_URL (CockroachDB Cloud connection string)
-
-cd backend
-python -m venv .venv
-# Windows: .\.venv\Scripts\activate
-pip install -e ".[dev]"
-alembic upgrade head
-uvicorn app.main:app --reload --app-dir .
+python scripts/dev.py setup
+python scripts/dev.py restart
 ```
 
-Open `http://127.0.0.1:8000/ui` (operator console) and `http://127.0.0.1:8000/docs`.
+Windows wrapper: `.\restart.ps1`  
+macOS/Linux wrapper: `./restart.sh` (or `bash ./restart.sh`)
 
-## Fresh Clone Dev Setup (requirements.txt path)
+Open **http://127.0.0.1:8000/ui** — the health strip should say **SFN ready**.
 
-Use this if you want a simple `requirements.txt` installation flow.
+Demo click-path:
+
+1. **Make a fake migration**
+2. **Read schema & predict** (Bedrock)
+3. **Approve** (right side)
+4. **Run shadow test** (real Step Functions → CockroachDB Cloud shadow → grade → memory; several minutes)
+
+Check wiring anytime: `python scripts/dev.py doctor`
+
+Port / host (optional):
 
 ```bash
-cp .env.example .env
-# paste your working .env values (DATABASE_URL + AWS + Bedrock + CCloud values)
+# Windows PowerShell
+$env:DEV_PORT=8001; python scripts/dev.py restart
 
-cd backend
-python -m venv .venv
-# Windows:
-# .\.venv\Scripts\activate
-# macOS/Linux:
-# source .venv/bin/activate
-
-pip install -r requirements.txt
-alembic upgrade head
-uvicorn app.main:app --reload --app-dir .
+# macOS / Linux
+DEV_PORT=8001 python scripts/dev.py restart
 ```
 
-With valid `.env` values and cloud access, this is enough to run the app locally and develop against real services.
+### First-time AWS stack (once per account — not for normal clones)
+
+Only if `MIGRATION_WORKFLOW_ARN` / `RUN_ARTIFACTS_BUCKET` are missing, or Lambda
+code changed. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
+```powershell
+cd infra\sam
+.\build.ps1
+.\deploy.ps1   # writes ARN + bucket into .env
+```
+
+Until that ARN+bucket are set, step 4 falls back to local mock verify.
 
 ## See All Steps Working (Dev Verification)
 
@@ -107,8 +133,9 @@ For a real browser walk-through:
 1. Open `http://127.0.0.1:8000/ui`
 2. Click **Make a fake migration**
 3. Click **Read schema & predict**
-4. Click **Run shadow test**
-5. Inspect results via `/runs/{id}`, `/runs/{id}/grade`, and `/runs/{id}/memory` in `http://127.0.0.1:8000/docs`
+4. Click **Approve**
+5. Click **Run shadow test**
+6. Inspect results via `/runs/{id}`, `/runs/{id}/grade`, and `/runs/{id}/memory` in `http://127.0.0.1:8000/docs`
 
 Corpus health from the terminal (no browser):
 
@@ -154,7 +181,7 @@ Then copy stack outputs into `.env`:
 
 ## Docs
 
-- [`docs/PROJECT.md`](docs/PROJECT.md) — product thesis
+- [`docs/PROJECT.md`](docs/PROJECT.md)
 - [`docs/API.md`](docs/API.md) — HTTP API
 - [`docs/PHASE_9_AI_PREDICTION.md`](docs/PHASE_9_AI_PREDICTION.md)
 - [`docs/PHASE_10_GRADING_AND_MEMORY.md`](docs/PHASE_10_GRADING_AND_MEMORY.md)

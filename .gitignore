@@ -16,6 +16,10 @@ docs/envexamp.md
 .local_secrets/
 backend/.local_secrets/
 
+# SAM / local build output (never commit)
+infra/sam/.aws-sam/
+**/.aws-sam/
+
 # OS files
 .DS_Store
 Thumbs.db

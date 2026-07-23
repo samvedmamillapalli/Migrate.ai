@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Any
 
 from app.core.logging import get_logger
@@ -80,6 +81,7 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
                     "idempotent": True,
                 }
 
+            t0 = perf_counter()
             shadow = await acquire_slot(
                 shadow_service,
                 run_id=run_id,
@@ -107,6 +109,7 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
                 region=settings.shadow_cluster_region,
             )
 
+            t_create = perf_counter()
             if not shadow.cluster_id:
                 provisioned = await provider.create(spec)
                 await shadow_service.set_identity(
@@ -138,7 +141,9 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
                         region=shadow.region,
                         connection_url=connection_url,
                     )
+            provision_ms = (perf_counter() - t_create) * 1000.0
 
+            t_ready = perf_counter()
             await provider.await_ready(
                 provisioned,
                 timeout_seconds=settings.shadow_provision_timeout_seconds,
@@ -146,6 +151,7 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
             )
             connection_url = await provider.provision_sql_access(provisioned)
             provisioned.attach_connection_url(connection_url)
+            ready_ms = (perf_counter() - t_ready) * 1000.0
 
             secret_arn = await runtime.secrets.put_string(
                 shadow_secret_name(run_id),
@@ -157,6 +163,14 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
                     shadow.id,
                     ShadowClusterStatus.READY,
                 )
+
+            # Include slot-wait in provision_ms when admission was slow.
+            admit_ms = (t_create - t0) * 1000.0
+            await shadow_service.merge_timings(
+                shadow.id,
+                provision_ms=round(provision_ms + max(admit_ms, 0.0), 1),
+                ready_ms=round(ready_ms, 1),
+            )
 
             return {
                 "run_id": str(run_id),
@@ -172,8 +186,12 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
         try:
             result = await with_session(runtime, _run)
         except Exception as exc:
+            detail = str(exc).strip() or exc.__class__.__name__
+            # Never echo Authorization headers / tokens if present in nested text.
+            if "Bearer " in detail:
+                detail = exc.__class__.__name__
             raise LambdaHandlerError(
-                f"Shadow provisioning failed for run_id={run_id}"
+                f"Shadow provisioning failed for run_id={run_id}: {detail}"
             ) from exc
     finally:
         await provider.aclose()
@@ -181,7 +199,7 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
     logger.info(
         "ProvisionShadowCluster completed",
         extra={
-            "run_id": str(run_id),
+            "run_id": str(result.get("run_id")),
             "shadow_id": result.get("shadow_id"),
             "status": result.get("status"),
         },

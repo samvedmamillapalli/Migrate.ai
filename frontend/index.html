@@ -4,15 +4,26 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Migration Oracle</title>
-  <link rel="stylesheet" href="/ui/styles.css" />
+  <link rel="stylesheet" href="/ui/styles.css?v=16" />
 </head>
 <body class="simple">
   <header class="top simple-top">
     <div>
       <p class="brand">Migration Oracle</p>
       <p class="sub">Predict → test on a copy → check the guess → remember</p>
+      <div id="healthStrip" class="health-strip" aria-live="polite">
+        <span class="health-item checking" data-k="api">API …</span>
+        <span class="health-item checking" data-k="database">DB …</span>
+        <span class="health-item checking" data-k="aws">AWS …</span>
+        <span class="health-item checking" data-k="bedrock">Bedrock …</span>
+        <span class="health-item checking" data-k="workflow">Workflow …</span>
+      </div>
     </div>
     <div class="api-bar">
+      <label class="dev-toggle" title="When on, skips the Approve click (not recommended for demos).">
+        <input id="autoApprove" type="checkbox" />
+        Auto-approve (dev)
+      </label>
       <label>
         API
         <input id="apiBase" type="text" value="" />
@@ -28,14 +39,19 @@
     <section class="panel hero-actions">
       <h2>Try a migration</h2>
       <p class="explain">
-        Use a fake sample for debugging, or paste your own SQL. Then analyze it.
-        Shadow testing needs AWS deployed — if that is missing, you still get the prediction.
+        Four steps, in order: create → predict → approve → shadow test.
+        Shadow uses AWS Step Functions when the health strip says <strong>SFN ready</strong>.
       </p>
 
       <div class="big-actions">
-        <button type="button" id="btnFake" class="big primary">1. Make a fake migration</button>
-        <button type="button" id="btnAnalyze" class="big primary" disabled>2. Read schema &amp; predict</button>
-        <button type="button" id="btnRunShadow" class="big" disabled>3. Run shadow test</button>
+        <div class="action-col">
+          <button type="button" id="btnFake" class="big primary">1. Make a fake migration</button>
+          <button type="button" id="btnAnalyze" class="big primary" disabled>2. Read schema &amp; predict</button>
+        </div>
+        <div class="action-col action-col-right">
+          <button type="button" id="btnApprove" class="big" disabled>3. Approve</button>
+          <button type="button" id="btnRunShadow" class="big" disabled>4. Run shadow test</button>
+        </div>
       </div>
 
       <label class="sql-label">
@@ -43,6 +59,15 @@
         <textarea id="migrationSql" rows="4" spellcheck="false" placeholder="Click “Make a fake migration” or paste SQL here"></textarea>
       </label>
       <p id="runMeta" class="meta muted">No run yet</p>
+
+      <div id="migrationCard" class="migration-card" hidden>
+        <div class="migration-card-head">
+          <h3>Generated migration</h3>
+          <span id="migrationKind" class="mig-kind" hidden></span>
+        </div>
+        <pre id="migrationVisual" class="sql-visual" aria-label="Migration SQL preview"></pre>
+        <p id="migrationNote" class="tiny-note muted"></p>
+      </div>
     </section>
 
     <section class="panel">
@@ -63,6 +88,15 @@
         <div class="verify-step" data-v="cleanup">Cleanup</div>
       </div>
       <p id="statusLine" class="status-line muted">Waiting…</p>
+      <div id="loadBar" class="load-bar" hidden>
+        <div class="load-bar-track">
+          <div id="loadBarFill" class="load-bar-fill"></div>
+        </div>
+        <div class="load-bar-meta">
+          <span id="loadBarLabel">Working…</span>
+          <span id="loadBarPct">0%</span>
+        </div>
+      </div>
     </section>
 
     <section class="panel" id="results" hidden>
@@ -74,20 +108,32 @@
         </article>
         <article>
           <h3>What actually happened</h3>
-          <div id="actualBox" class="result-box">Not tested yet</div>
+          <div id="actualBox" class="result-box">Not tested yet — click Approve, then Run shadow test.</div>
         </article>
       </div>
       <div id="memoryHint" class="memory-hint" hidden></div>
       <div id="gradeBox" class="result-box" hidden></div>
+      <article id="shadowCard" class="shadow-card" hidden>
+        <h3>Shadow cluster evidence</h3>
+        <div id="shadowBox" class="result-box">—</div>
+      </article>
+      <article id="aiPlanCard" class="ai-plan" hidden>
+        <h3>AI recommended plan</h3>
+        <div id="aiPlanBox" class="result-box">—</div>
+      </article>
+      <article id="bedrockCard" class="bedrock-card" hidden>
+        <h3>AWS Bedrock usage</h3>
+        <div id="bedrockBox" class="result-box">—</div>
+      </article>
     </section>
 
     <section class="panel">
       <h2>Console</h2>
-      <p class="explain">What the app is doing right now (API calls and messages).</p>
+      <p class="explain">Live pipeline steps — every stage of predict / verify / grade.</p>
       <div id="console" class="simple-console"></div>
     </section>
   </main>
 
-  <script src="/ui/app.js"></script>
+  <script src="/ui/app.js?v=16"></script>
 </body>
 </html>

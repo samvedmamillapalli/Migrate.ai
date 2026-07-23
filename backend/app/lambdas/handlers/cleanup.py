@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Any
 
 from app.core.logging import get_logger
@@ -75,6 +76,7 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
                         },
                     )
 
+            t0 = perf_counter()
             try:
                 destroyed = await provider.destroy(
                     cluster_id=shadow.cluster_id,
@@ -107,6 +109,10 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
                         run_id=str(run_id)
                     )
 
+            await shadow_service.merge_timings(
+                shadow.id,
+                teardown_ms=round((perf_counter() - t0) * 1000.0, 1),
+            )
             await _delete_secret(runtime, run_id)
             return {
                 "run_id": str(run_id),

@@ -88,3 +88,5 @@ class WorkflowExecutionRef:
     state_machine_arn: str | None = None
     start_date: str | None = None
     stop_date: str | None = None
+    error: str | None = None
+    cause: str | None = None

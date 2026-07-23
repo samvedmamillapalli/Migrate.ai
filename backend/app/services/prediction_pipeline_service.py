@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Any
 
@@ -28,9 +29,15 @@ from app.repositories.migration_run_repository import MigrationRunRepository
 from app.repositories.prediction_repository import PredictionRepository
 from app.schema_analysis.models import DatabaseMetadata
 from app.services.migration_run_service import MigrationRunService
+from app.services.pipeline_progress import set_progress
+# clear_progress available for TTL cleanup if needed later.
 from app.shadow.models import ScaleTier, select_scale_tier
 from app.memory.retrieval import HybridMemoryRetrieval
 logger = get_logger(__name__)
+
+
+def _prog(run_id: uuid.UUID, stage: str, message: str, percent: int, detail: str | None = None) -> None:
+    set_progress(run_id, stage=stage, message=message, percent=percent, detail=detail)
 
 
 class PredictionPipelineService:
@@ -85,6 +92,7 @@ class PredictionPipelineService:
             )
 
         if run.status == MigrationRunStatus.PENDING:
+            _prog(run_id, "start", "Moving run to predicting…", 5)
             await self._run_service.update_status(
                 run_id,
                 MigrationRunStatus.PREDICTING,
@@ -96,11 +104,28 @@ class PredictionPipelineService:
                 f"got '{run.status.value}'"
             )
 
+        _prog(run_id, "schema", "Loading schema snapshot from the run…", 10)
         snapshot = self._load_snapshot(run)
         tier = self._resolve_scale_tier(scale_tier, snapshot)
+        _prog(
+            run_id,
+            "schema",
+            f"Schema ready · scale tier={tier.value if isinstance(tier, ScaleTier) else tier}",
+            15,
+            detail=("synthetic" if (run.schema_snapshot or {}).get("debug_synthetic") else "stored"),
+        )
 
         try:
+            _prog(run_id, "policy", "Running policy engine (sqlglot + rules)…", 20)
             policy = self._policy_engine.analyze(run.migration_sql, snapshot)
+            _prog(
+                run_id,
+                "policy",
+                f"Policy done · decision={policy.policy_decision.value} · "
+                f"flags={len(policy.risk_flags)} · types={list(policy.parsed_statement_types)}",
+                28,
+            )
+
             memory = self._memory
             query_index_count = None
             query_complexity = None
@@ -121,28 +146,65 @@ class PredictionPipelineService:
                     query_index_count=query_index_count,
                     query_table_complexity=query_complexity,
                 )
+
+            _prog(
+                run_id,
+                "memory",
+                "Retrieving similar past migrations (vector index)…",
+                35,
+            )
             memories = await memory.retrieve(
                 migration_sql=run.migration_sql,
                 statement_types=policy.parsed_statement_types,
                 scale_tier=tier.value if isinstance(tier, ScaleTier) else str(tier),
+            )
+            _prog(
+                run_id,
+                "memory",
+                f"Memory retrieval done · count={len(memories.memories)}",
+                42,
             )
 
             predictor = PredictionEngine(
                 self._bedrock,
                 model_id=self._prediction_model_id,
             )
-            prediction = predictor.predict(
+            _prog(
+                run_id,
+                "bedrock_predict",
+                f"Calling AWS Bedrock for prediction ({self._prediction_model_id})…",
+                48,
+                detail="This is usually the slowest step (often 15–60s).",
+            )
+            prediction = await asyncio.to_thread(
+                predictor.predict,
                 migration_sql=run.migration_sql,
                 snapshot=snapshot,
                 policy=policy,
                 memories=memories,
                 scale_tier=tier,
             )
+            _prog(
+                run_id,
+                "bedrock_predict",
+                f"Prediction received · duration≈{prediction.estimated_duration_seconds}s · "
+                f"risk={prediction.rollback_risk.value} · confidence={prediction.confidence_score}",
+                68,
+            )
+
+            _prog(run_id, "confidence", "Applying confidence adjustments…", 72)
+            if prediction.confidence_adjustments:
+                for adj in prediction.confidence_adjustments:
+                    code = getattr(adj, "reason_code", None) or getattr(adj, "reason", "")
+                    _prog(
+                        run_id,
+                        "confidence",
+                        f"Confidence adjust: {code}",
+                        74,
+                    )
 
             recommendation: RecommendationOutput | None = None
             recommender: RecommendationEngine | None = None
-            # Skip recommendation only when policy blocks AND user already cancelled.
-            # In all other cases (including block awaiting decision), recommend.
             if not (
                 policy.policy_decision.value == "block"
                 and run.status == MigrationRunStatus.FAILED
@@ -151,7 +213,15 @@ class PredictionPipelineService:
                     self._bedrock,
                     model_id=self._recommendation_model_id,
                 )
-                recommendation = recommender.recommend(
+                _prog(
+                    run_id,
+                    "bedrock_recommend",
+                    f"Calling AWS Bedrock for recommendation ({self._recommendation_model_id})…",
+                    78,
+                    detail="Second Bedrock call — often another 20–60s.",
+                )
+                recommendation = await asyncio.to_thread(
+                    recommender.recommend,
                     migration_sql=run.migration_sql,
                     snapshot=snapshot,
                     policy=policy,
@@ -159,7 +229,16 @@ class PredictionPipelineService:
                     prediction=prediction,
                     scale_tier=tier,
                 )
+                _prog(
+                    run_id,
+                    "bedrock_recommend",
+                    f"Recommendation received · strategy={recommendation.recommended_strategy}",
+                    92,
+                )
+            else:
+                _prog(run_id, "bedrock_recommend", "Skipping recommendation (blocked run)", 90)
 
+            _prog(run_id, "persist", "Saving prediction + explainability…", 96)
             explainability = self._build_explainability(
                 policy=policy,
                 prediction=prediction,
@@ -180,14 +259,20 @@ class PredictionPipelineService:
                 explainability=explainability,
                 scale_tier=tier,
             )
+            _prog(run_id, "done", "Prediction pipeline complete — awaiting approval", 100)
             return persisted
 
         except (PredictionValidationError, RecommendationValidationError) as exc:
+            _prog(run_id, "failed", f"Validation failed: {exc}", 100)
             await self._fail_run(run_id, str(exc))
             raise
         except Exception as exc:
+            _prog(run_id, "failed", f"Pipeline failed: {exc}", 100)
             await self._fail_run(run_id, f"Prediction pipeline failed: {exc}")
             raise
+        finally:
+            # Keep last progress readable for a bit; UI polls until done.
+            pass
 
     async def _persist_success(
         self,

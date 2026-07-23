@@ -31,11 +31,15 @@ def parse_run_id(event: dict[str, Any]) -> uuid.UUID:
 
 
 def connection_from_secret(payload: dict[str, Any]) -> DatabaseConnection:
+    """Accept either a structured secret or ``{"database_url": "..."}`` (API store)."""
+    if isinstance(payload, dict) and payload.get("database_url"):
+        return connection_from_database_url(str(payload["database_url"]))
     try:
         return DatabaseConnection.model_validate(payload)
     except Exception as exc:  # noqa: BLE001 - normalize to handler error
         raise LambdaValidationError(
-            "connection secret must include host, database, username, password"
+            "connection secret must include host, database, username, password "
+            "or a database_url"
         ) from exc
 
 

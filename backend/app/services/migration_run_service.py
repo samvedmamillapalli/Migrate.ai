@@ -117,7 +117,7 @@ class MigrationRunService:
         Does not write grades or memories. Schema is clearly marked debug_synthetic.
         """
         picked = pick_fake_migration()
-        snapshot = build_fake_schema_snapshot()
+        snapshot = build_fake_schema_snapshot(for_migration=picked)
         identity = (owner_identity or "debug").strip() or "debug"
 
         async def _commit() -> MigrationRun:
@@ -147,6 +147,25 @@ class MigrationRunService:
             },
         )
         return created
+
+    async def set_connection_secret_arn(
+        self,
+        run_id: uuid.UUID,
+        connection_secret_arn: str,
+    ) -> MigrationRun:
+        secret = connection_secret_arn.strip()
+        if not secret:
+            raise ValidationError("connection_secret_arn must not be empty")
+
+        async def _commit() -> MigrationRun:
+            run = await self._repository.get_by_id_or_raise(run_id)
+            run.connection_secret_arn = secret
+            updated = await self._repository.update(run)
+            await self._session.commit()
+            await self._session.refresh(updated)
+            return updated
+
+        return await with_txn_retry(_commit, on_retry=self._session.rollback)
 
     async def get_migration_run(
         self,

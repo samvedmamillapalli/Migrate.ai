@@ -243,4 +243,6 @@ async def describe_workflow_execution(
         state_machine_arn=str(response.get("stateMachineArn") or "") or None,
         start_date=_iso(response.get("startDate")),
         stop_date=_iso(response.get("stopDate")),
+        error=str(response["error"]) if response.get("error") else None,
+        cause=str(response["cause"]) if response.get("cause") else None,
     )

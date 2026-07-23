@@ -236,6 +236,15 @@ class WorkflowOrchestrationService:
                     MigrationRunStatus.FAILED,
                 }:
                     current.status = MigrationRunStatus.FAILED
+            if execution.error or execution.cause or db_status == WorkflowStatus.FAILED:
+                explain = dict(current.explainability or {})
+                explain["workflow"] = {
+                    "status": db_status.value,
+                    "error": execution.error,
+                    "cause": (execution.cause or "")[:2000] or None,
+                    "sfn_execution_arn": current.sfn_execution_arn,
+                }
+                current.explainability = explain
             updated = await self._repository.update(current)
             await self._session.commit()
             await self._session.refresh(updated)

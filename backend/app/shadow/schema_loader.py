@@ -135,7 +135,8 @@ class ShadowSchemaLoader:
                 continue
             cols = ", ".join(f'"{c}"' for c in index.columns)
             unique = "UNIQUE " if index.is_unique else ""
-            name = f"{table.name}_{index.name}"[:120]
+            # Use the snapshot's real index name so DROP/CREATE migrations match.
+            name = (index.name or f"{table.name}_idx")[:120]
             try:
                 await conn.execute(
                     text(
@@ -145,7 +146,10 @@ class ShadowSchemaLoader:
                 )
                 created += 1
             except Exception as exc:  # noqa: BLE001
-                logger.warning("skipped index", extra={"index": index.name})
+                logger.warning(
+                    "skipped index",
+                    extra={"index": index.name, "error": str(exc)},
+                )
         return created
 
     async def _create_foreign_keys(

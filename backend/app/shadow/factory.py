@@ -24,12 +24,35 @@ def create_shadow_provider(settings: Settings | None = None) -> ShadowClusterPro
         return MockShadowProvider(settings.database_url.get_secret_value())
 
     if choice == "ccloud_api":
-        if settings.ccloud_api_secret is None:
+        secret = (
+            settings.ccloud_api_secret.get_secret_value()
+            if settings.ccloud_api_secret
+            else ""
+        )
+        key = (
+            settings.ccloud_api_key.get_secret_value()
+            if settings.ccloud_api_key
+            else ""
+        )
+        # Cockroach returns the full Bearer secret once as CCDB1_<a>_<b>.
+        # Prefer that shape if CCLOUD_API_SECRET was truncated / swapped with KEY.
+        bearer = secret
+        if key.count("_") >= 2 and (
+            not bearer or bearer.count("_") < 2 or key.startswith(bearer)
+        ):
+            if bearer != key:
+                logger.warning(
+                    "CCLOUD_API_SECRET does not look like a full Cloud API secret; "
+                    "using CCLOUD_API_KEY value as Bearer token"
+                )
+            bearer = key
+        if not bearer:
             raise ShadowProviderError(
-                "SHADOW_PROVIDER=ccloud_api requires CCLOUD_API_SECRET to be set"
+                "SHADOW_PROVIDER=ccloud_api requires CCLOUD_API_SECRET "
+                "(the full service-account API secret shown once at creation)"
             )
         return CCloudApiShadowProvider(
-            api_secret=settings.ccloud_api_secret.get_secret_value(),
+            api_secret=bearer,
             base_url=settings.ccloud_api_base_url,
             plan=settings.shadow_cluster_plan,
             provider_cloud=settings.shadow_cluster_cloud.upper(),

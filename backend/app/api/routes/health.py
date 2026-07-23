@@ -48,4 +48,22 @@ async def health_check(request: Request, response: Response) -> dict[str, Any]:
         "database": database_status,
         "cockroachdb_version": version,
         "aws": aws_status,
+        "integrations": {
+            # UI health strip reads these flags (API / DB / AWS / Bedrock / SFN).
+            "api": "healthy",
+            "database": database_status,
+            "aws": aws_status.get("status", "unknown"),
+            "bedrock_prediction_model_id": aws_settings.bedrock_prediction_model_id,
+            "bedrock_embedding_model_id": aws_settings.bedrock_embedding_model_id,
+            "bedrock_configured": bool(aws_settings.bedrock_prediction_model_id),
+            "migration_workflow_arn_set": bool(aws_settings.migration_workflow_arn),
+            "run_artifacts_bucket_set": bool(aws_settings.run_artifacts_bucket),
+            "sfn_ready": bool(
+                aws_settings.migration_workflow_arn
+                and aws_settings.run_artifacts_bucket
+            ),
+            "shadow_provider": settings.shadow_provider,
+            "local_verify_available": True,
+            "environment": settings.environment,
+        },
     }

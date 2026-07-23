@@ -21,8 +21,27 @@ _SECURE_SSL_MODES = frozenset({"verify-ca", "verify-full"})
 
 
 def resolve_cockroach_ca_cert() -> Path | None:
-    """Return the standard client CA path if CockroachDB/libpq placed one there."""
+    """Return a Cockroach Cloud CA cert path if one is available.
+
+    Search order:
+    1. Lambda package (``certs/root.crt`` next to the handler)
+    2. Repo-bundled public CA (``certs/cockroach-cloud-ca.crt``) so teammates
+       do not need a manual download after clone
+    3. Standard libpq locations (``%APPDATA%\\postgresql\\root.crt`` /
+       ``~/.postgresql/root.crt``)
+    """
     candidates: list[Path] = []
+
+    # Bundled into Lambda packages by package_lambda_for_sam.py
+    lambda_root = os.environ.get("LAMBDA_TASK_ROOT")
+    if lambda_root:
+        candidates.append(Path(lambda_root) / "certs" / "root.crt")
+        candidates.append(Path(lambda_root) / "root.crt")
+
+    # backend/app/database/session.py → repo root is parents[3]
+    repo_root = Path(__file__).resolve().parents[3]
+    candidates.append(repo_root / "certs" / "cockroach-cloud-ca.crt")
+    candidates.append(repo_root / "certs" / "root.crt")
 
     if os.name == "nt":
         appdata = os.environ.get("APPDATA")
@@ -60,17 +79,27 @@ def normalize_database_url(database_url: str) -> str:
     if sslmode in _SECURE_SSL_MODES and "sslrootcert" not in query:
         ca_cert = resolve_cockroach_ca_cert()
         if ca_cert is None:
-            raise ValueError(
-                "sslmode requires a CA certificate, but none was found at the "
-                "standard CockroachDB/libpq location "
-                "(%APPDATA%\\postgresql\\root.crt on Windows, "
-                "~/.postgresql/root.crt on macOS/Linux)"
+            # Lambda packages may lack a host CA; still encrypt with require.
+            if os.environ.get("AWS_LAMBDA_FUNCTION_NAME") or os.environ.get(
+                "LAMBDA_TASK_ROOT"
+            ):
+                query["sslmode"] = ["require"]
+                logger.warning(
+                    "No Cockroach CA in Lambda package; falling back to sslmode=require"
+                )
+            else:
+                raise ValueError(
+                    "sslmode requires a CA certificate, but none was found at the "
+                    "standard CockroachDB/libpq location "
+                    "(%APPDATA%\\postgresql\\root.crt on Windows, "
+                    "~/.postgresql/root.crt on macOS/Linux)"
+                )
+        else:
+            query["sslrootcert"] = [str(ca_cert)]
+            logger.info(
+                "Detected CockroachDB CA certificate",
+                extra={"sslrootcert": str(ca_cert)},
             )
-        query["sslrootcert"] = [str(ca_cert)]
-        logger.info(
-            "Detected CockroachDB CA certificate",
-            extra={"sslrootcert": str(ca_cert)},
-        )
 
     normalized_query = urlencode(
         {key: values[-1] for key, values in query.items()},

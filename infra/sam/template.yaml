@@ -108,7 +108,7 @@ Resources:
       BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${ProjectName}-discover-schema"
-      CodeUri: ../../backend/
+      CodeUri: lambda_src/
       Handler: app.lambdas.handlers.discover_schema.handler
       Timeout: 300
       MemorySize: 512
@@ -151,7 +151,7 @@ Resources:
       BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${ProjectName}-provision-shadow-cluster"
-      CodeUri: ../../backend/
+      CodeUri: lambda_src/
       Handler: app.lambdas.handlers.provision_shadow.handler
       Timeout: 900
       MemorySize: 1024
@@ -201,7 +201,7 @@ Resources:
       BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${ProjectName}-load-schema"
-      CodeUri: ../../backend/
+      CodeUri: lambda_src/
       Handler: app.lambdas.handlers.load_schema.handler
       Timeout: 600
       MemorySize: 1024
@@ -242,7 +242,7 @@ Resources:
       BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${ProjectName}-execute-migration"
-      CodeUri: ../../backend/
+      CodeUri: lambda_src/
       Handler: app.lambdas.handlers.execute_migration.handler
       Timeout: 900
       MemorySize: 1024
@@ -283,7 +283,7 @@ Resources:
       BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${ProjectName}-collect-metrics"
-      CodeUri: ../../backend/
+      CodeUri: lambda_src/
       Handler: app.lambdas.handlers.collect_metrics.handler
       Timeout: 300
       MemorySize: 512
@@ -324,7 +324,7 @@ Resources:
       BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${ProjectName}-persist-results"
-      CodeUri: ../../backend/
+      CodeUri: lambda_src/
       Handler: app.lambdas.handlers.persist_results.handler
       Timeout: 180
       MemorySize: 1024
@@ -366,7 +366,7 @@ Resources:
       BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${ProjectName}-cleanup"
-      CodeUri: ../../backend/
+      CodeUri: lambda_src/
       Handler: app.lambdas.handlers.cleanup.handler
       Timeout: 600
       MemorySize: 512
@@ -408,7 +408,7 @@ Resources:
       BuildMethod: makefile
     Properties:
       FunctionName: !Sub "${ProjectName}-shadow-sweeper"
-      CodeUri: ../../backend/
+      CodeUri: lambda_src/
       Handler: app.lambdas.handlers.sweep_orphans.handler
       Timeout: 300
       MemorySize: 512

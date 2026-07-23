@@ -13,6 +13,7 @@ from app.dependencies import (
     ApprovalSvc,
     ClosedLoopSvc,
     GradingPipelineSvc,
+    LocalShadowVerifySvc,
     MemoryWriteSvc,
     MigrationRunSvc,
     PredictionPipelineSvc,
@@ -94,13 +95,21 @@ async def get_accuracy_metrics(
 )
 async def create_debug_fake_migration(
     service: MigrationRunSvc,
+    request: Request,
     owner_identity: str = Query(default="debug", min_length=1, max_length=256),
 ) -> MigrationRunResponse:
     """Debug helper: random SQL + synthetic schema so predict works without a real DB.
 
-    Does not create graded memories. Not for the hackathon accuracy curve.
+    Stores a connection_secret_arn (control-plane DATABASE_URL) so approve can
+    start Step Functions. DiscoverSchema is skipped because discovery already
+    SUCCEEDED on the synthetic snapshot. Does not create graded memories.
     """
+    from app.config import get_settings
+
     run = await service.create_debug_fake_migration(owner_identity=owner_identity)
+    database_url = get_settings().database_url.get_secret_value()
+    secret_arn = await _store_connection_url(request, run.id, database_url)
+    run = await service.set_connection_secret_arn(run.id, secret_arn)
     return MigrationRunResponse.model_validate(run)
 
 
@@ -161,6 +170,23 @@ async def run_prediction_pipeline(
     """Run Phase 9 policy → predict → recommend and stop at awaiting_approval."""
     run = await service.run_prediction_pipeline(run_id)
     return MigrationRunResponse.model_validate(run)
+
+
+@router.get("/{run_id}/pipeline-progress")
+async def get_pipeline_progress(run_id: uuid.UUID) -> dict[str, Any]:
+    """Live stage progress for a long-running predict / local-verify (in-process)."""
+    from app.services.pipeline_progress import get_progress
+
+    data = get_progress(run_id)
+    if data is None:
+        return {
+            "run_id": str(run_id),
+            "stage": "idle",
+            "message": "No active pipeline progress",
+            "percent": 0,
+            "history": [],
+        }
+    return data
 
 
 @router.post(
@@ -224,6 +250,25 @@ async def start_workflow(
         require_prediction_and_approval=True,
     )
     return MigrationRunResponse.model_validate(updated)
+
+
+@router.post(
+    "/{run_id}/verify-local",
+    response_model=MigrationRunResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def verify_local(
+    run_id: uuid.UUID,
+    service: LocalShadowVerifySvc,
+) -> MigrationRunResponse:
+    """Run in-process mock shadow verify when Step Functions is not deployed.
+
+    Same handler chain as the durable workflow (discover → provision → load →
+    execute → collect → persist/grade → cleanup), using SHADOW_PROVIDER=mock.
+    Use this for local demos; set MIGRATION_WORKFLOW_ARN for real AWS verify.
+    """
+    run = await service.verify_run(run_id)
+    return MigrationRunResponse.model_validate(run)
 
 
 @router.post(

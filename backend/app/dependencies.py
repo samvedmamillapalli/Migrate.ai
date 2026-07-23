@@ -26,6 +26,7 @@ from app.services.prediction_pipeline_service import PredictionPipelineService
 from app.services.schema_discovery_service import SchemaDiscoveryService
 from app.services.shadow_cluster_service import ShadowClusterService
 from app.services.workflow_orchestration_service import WorkflowOrchestrationService
+from app.services.local_shadow_verify_service import LocalShadowVerifyService
 from app.memory.embedding_client import (
     AwsTitanEmbeddingClient,
     EmbeddingClient,
@@ -409,3 +410,15 @@ def get_closed_loop_service(
 
 
 ClosedLoopSvc = Annotated[ClosedLoopService, Depends(get_closed_loop_service)]
+
+
+def get_local_shadow_verify_service(
+    session: DbSession,
+    run_repo: MigrationRunRepo,
+) -> LocalShadowVerifyService:
+    return LocalShadowVerifyService(session=session, repository=run_repo)
+
+
+LocalShadowVerifySvc = Annotated[
+    LocalShadowVerifyService, Depends(get_local_shadow_verify_service)
+]

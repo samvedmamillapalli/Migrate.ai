@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Any
 
 from app.core.logging import get_logger
@@ -58,10 +59,20 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
             )
 
         connection_url = await runtime.secrets.get_string(str(shadow_secret_arn))
+        t0 = perf_counter()
         outcome = await run_migration(
             connection_url,
             run.migration_sql,
             statement_timeout_ms=int(settings.shadow_migrate_timeout_seconds * 1000),
+        )
+        migrate_ms = (
+            outcome.duration_seconds * 1000.0
+            if outcome.duration_seconds is not None
+            else (perf_counter() - t0) * 1000.0
+        )
+        await shadow_service.merge_timings(
+            shadow.id,
+            migrate_ms=round(migrate_ms, 1),
         )
         return {
             "run_id": str(run_id),
