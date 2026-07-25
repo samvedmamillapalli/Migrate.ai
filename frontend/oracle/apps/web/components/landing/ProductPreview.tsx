@@ -331,7 +331,7 @@ function ExecutionPanel({
           transition={{ duration: 0.3, ease: easeOut }}
         >
           <p className="text-muted-foreground text-xs">
-            Prediction vs Reality
+            Illustration — Prediction vs Reality (sample, not live data)
           </p>
 
           <div className="flex flex-col gap-6">

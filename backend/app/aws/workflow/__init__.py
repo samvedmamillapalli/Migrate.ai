@@ -8,6 +8,7 @@ from app.aws.workflow.client import (
     WorkflowExecutionError,
     describe_workflow_execution,
     start_workflow_execution,
+    stop_workflow_execution,
     validate_workflow_definition,
 )
 from app.aws.workflow.definition import (
@@ -38,6 +39,7 @@ __all__ = [
     "load_asl_template",
     "render_definition",
     "start_workflow_execution",
+    "stop_workflow_execution",
     "validate_definition_structure",
     "validate_workflow_definition",
 ]

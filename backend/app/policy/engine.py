@@ -12,7 +12,7 @@ from sqlglot import exp
 from sqlglot.errors import ParseError
 
 from app.core.logging import get_logger
-from app.policy.config import get_policy_file
+from app.policy.config import get_policy_file, get_policy_file_fresh
 from app.policy.models import (
     CompatibilityRiskValue,
     FindingSeverity,
@@ -92,6 +92,10 @@ class PolicyEngine:
     """Parse migration SQL and produce structured policy analysis."""
 
     def __init__(self, policy: PolicyFile | None = None) -> None:
+        # When constructed without an explicit file (normal API path), re-read
+        # YAML each analyze() so rule edits apply without a hard process restart
+        # (uvicorn --reload does not watch .yaml).
+        self._policy_override = policy
         self._policy = policy or get_policy_file()
 
     def analyze(
@@ -99,6 +103,8 @@ class PolicyEngine:
         migration_sql: str,
         snapshot: DatabaseMetadata | None = None,
     ) -> PolicyAnalysisResult:
+        if self._policy_override is None:
+            self._policy = get_policy_file_fresh()
         row_index = _build_row_index(snapshot)
         findings: list[RiskFinding] = []
         statement_types: list[str] = []
@@ -139,6 +145,23 @@ class PolicyEngine:
 
             statement_types.append(type(stmt).__name__)
             findings.extend(self._analyze_statement(stmt, row_index))
+
+        # When a schema snapshot exists, flag tables the SQL names that are
+        # not in the discovered catalog (clear operator signal, not silent OK).
+        if row_index:
+            missing = self._missing_referenced_tables(statements, row_index)
+            already = {t.lower() for f in findings if f.rule_id == "missing_referenced_table" for t in f.objects}
+            for table in missing:
+                if table.lower() in already:
+                    continue
+                findings.append(
+                    self._finding_from_rule(
+                        "missing_referenced_table",
+                        objects=[table],
+                        row_index=row_index,
+                        table=table,
+                    )
+                )
 
         # CRDB-specific primary key rewrite that sqlglot may mangle
         if self._looks_like_crdb_primary_key_change(migration_sql, findings):
@@ -549,6 +572,30 @@ class PolicyEngine:
         except ParseError:
             return names
         return names
+
+    @staticmethod
+    def _missing_referenced_tables(
+        statements: list[exp.Expression | None],
+        row_index: dict[str, int | None],
+    ) -> list[str]:
+        """Return unique table names referenced by SQL but absent from snapshot."""
+        missing: list[str] = []
+        seen: set[str] = set()
+        for stmt in statements:
+            if stmt is None:
+                continue
+            for table_node in stmt.find_all(exp.Table):
+                name = _table_name(table_node) or _ident_name(table_node)
+                if not name:
+                    continue
+                key = name.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                _, found = _lookup_rows(name, row_index)
+                if not found:
+                    missing.append(name)
+        return missing
 
 
 def analyze_migration(

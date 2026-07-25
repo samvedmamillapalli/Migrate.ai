@@ -10,7 +10,7 @@ Built for the [CockroachDB × AWS Hackathon](https://cockroachdb-ai.devpost.com/
 | --- | --- |
 | API | FastAPI (Python) |
 | Control-plane DB | CockroachDB Cloud |
-| UI | Operator console at `/ui` (static; same-origin with API) |
+| UI | Next.js app in `frontend/oracle` (default `http://localhost:3000`) |
 | AI | Amazon Bedrock (Claude predict/recommend, Titan embeddings) |
 | Orchestration | AWS Lambda + Step Functions + S3 + Secrets Manager + CloudWatch |
 | Shadow verify | CockroachDB Cloud clusters (`SHADOW_PROVIDER=ccloud_api` by default) |
@@ -72,14 +72,29 @@ python scripts/dev.py restart
 Windows wrapper: `.\restart.ps1`  
 macOS/Linux wrapper: `./restart.sh` (or `bash ./restart.sh`)
 
-Open **http://127.0.0.1:8000/ui** — the health strip should say **SFN ready**.
+Open **http://localhost:3000** for the Next.js operator UI (start it separately —
+see below). API health: **http://127.0.0.1:8000/health** should show **SFN ready**.
+
+In a second terminal:
+
+```bash
+cd frontend/oracle
+npm install
+npm run dev
+```
+
+Point the web app at the API with `frontend/oracle/apps/web/.env.local`:
+
+```text
+NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
+```
 
 Demo click-path:
 
-1. **Make a fake migration**
-2. **Read schema & predict** (Bedrock)
-3. **Approve** (right side)
-4. **Run shadow test** (real Step Functions → CockroachDB Cloud shadow → grade → memory; several minutes)
+1. **Create a run** (paste SQL or fake migration)
+2. **Discover schema** (connection ARN or one-shot database URL)
+3. **Run prediction** (Bedrock)
+4. **Approve → Start shadow test** (real Step Functions → CockroachDB Cloud shadow → grade → memory; ~1–2 minutes)
 
 Check wiring anytime: `python scripts/dev.py doctor`
 

@@ -11,7 +11,7 @@ http://localhost:8000
 All request and response bodies use JSON. Timestamps use ISO 8601 format in UTC.
 
 When `DEMO_API_KEY` is set on the server, send header `X-API-Key: <key>` on API
-calls (except `/`, `/health`, `/docs`, `/ui`).
+calls (except `/`, `/health`, `/docs`).
 
 ## Migration run statuses
 
@@ -417,6 +417,13 @@ Requires prediction + `proceed` approval. Body may include
 - **Method:** `POST`
 
 Pulls Step Functions status into the run row.
+
+- **Endpoint:** `/runs/{run_id}/abort-workflow`
+- **Method:** `POST`
+
+Stops a running Step Functions execution and tears down the shadow cluster.
+(StopExecution skips ASL Cleanup, so the API invokes cleanup explicitly.)
+Run becomes `failed` with `workflow_status=aborted`.
 
 ### Get approval record
 

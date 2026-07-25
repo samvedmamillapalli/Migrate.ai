@@ -1,0 +1,137 @@
+"""Prepare a read-only discoverable customer DB with real row counts.
+
+Creates (idempotent):
+  - role ``judge_ro`` (SELECT-only)
+  - table ``public.customers`` with ~5000 rows
+  - grants SELECT to judge_ro
+
+Prints a RO database URL (password redacted in logs; full URL only to stdout
+as JUDGE_RO_DATABASE_URL=...) for discovery tests. Does not print admin URL.
+"""
+
+from __future__ import annotations
+
+import os
+import secrets
+import sys
+from pathlib import Path
+from urllib.parse import quote_plus, urlparse, urlunparse
+
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, text
+
+ROOT = Path(__file__).resolve().parents[2]
+load_dotenv(ROOT / ".env")
+
+PASSWORD_FILE = ROOT / ".judge_ro_password"
+TABLE = "customers"
+ROLE = "judge_ro"
+ROW_TARGET = 5000
+
+
+def _admin_url() -> str:
+    raw = os.environ.get("DATABASE_URL")
+    if not raw:
+        raise SystemExit("DATABASE_URL missing")
+    return raw
+
+
+def _to_psycopg(url: str) -> str:
+    if url.startswith("postgresql+psycopg://"):
+        return url
+    if url.startswith("cockroachdb+psycopg://"):
+        return "postgresql+psycopg://" + url.split("://", 1)[1]
+    if url.startswith("postgresql://"):
+        return "postgresql+psycopg://" + url.split("://", 1)[1]
+    return url
+
+
+def _build_ro_url(admin: str, password: str) -> str:
+    parsed = urlparse(admin)
+    # Replace user/password; keep host/path/query
+    host = parsed.hostname or ""
+    port = f":{parsed.port}" if parsed.port else ""
+    userinfo = f"{ROLE}:{quote_plus(password)}"
+    netloc = f"{userinfo}@{host}{port}"
+    return urlunparse(
+        (parsed.scheme, netloc, parsed.path, parsed.params, parsed.query, parsed.fragment)
+    )
+
+
+def main() -> None:
+    admin = _admin_url()
+    engine = create_engine(_to_psycopg(admin), pool_pre_ping=True)
+
+    if PASSWORD_FILE.exists():
+        password = PASSWORD_FILE.read_text(encoding="utf-8").strip()
+    else:
+        password = secrets.token_urlsafe(18)
+        PASSWORD_FILE.write_text(password + "\n", encoding="utf-8")
+
+    with engine.begin() as conn:
+        # Role
+        exists = conn.execute(
+            text("SELECT 1 FROM [SHOW ROLES] WHERE role_name = :r"),
+            {"r": ROLE},
+        ).scalar()
+        if not exists:
+            # CRDB: CREATE USER
+            conn.execute(text(f"CREATE USER {ROLE} WITH PASSWORD :pw"), {"pw": password})
+        else:
+            conn.execute(text(f"ALTER USER {ROLE} WITH PASSWORD :pw"), {"pw": password})
+
+        conn.execute(
+            text(
+                f"""
+                CREATE TABLE IF NOT EXISTS {TABLE} (
+                  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+                  email STRING NOT NULL,
+                  region STRING NOT NULL DEFAULT 'us-east',
+                  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+                """
+            )
+        )
+
+        count = conn.execute(text(f"SELECT count(*) FROM {TABLE}")).scalar() or 0
+        if count < ROW_TARGET:
+            need = ROW_TARGET - int(count)
+            # Batched inserts
+            while need > 0:
+                batch = min(need, 500)
+                conn.execute(
+                    text(
+                        f"""
+                        INSERT INTO {TABLE} (email, region)
+                        SELECT
+                          'user_' || gen_random_uuid()::STRING || '@example.com',
+                          (ARRAY['us-east','us-west','eu-west'])[1 + (random()*2)::INT]
+                        FROM generate_series(1, :n)
+                        """
+                    ),
+                    {"n": batch},
+                )
+                need -= batch
+
+        # Grants — revoke write paths for judge_ro if any
+        conn.execute(text(f"GRANT SELECT ON TABLE {TABLE} TO {ROLE}"))
+        # Ensure no INSERT/UPDATE/DELETE/CREATE where possible
+        try:
+            conn.execute(text(f"REVOKE INSERT, UPDATE, DELETE ON TABLE {TABLE} FROM {ROLE}"))
+        except Exception:
+            pass
+        try:
+            conn.execute(text(f"REVOKE CREATE ON DATABASE {engine.url.database} FROM {ROLE}"))
+        except Exception:
+            pass
+
+        final_count = conn.execute(text(f"SELECT count(*) FROM {TABLE}")).scalar()
+
+    ro_url = _build_ro_url(admin, password)
+    print(f"customers_row_count={final_count}")
+    print(f"JUDGE_RO_DATABASE_URL={ro_url}")
+    print(f"password_file={PASSWORD_FILE}")
+
+
+if __name__ == "__main__":
+    main()

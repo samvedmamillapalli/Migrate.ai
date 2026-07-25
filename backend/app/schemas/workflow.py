@@ -41,10 +41,17 @@ class StartWorkflowRequest(BaseModel):
         default=None,
         description="Override; defaults to the ARN stored on the run",
     )
+    database_url: str | None = Field(
+        default=None,
+        description=(
+            "One-shot read-only URL when the run has no connection_secret_arn yet "
+            "(same store path as POST /discover)"
+        ),
+    )
 
-    @field_validator("connection_secret_arn")
+    @field_validator("connection_secret_arn", "database_url")
     @classmethod
-    def strip_secret(cls, value: str | None) -> str | None:
+    def strip_optional(cls, value: str | None) -> str | None:
         if value is None:
             return None
         normalized = value.strip()

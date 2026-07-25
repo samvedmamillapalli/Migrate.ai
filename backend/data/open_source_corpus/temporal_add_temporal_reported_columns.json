@@ -1,0 +1,57 @@
+{
+  "source_key": "temporal:visibility/v1.10/add_temporal_reported_columns",
+  "project": "Temporal",
+  "repo": "https://github.com/temporalio/temporal",
+  "license": "MIT",
+  "migration_file": "https://github.com/temporalio/temporal/blob/main/schema/postgresql/v12/visibility/versioned/v1.10/add_temporal_reported_columns.sql",
+  "incident_issue": "https://github.com/temporalio/temporal/issues/10358",
+  "migration_summary": "Generated ALWAYS STORED column plus GIN index on a large visibility table; exclusive table rewrite locks for roughly an hour even on idle hardware sized like production.",
+  "migration_sql": "ALTER TABLE executions_visibility ADD COLUMN TemporalReportedProblems JSONB GENERATED ALWAYS AS (search_attributes->'TemporalReportedProblems') STORED;\nCREATE INDEX by_temporal_reported_problems ON executions_visibility USING GIN (namespace_id, TemporalReportedProblems jsonb_path_ops);",
+  "scale_tier": "large",
+  "migration_type": "add_column",
+  "parsed_statement_types": ["AlterTable", "CreateIndex"],
+  "schema_summary": "executions_visibility with ~35 million rows; JSONB search_attributes already present.",
+  "index_count": 14,
+  "table_complexity": 50,
+  "risk_flags": [
+    {
+      "rule_id": "generated_column_table_rewrite",
+      "severity": "high",
+      "message": "GENERATED ALWAYS ... STORED forces a full table rewrite and exclusive lock."
+    },
+    {
+      "rule_id": "gin_index_build",
+      "severity": "high",
+      "message": "GIN index build after rewrite extends downtime window."
+    }
+  ],
+  "risk_narrative": "Adding a STORED generated column rewrites every row. On a 35M-row visibility table matching production size (16 cores, 128GB), the migration took almost an hour with no traffic and still obtained an exclusive lock, so operators could not upgrade without downtime.",
+  "lessons_learned": "Avoid GENERATED ALWAYS STORED on large hot tables when online availability matters. Prefer trigger-populated columns or dual-write expand/contract. Combining rewrite + GIN index in one migration multiplies the lock window. Elasticsearch visibility was suggested as an alternative to escape Postgres schema locks.",
+  "surprise_notes": "Idle hardware still needed ~1 hour; exclusive locks mean traffic does not have to be high for the migration to be a production outage.",
+  "documented_outcomes": {
+    "success": false,
+    "actual_duration_seconds": 3600.0,
+    "actual_storage_mb": null,
+    "rollback_required": true,
+    "timed_out": false,
+    "error_message": "Cannot upgrade without downtime: exclusive lock during generated column + GIN index (issue #10358)."
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 300.0,
+    "estimated_storage_mb": 512.0,
+    "rollback_risk": "high",
+    "confidence_score": 0.4,
+    "risk_explanation": "Table rewrite duration scales with row count far beyond a simple ADD COLUMN default."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "long_exclusive_lock",
+    "duration_within_band": false,
+    "storage_within_band": false,
+    "rollback_within_band": false,
+    "dimension_details": {
+      "source": "open_source",
+      "measured_duration_source": "reporter test instance ~1 hour on 35M rows"
+    }
+  }
+}

@@ -2,7 +2,16 @@
 
 # Reserved identity for the shared seeded corpus (Phase 12 writes under this).
 # Never a real user. Retrieval always includes this scope alongside the owner.
+# This string literal must appear ONLY in this module; import CORPUS_OWNER_IDENTITY elsewhere.
 CORPUS_OWNER_IDENTITY = "__migration_oracle_corpus__"
+
+# Legacy mistaken owner used by an early seed script; re-keyed at startup.
+LEGACY_DEMO_CORPUS_OWNER = "demo-corpus"
+
+# memory_origin / integrity.kind values
+MEMORY_ORIGIN_GRADED_SHADOW = "graded_shadow"
+MEMORY_ORIGIN_OPEN_SOURCE_INCIDENT = "open_source_documented_incident"
+MEMORY_ORIGIN_SYNTHETIC_SEED = "synthetic_seed"
 
 EMBEDDING_DIMENSIONS = 1024
 EMBEDDING_STATUS_PENDING = "pending"

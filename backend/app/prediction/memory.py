@@ -22,6 +22,7 @@ class RetrievedMemory(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
+    memory_id: UUID | None = None
     migration_run_id: UUID | None = None
     migration_summary: str
     actual_duration_seconds: float | None = None
@@ -31,6 +32,12 @@ class RetrievedMemory(BaseModel):
     surprise_notes: str | None = None
     similarity_score: float = Field(ge=0.0, le=1.0)
     scale_tier: str | None = None
+    # Integrity: open-source incidents are not graded shadow runs.
+    memory_origin: str | None = None
+    not_a_graded_run: bool = False
+    source_url: str | None = None
+    ui_label: str | None = None
+    lessons_learned: str | None = None
 
 
 class MemoryRetrievalResult(BaseModel):

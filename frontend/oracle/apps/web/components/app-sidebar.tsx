@@ -4,7 +4,6 @@ import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
-  BookOpen,
   Brain,
   GalleryVerticalEnd,
   History,
@@ -14,7 +13,7 @@ import {
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
-import { NavUser } from "@/components/nav-user"
+import { OwnerIdentityField } from "@/components/owner-identity-field"
 import { TeamSwitcher } from "@/components/team-switcher"
 import {
   Sidebar,
@@ -28,20 +27,13 @@ import {
   SidebarRail,
 } from "@workspace/ui/components/sidebar"
 
-const data = {
-  user: {
-    name: "Operator",
-    email: "operator@migrationoracle.dev",
-    avatar: "",
+const teams = [
+  {
+    name: "Migration Oracle",
+    logo: GalleryVerticalEnd,
+    plan: "Workspace",
   },
-  teams: [
-    {
-      name: "Migration Oracle",
-      logo: GalleryVerticalEnd,
-      plan: "Workspace",
-    },
-  ],
-}
+]
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
@@ -49,7 +41,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
     <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
-        <TeamSwitcher teams={data.teams} />
+        <TeamSwitcher teams={teams} />
       </SidebarHeader>
       <SidebarContent>
         <NavMain
@@ -69,13 +61,15 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               title: "Current Migration",
               url: "/dashboard/migrations/current",
               icon: Workflow,
-              isActive: pathname === "/dashboard/migrations/current",
+              isActive: pathname.startsWith("/dashboard/migrations/current"),
             },
             {
               title: "Past Migrations",
               url: "/dashboard/migrations/history",
               icon: History,
-              isActive: pathname === "/dashboard/migrations/history",
+              isActive:
+                pathname.startsWith("/dashboard/migrations/history") ||
+                /^\/dashboard\/migrations\/[^/]+$/.test(pathname),
             },
           ]}
         />
@@ -92,17 +86,11 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         />
       </SidebarContent>
       <SidebarFooter>
+        <SidebarGroup className="group-data-[collapsible=icon]:hidden p-2">
+          <OwnerIdentityField id="owner-identity-sidebar" />
+        </SidebarGroup>
         <SidebarGroup className="p-0">
           <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                tooltip="Documentation"
-                render={<Link href="/docs" />}
-              >
-                <BookOpen />
-                <span>Documentation</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
             <SidebarMenuItem>
               <SidebarMenuButton
                 tooltip="Settings"
@@ -115,7 +103,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             </SidebarMenuItem>
           </SidebarMenu>
         </SidebarGroup>
-        <NavUser user={data.user} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

@@ -89,6 +89,55 @@ async def get_accuracy_metrics(
 
 
 @router.post(
+    "/debug/demo-with-db",
+    response_model=MigrationRunResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_debug_demo_with_db(
+    service: MigrationRunSvc,
+    discovery: SchemaDiscoverySvc,
+    request: Request,
+    owner_identity: str = Query(default="demo", min_length=1, max_length=256),
+) -> MigrationRunResponse:
+    """Developer helper: real customer_demo RO DB + sample migration SQL.
+
+    Reads the URL from env ``DEMO_READONLY_DATABASE_URL`` or repo file
+    ``.judge_ro_database_url`` (server-side only). Creates the run, stores a
+    connection secret, and runs schema discovery so predict/shadow can proceed.
+
+    Easy to remove: delete this route + the frontend Developer mode button.
+    """
+    import os
+    from pathlib import Path
+
+    url = (os.environ.get("DEMO_READONLY_DATABASE_URL") or "").strip()
+    if not url:
+        # backend/app/api/routes/runs.py → parents[4] = repo root
+        root = Path(__file__).resolve().parents[4]
+        judge_file = root / ".judge_ro_database_url"
+        if judge_file.is_file():
+            url = judge_file.read_text(encoding="utf-8").strip()
+    if not url:
+        raise ValidationError(
+            "Developer demo DB not configured. Set DEMO_READONLY_DATABASE_URL "
+            "or create .judge_ro_database_url at the repo root."
+        )
+
+    run = await service.create_migration_run(
+        "ALTER TABLE customers ADD COLUMN demo_flag STRING NOT NULL DEFAULT 'ok';",
+        owner_identity=owner_identity,
+    )
+    secret_arn = await _store_connection_url(request, run.id, url)
+    connection = await _load_connection(request, secret_arn)
+    run = await discovery.discover_and_persist(
+        run.id,
+        connection,
+        connection_secret_arn=secret_arn,
+    )
+    return MigrationRunResponse.model_validate(run)
+
+
+@router.post(
     "/debug/fake-migration",
     response_model=MigrationRunResponse,
     status_code=status.HTTP_201_CREATED,
@@ -173,9 +222,27 @@ async def run_prediction_pipeline(
 
 
 @router.get("/{run_id}/pipeline-progress")
-async def get_pipeline_progress(run_id: uuid.UUID) -> dict[str, Any]:
-    """Live stage progress for a long-running predict / local-verify (in-process)."""
-    from app.services.pipeline_progress import get_progress
+async def get_pipeline_progress(
+    run_id: uuid.UUID,
+    run_service: MigrationRunSvc,
+) -> dict[str, Any]:
+    """Live stage progress for a long-running predict / local-verify (in-process).
+
+    Predict progress is cleared once the run leaves ``predicting`` so a shadow
+    workflow never shows a stale "prediction complete" bar.
+    """
+    from app.services.pipeline_progress import clear_progress, get_progress
+
+    run = await run_service.get_migration_run(run_id)
+    if run.status != MigrationRunStatus.PREDICTING:
+        clear_progress(run_id)
+        return {
+            "run_id": str(run_id),
+            "stage": "idle",
+            "message": "No active pipeline progress",
+            "percent": 0,
+            "history": [],
+        }
 
     data = get_progress(run_id)
     if data is None:
@@ -200,6 +267,9 @@ async def approve_run(
     service: ApprovalSvc,
 ) -> MigrationRunResponse:
     """Record approval. On proceed, auto-starts the verify workflow when configured."""
+    from app.services.pipeline_progress import clear_progress
+
+    clear_progress(run_id)
     run = await service.approve(
         run_id,
         decision=payload.decision,
@@ -236,13 +306,22 @@ async def start_workflow(
     payload: StartWorkflowRequest,
     service: WorkflowOrchestrationSvc,
     run_service: MigrationRunSvc,
+    request: Request,
 ) -> MigrationRunResponse:
     """Start Step Functions verify after prediction + proceed approval."""
+    from app.services.pipeline_progress import clear_progress
+
+    clear_progress(run_id)
     run = await run_service.get_migration_run(run_id, load_children=True)
     secret = (payload.connection_secret_arn or run.connection_secret_arn or "").strip()
+    if not secret and payload.database_url:
+        secret = await _store_connection_url(request, run_id, payload.database_url)
+        run = await run_service.set_connection_secret_arn(run_id, secret)
     if not secret:
         raise ValidationError(
-            "connection_secret_arn is required (pass in body or POST /discover first)"
+            "Attach a database first: POST /discover with connection_secret_arn or "
+            "database_url, or pass one of those on start-workflow. Without a "
+            "connection the shadow cannot seed from your schema."
         )
     updated = await service.start_for_run(
         run_id,
@@ -281,6 +360,23 @@ async def sync_workflow(
     service: WorkflowOrchestrationSvc,
 ) -> MigrationRunResponse:
     run = await service.sync_status(run_id)
+    return MigrationRunResponse.model_validate(run)
+
+
+@router.post(
+    "/{run_id}/abort-workflow",
+    response_model=MigrationRunResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def abort_workflow(
+    run_id: uuid.UUID,
+    service: WorkflowOrchestrationSvc,
+) -> MigrationRunResponse:
+    """Abort a running shadow workflow and tear down the shadow cluster."""
+    from app.services.pipeline_progress import clear_progress
+
+    clear_progress(run_id)
+    run = await service.abort_for_run(run_id)
     return MigrationRunResponse.model_validate(run)
 
 

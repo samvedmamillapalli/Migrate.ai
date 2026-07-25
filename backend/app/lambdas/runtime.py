@@ -170,9 +170,19 @@ def handler_correlation(
     context: Any = None,
     *,
     function_name: str | None = None,
-) -> Iterator[str]:
-    """Bind run_id / Lambda / SFN correlation for the duration of a handler."""
-    run_id = require_run_id(event)
+    require_run: bool = True,
+) -> Iterator[str | None]:
+    """Bind run_id / Lambda / SFN correlation for the duration of a handler.
+
+    Scheduled jobs (orphan sweeper) pass ``require_run=False`` because EventBridge
+    payloads have no migration run_id.
+    """
+    run_id: str | None
+    if require_run:
+        run_id = require_run_id(event)
+    else:
+        raw = event.get("run_id")
+        run_id = raw if isinstance(raw, str) and raw else None
     lambda_request_id = getattr(context, "aws_request_id", None) if context else None
     lambda_function_name = function_name or getattr(
         context,

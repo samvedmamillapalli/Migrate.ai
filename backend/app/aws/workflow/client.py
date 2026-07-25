@@ -246,3 +246,49 @@ async def describe_workflow_execution(
         error=str(response["error"]) if response.get("error") else None,
         cause=str(response["cause"]) if response.get("cause") else None,
     )
+
+
+def _stop_execution_sync(
+    factory: AwsClientFactory,
+    *,
+    execution_arn: str,
+    error: str,
+    cause: str,
+) -> dict[str, Any]:
+    client = factory.client("stepfunctions")
+    return client.stop_execution(
+        executionArn=execution_arn,
+        error=error[:256],
+        cause=cause[:32768],
+    )
+
+
+async def stop_workflow_execution(
+    factory: AwsClientFactory,
+    execution_arn: str,
+    *,
+    error: str = "OperatorAbort",
+    cause: str = "Operator aborted the shadow workflow from the control plane",
+) -> WorkflowExecutionRef:
+    """Stop a running Standard execution. Idempotent if already terminal."""
+    try:
+        current = await describe_workflow_execution(factory, execution_arn)
+        if current.status in {
+            WorkflowStatus.SUCCEEDED,
+            WorkflowStatus.FAILED,
+            WorkflowStatus.TIMED_OUT,
+            WorkflowStatus.ABORTED,
+        }:
+            return current
+        await asyncio.to_thread(
+            _stop_execution_sync,
+            factory,
+            execution_arn=execution_arn,
+            error=error,
+            cause=cause,
+        )
+    except (BotoCoreError, ClientError, OSError) as exc:
+        raise WorkflowExecutionError(
+            f"Unable to stop execution {execution_arn}"
+        ) from exc
+    return await describe_workflow_execution(factory, execution_arn)

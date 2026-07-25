@@ -29,8 +29,8 @@ async def browse_memories(
     owner_identity: str | None = Query(
         default=None,
         description=(
-            "Filter by owner. Use __migration_oracle_corpus__ for the reserved "
-            "shared corpus identity."
+            "Filter by owner. Use the reserved corpus owner identity "
+            "(CORPUS_OWNER_IDENTITY) for the shared open-source corpus."
         ),
     ),
     embedding_status: str | None = Query(default=None),

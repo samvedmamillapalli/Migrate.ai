@@ -19,6 +19,7 @@ from app.aws.workflow import (
     WorkflowStartInput,
     describe_workflow_execution,
     start_workflow_execution,
+    stop_workflow_execution,
 )
 from app.aws.workflow.models import WorkflowStatus as AwsWorkflowStatus
 from app.core.exceptions import ConflictError, ValidationError
@@ -261,3 +262,65 @@ class WorkflowOrchestrationService:
             },
         )
         return updated
+
+    async def abort_for_run(
+        self,
+        run_id: uuid.UUID,
+        *,
+        reason: str = "Operator aborted shadow workflow",
+    ) -> MigrationRun:
+        """Stop a running Step Functions execution and tear down any shadow.
+
+        StopExecution does not run the ASL Cleanup state, so we invoke the
+        cleanup handler explicitly after stopping.
+        """
+        run = await self._repository.get_by_id_or_raise(run_id, load_children=True)
+        if not run.sfn_execution_arn:
+            raise ValidationError(
+                f"Migration run {run_id} has no Step Functions execution to abort"
+            )
+        if run.workflow_status in _TERMINAL_WORKFLOW:
+            return await self.sync_status(run_id)
+
+        await stop_workflow_execution(
+            self._aws_clients,
+            run.sfn_execution_arn,
+            error="OperatorAbort",
+            cause=reason,
+        )
+
+        try:
+            from app.lambdas import HANDLERS
+
+            HANDLERS["cleanup"](
+                {
+                    "run_id": str(run_id),
+                    "connection_secret_arn": run.connection_secret_arn,
+                }
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception(
+                "Cleanup after abort failed; sweeper is the backstop",
+                extra={"run_id": str(run_id)},
+            )
+
+        async def _commit() -> MigrationRun:
+            current = await self._repository.get_by_id_or_raise(run_id)
+            current.workflow_status = WorkflowStatus.ABORTED
+            current.workflow_finished_at = datetime.now(tz=UTC)
+            if current.status == MigrationRunStatus.RUNNING:
+                current.status = MigrationRunStatus.FAILED
+            explain = dict(current.explainability or {})
+            explain["workflow"] = {
+                "status": WorkflowStatus.ABORTED.value,
+                "error": "OperatorAbort",
+                "cause": reason[:2000],
+                "sfn_execution_arn": current.sfn_execution_arn,
+            }
+            current.explainability = explain
+            updated = await self._repository.update(current)
+            await self._session.commit()
+            await self._session.refresh(updated)
+            return updated
+
+        return await with_txn_retry(_commit, on_retry=self._session.rollback)

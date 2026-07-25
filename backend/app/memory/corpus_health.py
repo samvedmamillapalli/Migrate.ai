@@ -13,6 +13,7 @@ from app.memory.constants import (
     EMBEDDING_STATUS_FAILED,
     EMBEDDING_STATUS_PENDING,
     EMBEDDING_STATUS_READY,
+    LEGACY_DEMO_CORPUS_OWNER,
 )
 
 
@@ -77,7 +78,7 @@ async def fetch_corpus_health(session: AsyncSession) -> dict[str, Any]:
     wrong_seed_identity = (
         await session.execute(
             select(func.count()).select_from(MigrationMemory).where(
-                MigrationMemory.owner_identity == "demo-corpus"
+                MigrationMemory.owner_identity == LEGACY_DEMO_CORPUS_OWNER
             )
         )
     ).scalar_one()
@@ -107,7 +108,8 @@ async def fetch_corpus_health(session: AsyncSession) -> dict[str, Any]:
     if int(wrong_seed_identity or 0) > 0:
         problems.append(
             f"{int(wrong_seed_identity)} memories still use legacy owner_identity "
-            f"'demo-corpus' instead of reserved '{CORPUS_OWNER_IDENTITY}'"
+            f"{LEGACY_DEMO_CORPUS_OWNER!r} instead of reserved "
+            f"{CORPUS_OWNER_IDENTITY!r}"
         )
     if int(total or 0) == 0:
         problems.append(

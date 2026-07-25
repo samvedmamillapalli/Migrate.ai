@@ -1,0 +1,53 @@
+{
+  "source_key": "generic:column_type_rewrite",
+  "project": "PostgreSQL ops pattern",
+  "repo": "https://www.postgresql.org/docs/current/sql-altertable.html",
+  "license": "PostgreSQL",
+  "migration_file": "https://www.postgresql.org/docs/current/sql-altertable.html",
+  "incident_issue": "https://www.postgresql.org/docs/current/sql-altertable.html",
+  "source_url": "https://www.postgresql.org/docs/current/sql-altertable.html",
+  "migration_summary": "Column type change that cannot be done as a metadata-only cast; table rewrite scans and rewrites every row while holding an ACCESS EXCLUSIVE lock.",
+  "migration_sql": "ALTER TABLE users ALTER COLUMN phone TYPE TEXT USING phone::text;",
+  "scale_tier": "large",
+  "migration_type": "alter_column",
+  "parsed_statement_types": ["AlterTable"],
+  "schema_summary": "users.phone previously a constrained varchar; rewrite to unbounded text.",
+  "index_count": 6,
+  "table_complexity": 35,
+  "risk_flags": [
+    {
+      "rule_id": "column_type_rewrite",
+      "severity": "high",
+      "message": "TYPE change with USING often rewrites the table and dependent indexes."
+    }
+  ],
+  "risk_narrative": "ALTER ... TYPE with a non-binary-compatible cast rewrites the heap and may rebuild indexes. Duration tracks table size like other rewrite mechanisms (STORED generated columns, NOT NULL defaults on older engines).",
+  "lessons_learned": "Prefer add-new-column → backfill → swap for incompatible type changes. Test the USING expression on a shadow copy. Expect exclusive locks; do not schedule during peak traffic.",
+  "surprise_notes": "Even when the logical change is 'just a type', the physical mechanism is a rewrite—retrieval should group it with backfills, not with nullable ADD COLUMN.",
+  "documented_outcomes": {
+    "success": true,
+    "actual_duration_seconds": 1800.0,
+    "actual_storage_mb": 0.0,
+    "rollback_required": false,
+    "timed_out": false,
+    "error_message": null
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 1500.0,
+    "estimated_storage_mb": 0.0,
+    "rollback_risk": "high",
+    "confidence_score": 0.55,
+    "risk_explanation": "Table rewrite under exclusive lock."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "table_rewrite",
+    "duration_within_band": true,
+    "storage_within_band": true,
+    "rollback_within_band": true,
+    "dimension_details": {
+      "source": "open_source",
+      "mechanism": "table_rewrite"
+    }
+  }
+}

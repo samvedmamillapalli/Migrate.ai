@@ -1,0 +1,52 @@
+{
+  "source_key": "temporal:visibility/concurrent_index_pattern",
+  "project": "Temporal",
+  "repo": "https://github.com/temporalio/temporal",
+  "license": "MIT",
+  "migration_file": "https://github.com/temporalio/temporal/issues/6273",
+  "incident_issue": "https://github.com/temporalio/temporal/issues/6273",
+  "migration_summary": "Online concurrent btree index build on a hot table so reads and writes continue while the index is constructed; must run outside an explicit transaction block.",
+  "migration_sql": "CREATE INDEX CONCURRENTLY by_root_workflow_id ON executions_visibility (namespace_id, root_workflow_id, (COALESCE(close_time, '9999-12-31 23:59:59')) DESC, start_time DESC, run_id);",
+  "scale_tier": "large",
+  "migration_type": "create_index",
+  "parsed_statement_types": ["CreateIndex"],
+  "schema_summary": "Same executions_visibility hot path as Temporal issue 6273; pattern recommended as the fix.",
+  "index_count": 12,
+  "table_complexity": 45,
+  "risk_flags": [
+    {
+      "rule_id": "concurrent_index_txn_footgun",
+      "severity": "medium",
+      "message": "CREATE INDEX CONCURRENTLY fails if the migration runner wraps it in BEGIN/COMMIT."
+    }
+  ],
+  "risk_narrative": "Concurrent index builds avoid long write locks but require multiple internal transaction boundaries. Migration tools that always wrap DDL in a transaction will reject CONCURRENTLY at runtime. Failed builds can leave INVALID indexes that must be dropped outside a transaction too.",
+  "lessons_learned": "Use CONCURRENTLY for additive indexes on busy tables; disable transaction wrapping for that statement; set lock_timeout; clean up INVALID indexes if the build fails. Still expect a long wall-clock build on large tables even when online.",
+  "surprise_notes": "The safer online form is rejected by default migration runners unless you opt out of the surrounding transaction—silent footgun when copying the Temporal suggested fix.",
+  "documented_outcomes": {
+    "success": true,
+    "actual_duration_seconds": null,
+    "actual_storage_mb": null,
+    "rollback_required": false,
+    "timed_out": false,
+    "error_message": null
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 900.0,
+    "estimated_storage_mb": 256.0,
+    "rollback_risk": "low",
+    "confidence_score": 0.7,
+    "risk_explanation": "Online build is safer for writers but slower wall-clock than blocking CREATE INDEX."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "recommended_pattern",
+    "duration_within_band": true,
+    "storage_within_band": true,
+    "rollback_within_band": true,
+    "dimension_details": {
+      "source": "open_source",
+      "note": "Representative safe pattern from Temporal #6273 discussion; not a separate measured run."
+    }
+  }
+}

@@ -16,7 +16,13 @@ logger = get_logger(__name__)
 
 
 def handler(event: dict[str, Any] | None = None, context: Any = None) -> dict[str, Any]:
-    with handler_correlation(event or {}, context, function_name="shadow-sweeper"):
+    # EventBridge schedule has no run_id — correlation is optional for this job.
+    with handler_correlation(
+        event or {},
+        context,
+        function_name="shadow-sweeper",
+        require_run=False,
+    ):
         return run_async(_handle(event or {}))
 
 

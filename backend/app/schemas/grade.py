@@ -40,6 +40,22 @@ class GradeResponse(BaseModel):
     updated_at: datetime
 
 
+def integrity_fields(grade_summary: Any) -> dict[str, Any]:
+    """Surface corpus integrity markers so the UI can distinguish graded runs."""
+    grade = grade_summary if isinstance(grade_summary, dict) else {}
+    integrity = (
+        grade.get("integrity") if isinstance(grade.get("integrity"), dict) else {}
+    )
+    source_url = integrity.get("source_url")
+    return {
+        "not_a_graded_run": bool(integrity.get("not_a_graded_run")),
+        "source_url": str(source_url) if source_url else None,
+        "ui_label": integrity.get("ui_label"),
+        "integrity_kind": integrity.get("kind"),
+        "scalar_accuracy_score": grade.get("scalar_accuracy_score"),
+    }
+
+
 class MemoryResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -57,12 +73,16 @@ class MemoryResponse(BaseModel):
     embedding_error: str | None = None
     embedding_model_id: str | None = None
     scalar_accuracy_score: float | None = None
+    not_a_graded_run: bool = False
+    source_url: str | None = None
+    ui_label: str | None = None
+    integrity_kind: str | None = None
     created_at: datetime
     updated_at: datetime
 
     @classmethod
     def from_orm_memory(cls, memory: Any) -> MemoryResponse:
-        grade = memory.grade_summary or {}
+        integrity = integrity_fields(memory.grade_summary)
         return cls(
             id=memory.id,
             migration_run_id=memory.migration_run_id,
@@ -77,7 +97,11 @@ class MemoryResponse(BaseModel):
             embedding_status=memory.embedding_status,
             embedding_error=memory.embedding_error,
             embedding_model_id=memory.embedding_model_id,
-            scalar_accuracy_score=grade.get("scalar_accuracy_score"),
+            scalar_accuracy_score=integrity["scalar_accuracy_score"],
+            not_a_graded_run=integrity["not_a_graded_run"],
+            source_url=integrity["source_url"],
+            ui_label=integrity["ui_label"],
+            integrity_kind=integrity["integrity_kind"],
             created_at=memory.created_at,
             updated_at=memory.updated_at,
         )

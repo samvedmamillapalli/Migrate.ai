@@ -11,6 +11,9 @@ node_modules/
 .env
 .env.*
 !.env.example
+.judge_ro_password
+.judge_ro_database_url
+docs/judge_walkthrough_artifacts/
 docs/envexamp.md
 .vscode/
 .local_secrets/
@@ -23,3 +26,5 @@ infra/sam/.aws-sam/
 # OS files
 .DS_Store
 Thumbs.db
+.tmp_schema.json
+.tmp_*.json

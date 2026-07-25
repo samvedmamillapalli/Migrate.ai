@@ -44,3 +44,14 @@ def get_policy_file() -> PolicyFile:
 
 def clear_policy_cache() -> None:
     get_policy_file.cache_clear()
+
+
+def get_policy_file_fresh() -> PolicyFile:
+    """Reload policy YAML from disk (bypasses process-lifetime cache).
+
+    Uvicorn ``--reload`` only watches ``.py`` by default, so YAML edits would
+    otherwise stick until a hard restart. Prefer this at request boundaries
+    when operators may tune rules without bouncing the API.
+    """
+    clear_policy_cache()
+    return get_policy_file()

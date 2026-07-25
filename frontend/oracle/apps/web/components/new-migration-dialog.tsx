@@ -1,8 +1,12 @@
 "use client"
 
 import * as React from "react"
-import { FileCode2, GitBranch, Diff, ClipboardPaste } from "lucide-react"
+import { useRouter } from "next/navigation"
+import { Bug, ClipboardPaste, FileCode2 } from "lucide-react"
 
+import { ApiError } from "@/lib/api/client"
+import { createFakeMigration, createRun } from "@/lib/api/endpoints"
+import { requireOwnerIdentity, setCurrentRunId } from "@/lib/api/owner"
 import { Button } from "@workspace/ui/components/button"
 import {
   Dialog,
@@ -15,19 +19,13 @@ import {
 } from "@workspace/ui/components/dialog"
 import { cn } from "@workspace/ui/lib/utils"
 
-type MigrationInputMethod =
-  | "upload"
-  | "paste"
-  | "repository"
-  | "compare"
-  | null
+type MigrationInputMethod = "upload" | "paste" | null
 
 const METHODS: {
   id: Exclude<MigrationInputMethod, null>
   title: string
   description: string
   icon: React.ElementType
-  comingSoon?: boolean
 }[] = [
   {
     id: "upload",
@@ -41,28 +39,17 @@ const METHODS: {
     description: "Paste migration SQL directly into an editor.",
     icon: ClipboardPaste,
   },
-  {
-    id: "repository",
-    title: "Connect Repository",
-    description: "Select a migration from a GitHub repository.",
-    icon: GitBranch,
-    comingSoon: true,
-  },
-  {
-    id: "compare",
-    title: "Compare Schema",
-    description: "Generate a migration from schema differences.",
-    icon: Diff,
-    comingSoon: true,
-  },
 ]
 
 export function NewMigrationDialog() {
+  const router = useRouter()
   const [open, setOpen] = React.useState(false)
   const [method, setMethod] = React.useState<MigrationInputMethod>(null)
   const [sqlText, setSqlText] = React.useState("")
   const [fileName, setFileName] = React.useState<string | null>(null)
   const [isDragging, setIsDragging] = React.useState(false)
+  const [submitting, setSubmitting] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
   const fileInputRef = React.useRef<HTMLInputElement>(null)
 
   function resetState() {
@@ -70,9 +57,12 @@ export function NewMigrationDialog() {
     setSqlText("")
     setFileName(null)
     setIsDragging(false)
+    setSubmitting(false)
+    setError(null)
   }
 
   function handleOpenChange(next: boolean) {
+    if (submitting) return
     setOpen(next)
     if (!next) resetState()
   }
@@ -92,10 +82,57 @@ export function NewMigrationDialog() {
 
   const canRun =
     method === "upload"
-      ? Boolean(fileName)
+      ? Boolean(fileName) && sqlText.trim().length > 0
       : method === "paste"
         ? sqlText.trim().length > 0
         : false
+
+  async function handleRun() {
+    setError(null)
+    try {
+      const owner = requireOwnerIdentity()
+      setSubmitting(true)
+      const run = await createRun({
+        migration_sql: sqlText,
+        owner_identity: owner,
+      })
+      setCurrentRunId(run.id)
+      setOpen(false)
+      resetState()
+      router.push("/dashboard/migrations/current")
+    } catch (err) {
+      setSubmitting(false)
+      if (err instanceof ApiError) {
+        setError(err.message)
+      } else if (err instanceof Error) {
+        setError(err.message)
+      } else {
+        setError("Failed to create migration run.")
+      }
+    }
+  }
+
+  async function handleFakeMigration() {
+    setError(null)
+    try {
+      const owner = requireOwnerIdentity()
+      setSubmitting(true)
+      const run = await createFakeMigration(owner)
+      setCurrentRunId(run.id)
+      setOpen(false)
+      resetState()
+      router.push("/dashboard/migrations/current")
+    } catch (err) {
+      setSubmitting(false)
+      if (err instanceof ApiError) {
+        setError(err.message)
+      } else if (err instanceof Error) {
+        setError(err.message)
+      } else {
+        setError("Failed to create fake migration.")
+      }
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -119,12 +156,10 @@ export function NewMigrationDialog() {
               <button
                 key={item.id}
                 type="button"
-                disabled={item.comingSoon}
                 onClick={() => setMethod(item.id)}
                 className={cn(
                   "border-border hover:bg-muted/40 flex flex-col items-start gap-1 rounded-md border p-3 text-left transition-colors",
-                  selected && "border-foreground/30 bg-muted/30",
-                  item.comingSoon && "cursor-not-allowed opacity-50"
+                  selected && "border-foreground/30 bg-muted/30"
                 )}
               >
                 <div className="flex w-full items-center justify-between gap-2">
@@ -134,11 +169,6 @@ export function NewMigrationDialog() {
                       {item.title}
                     </span>
                   </div>
-                  {item.comingSoon ? (
-                    <span className="text-muted-foreground font-mono text-[10px] tracking-tight uppercase">
-                      Coming soon
-                    </span>
-                  ) : null}
                 </div>
                 <p className="text-muted-foreground text-xs leading-relaxed">
                   {item.description}
@@ -214,36 +244,46 @@ export function NewMigrationDialog() {
 
         {(method === "upload" || method === "paste") && (
           <>
-            <div className="border-border/60 grid gap-3 border-t pt-3 sm:grid-cols-2">
-              <div className="space-y-0.5">
-                <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-                  Source
-                </p>
-                <p className="text-foreground font-mono text-xs tracking-tight">
-                  PostgreSQL
-                </p>
-              </div>
-              <div className="space-y-0.5">
-                <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-                  Target
-                </p>
-                <p className="text-foreground font-mono text-xs tracking-tight">
-                  CockroachDB
-                </p>
-              </div>
-            </div>
+            {error ? (
+              <p className="text-[var(--oracle-risk)] text-xs leading-relaxed">
+                {error}
+              </p>
+            ) : null}
 
             <DialogFooter>
               <Button
                 type="button"
-                disabled={!canRun}
-                onClick={() => handleOpenChange(false)}
+                disabled={!canRun || submitting}
+                onClick={() => void handleRun()}
               >
-                Run Migration Analysis
+                {submitting ? "Submitting…" : "Run Migration Analysis"}
               </Button>
             </DialogFooter>
           </>
         )}
+
+        {process.env.NEXT_PUBLIC_ENABLE_DEBUG_TOOLS === "true" ? (
+          <div className="border-border/60 flex items-center justify-between gap-3 border-t pt-3">
+            <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
+              Debug
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={submitting}
+              onClick={() => void handleFakeMigration()}
+            >
+              <Bug className="size-3.5" />
+              Fake migration (debug)
+            </Button>
+          </div>
+        ) : null}
+        {error && method === null ? (
+          <p className="text-[var(--oracle-risk)] text-xs leading-relaxed">
+            {error}
+          </p>
+        ) : null}
       </DialogContent>
     </Dialog>
   )

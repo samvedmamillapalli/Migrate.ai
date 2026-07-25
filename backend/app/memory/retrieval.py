@@ -213,8 +213,17 @@ class HybridMemoryRetrieval(MemoryRetrieval):
             mem = row["memory"]
             pred = mem.prediction_summary or {}
             exe = mem.execution_summary or {}
+            grade = mem.grade_summary or {}
+            integrity = grade.get("integrity") if isinstance(grade, dict) else None
+            if not isinstance(integrity, dict):
+                integrity = {}
+            source_url = (
+                integrity.get("source_url")
+                or (mem.recommendation_summary or {}).get("source_url")
+            )
             retrieved.append(
                 RetrievedMemory(
+                    memory_id=mem.id,
                     migration_run_id=mem.migration_run_id,
                     migration_summary=mem.migration_summary,
                     actual_duration_seconds=exe.get("actual_duration_seconds"),
@@ -224,6 +233,11 @@ class HybridMemoryRetrieval(MemoryRetrieval):
                     surprise_notes=mem.surprise_notes,
                     similarity_score=round(float(row["similarity_score"]), 6),
                     scale_tier=mem.scale_tier,
+                    memory_origin=integrity.get("kind"),
+                    not_a_graded_run=bool(integrity.get("not_a_graded_run")),
+                    source_url=str(source_url) if source_url else None,
+                    ui_label=integrity.get("ui_label"),
+                    lessons_learned=mem.lessons_learned,
                 )
             )
             attribution_rows.append(
@@ -241,9 +255,10 @@ class HybridMemoryRetrieval(MemoryRetrieval):
                     "migration_summary": mem.migration_summary,
                     "lessons_learned": mem.lessons_learned,
                     "surprise_notes": mem.surprise_notes,
-                    "scalar_accuracy_score": (mem.grade_summary or {}).get(
-                        "scalar_accuracy_score"
-                    ),
+                    "scalar_accuracy_score": grade.get("scalar_accuracy_score"),
+                    "integrity": integrity or None,
+                    "source_url": source_url,
+                    "not_a_graded_run": bool(integrity.get("not_a_graded_run")),
                 }
             )
 

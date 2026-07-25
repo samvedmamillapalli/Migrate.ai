@@ -1,0 +1,52 @@
+{
+  "source_key": "airflow:0080_pool_slots_not_null",
+  "project": "Apache Airflow",
+  "repo": "https://github.com/apache/airflow",
+  "license": "Apache-2.0",
+  "migration_file": "https://github.com/apache/airflow/blob/main/airflow-core/src/airflow/migrations/versions",
+  "incident_issue": "https://github.com/apache/airflow/issues/24566",
+  "migration_summary": "Setting an existing column NOT NULL without first backfilling null rows; integrity scan fails mid-upgrade when legacy nulls remain.",
+  "migration_sql": "ALTER TABLE task_instance ALTER COLUMN pool_slots SET NOT NULL;",
+  "scale_tier": "medium",
+  "migration_type": "alter_column",
+  "parsed_statement_types": ["AlterTable"],
+  "schema_summary": "task_instance with historical rows where pool_slots may be NULL from Airflow 1.x eras.",
+  "index_count": 8,
+  "table_complexity": 30,
+  "risk_flags": [
+    {
+      "rule_id": "not_null_without_backfill",
+      "severity": "high",
+      "message": "ALTER ... SET NOT NULL validates existing rows and fails if nulls remain."
+    }
+  ],
+  "risk_narrative": "Migration 0080 changed pool_slots to NOT NULL with a server default, but a prior PR removed the UPDATE that filled nulls. Upgrades from older Airflow hit NotNullViolation: column pool_slots contains null values and the deploy stopped mid-migration.",
+  "lessons_learned": "Before enforcing NOT NULL on a populated table, UPDATE nulls (or delete) first, ideally in a prior expand step. Server defaults do not rewrite existing nulls on PostgreSQL for SET NOT NULL. Pair constraint validation with a measured backfill.",
+  "surprise_notes": "Adding a default is not enough—existing NULL rows still fail the NOT NULL scan. Rollback required a fixed migration that replaced nulls before the constraint.",
+  "documented_outcomes": {
+    "success": false,
+    "actual_duration_seconds": null,
+    "actual_storage_mb": null,
+    "rollback_required": true,
+    "timed_out": false,
+    "error_message": "psycopg2.errors.NotNullViolation: column \"pool_slots\" contains null values (Airflow issue #24566)."
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 20.0,
+    "estimated_storage_mb": 0.0,
+    "rollback_risk": "high",
+    "confidence_score": 0.5,
+    "risk_explanation": "Constraint validation is a full-table scan whose failure mode is hard abort, not slow success."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "constraint_validation_failure",
+    "duration_within_band": false,
+    "storage_within_band": true,
+    "rollback_within_band": false,
+    "dimension_details": {
+      "source": "open_source",
+      "downgrade_pair": "Airflow migrations have explicit downgrade paths for rollback planning."
+    }
+  }
+}

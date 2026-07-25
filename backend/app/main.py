@@ -8,7 +8,6 @@ if sys.platform == "win32":
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from app.api.errors import register_exception_handlers
 from app.api.middleware import DemoApiKeyMiddleware
@@ -21,14 +20,12 @@ from app.aws import (
     get_aws_settings,
     validate_aws_startup,
 )
-from app.config import PROJECT_ROOT, get_settings
+from app.config import get_settings
 from app.core.logging import get_logger, setup_logging
 from app.database import DatabaseSessionManager
 from app.prediction.bedrock_client import MockBedrockClient
 
 logger = get_logger(__name__)
-
-FRONTEND_DIR = PROJECT_ROOT / "frontend"
 
 
 @asynccontextmanager
@@ -107,6 +104,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         },
     )
 
+    # Curated open-source corpus (Temporal index incident, etc.) for hybrid retrieval.
+    try:
+        from app.memory.open_source_corpus import ensure_open_source_corpus
+
+        async for session in database.session():
+            result = await ensure_open_source_corpus(session, aws_settings=aws_settings)
+            if result.get("seeded") or result.get("repaired_embeddings"):
+                logger.info(
+                    "Open-source corpus ensured",
+                    extra=result,
+                )
+            break
+    except Exception:
+        logger.warning("Open-source corpus seed skipped (non-fatal)", exc_info=True)
+
     try:
         yield
     finally:
@@ -146,12 +158,8 @@ def create_app() -> FastAPI:
     app.include_router(runs_router)
     app.include_router(memories_router)
 
-    if FRONTEND_DIR.is_dir():
-        app.mount(
-            "/ui",
-            StaticFiles(directory=str(FRONTEND_DIR), html=True),
-            name="smoke-ui",
-        )
+    # Legacy static /ui console retired — operators use the Next.js app
+    # (frontend/oracle). Keep frontend/ on disk only as historical reference.
 
     return app
 

@@ -19,7 +19,6 @@ _PUBLIC_PREFIXES = (
     "/docs",
     "/openapi.json",
     "/redoc",
-    "/ui",
 )
 
 

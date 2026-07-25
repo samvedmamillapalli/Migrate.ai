@@ -39,10 +39,10 @@ Parameters:
     Default: migration-oracle/connections
   BedrockPredictionModelId:
     Type: String
-    Default: us.anthropic.claude-sonnet-4-6
+    Default: us.anthropic.claude-haiku-4-5-20251001-v1:0
   BedrockRecommendationModelId:
     Type: String
-    Default: us.anthropic.claude-sonnet-4-6
+    Default: us.anthropic.claude-haiku-4-5-20251001-v1:0
   BedrockEmbeddingModelId:
     Type: String
     Default: amazon.titan-embed-text-v2:0

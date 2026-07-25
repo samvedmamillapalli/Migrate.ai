@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""Developer entrypoint — bootstrap + run API/UI.
+"""Developer entrypoint — bootstrap + run API.
 
-The static frontend is served by FastAPI at ``/ui``, so a single uvicorn
-process is enough for local development.
+The operator UI is the Next.js app under ``frontend/oracle``
+(``npm run dev`` → http://localhost:3000). The legacy static ``/ui`` console
+is retired.
 
 Usage (from repo root):
   python scripts/dev.py setup    # venv + deps + migrations + readiness check
   python scripts/dev.py doctor   # verify .env / AWS / SFN without starting
-  python scripts/dev.py          # start API + UI (auto-setup if needed)
+  python scripts/dev.py          # start API (auto-setup if needed)
   python scripts/dev.py restart  # kill port, clear stale env, start fresh
   .\\dev.ps1 / ./dev.sh
   .\\restart.ps1 / ./restart.sh
@@ -295,6 +296,9 @@ def cmd_setup(args: argparse.Namespace) -> int:
     if not args.skip_migrate:
         _alembic_upgrade(py)
 
+    print("Ensuring open-source migration corpus …")
+    _run([str(py), str(BACKEND_DIR / "scripts" / "seed_open_source_corpus.py")])
+
     print()
     return cmd_doctor(args)
 
@@ -317,14 +321,17 @@ def cmd_serve(args: argparse.Namespace) -> int:
         print()
 
     py = _resolve_python()
-    ui = f"http://{host}:{port}/ui"
     docs = f"http://{host}:{port}/docs"
+    health = f"http://{host}:{port}/health"
     print("Migration Oracle — local development")
     print(f"  Interpreter : {py}")
-    print(f"  API + UI    : uvicorn (host={host} port={port} reload={reload})")
-    print(f"  Operator UI : {ui}")
+    print(f"  API         : uvicorn (host={host} port={port} reload={reload})")
+    print(f"  Health      : {health}")
     print(f"  OpenAPI     : {docs}")
-    print("  Tip: health strip should show SFN ready for real AWS shadows.")
+    print("  Operator UI : cd frontend/oracle && npm run dev  →  http://localhost:3000")
+    print("  Tip: /health integrations.sfn_ready should be true for real AWS shadows.")
+    if sys.platform == "win32":
+        print("  Windows tip: keep --reload (default) so psycopg gets a Selector loop.")
     print()
 
     cmd = [
@@ -431,7 +438,7 @@ def cmd_deploy(_args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="dev",
-        description="Bootstrap and run Migration Oracle locally (API + /ui).",
+        description="Bootstrap and run Migration Oracle locally (API; Next.js UI separate).",
     )
     sub = parser.add_subparsers(dest="command")
 

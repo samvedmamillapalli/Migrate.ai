@@ -132,10 +132,24 @@ rules:
     enabled: true
     title: "SQL parse failure"
     base_severity: high
-    policy_decision: allow_with_warning
+    policy_decision: block
     requires_manual_review: true
     requires_expand_contract: false
     compatibility_risk: medium
     explanation: >
       The migration SQL could not be fully understood. Manual review is required;
-      the system will not silently bless an unparsed change.
+      the system will not silently bless an unparsed change. Proceed only with an
+      override rationale after fixing or confirming the SQL.
+
+  missing_referenced_table:
+    enabled: true
+    title: "Referenced table missing from discovered schema"
+    base_severity: high
+    policy_decision: block
+    requires_manual_review: true
+    requires_expand_contract: false
+    compatibility_risk: medium
+    explanation: >
+      The migration references a table that was not present in the discovered
+      schema snapshot. Confirm the connection/database, re-run discovery, or
+      fix the SQL before proceeding.

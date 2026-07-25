@@ -19,11 +19,39 @@ METRIC_RETRIEVAL_STRENGTH = "RetrievalUsefulCount"
 
 
 async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
-    """Plain SQL aggregates over grades / memories for Phase 11 charts."""
+    """Plain SQL aggregates over grades / memories for Phase 11 charts.
+
+    Excludes open-source documented incidents and synthetic seed rows — those
+    are not predicted-then-measured grades and must not inflate accuracy.
+    """
+    # Shared predicate: only genuine graded outcomes count toward accuracy.
+    _GRADE_OK = """
+        COALESCE(g.prose_status, '') NOT IN ('open_source', 'seed')
+        AND COALESCE(g.dimension_details->>'source', '') != 'open_source'
+        AND COALESCE(g.dimension_details->>'seed', '') NOT IN ('true', 'True', '1')
+        AND COALESCE(
+              (SELECT mm.grade_summary->>'open_source_key'
+               FROM migration_memories mm
+               WHERE mm.migration_run_id = g.migration_run_id
+               LIMIT 1),
+              ''
+            ) = ''
+        AND COALESCE(
+              (SELECT mm.grade_summary->'integrity'->>'kind'
+               FROM migration_memories mm
+               WHERE mm.migration_run_id = g.migration_run_id
+               LIMIT 1),
+              ''
+            ) NOT IN (
+              'open_source_documented_incident',
+              'synthetic_seed'
+            )
+    """
+
     scalar_trend = (
         await session.execute(
             text(
-                """
+                f"""
                 SELECT
                     g.created_at,
                     g.scalar_accuracy_score,
@@ -33,6 +61,7 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
                     mr.parsed_statement_types
                 FROM grades g
                 JOIN migration_runs mr ON mr.id = g.migration_run_id
+                WHERE {_GRADE_OK}
                 ORDER BY g.created_at ASC
                 """
             )
@@ -42,7 +71,7 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
     calibration = (
         await session.execute(
             text(
-                """
+                f"""
                 SELECT
                     CASE
                         WHEN adjusted_confidence < 0.4 THEN 'low'
@@ -55,7 +84,8 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
                     ) AS mean_abs_error,
                     AVG(scalar_accuracy_score) AS mean_scalar,
                     COUNT(*) AS n
-                FROM grades
+                FROM grades g
+                WHERE {_GRADE_OK}
                 GROUP BY 1
                 ORDER BY 1
                 """
@@ -97,11 +127,12 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
     by_tier = (
         await session.execute(
             text(
-                """
+                f"""
                 SELECT scale_tier,
                        AVG(scalar_accuracy_score) AS mean_scalar,
                        COUNT(*) AS n
-                FROM grades
+                FROM grades g
+                WHERE {_GRADE_OK}
                 GROUP BY scale_tier
                 ORDER BY scale_tier
                 """
@@ -116,8 +147,16 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
                 SELECT
                     COUNT(*) AS memories_ready,
                     COUNT(*) FILTER (WHERE embedding_status = 'pending') AS pending,
-                    AVG((grade_summary->>'scalar_accuracy_score')::float)
-                        AS mean_scalar_in_memory
+                    AVG(
+                      CASE
+                        WHEN COALESCE(grade_summary->>'open_source_key', '') = ''
+                         AND COALESCE(grade_summary->'integrity'->>'kind', '')
+                             NOT IN ('open_source_documented_incident', 'synthetic_seed')
+                         AND COALESCE(grade_summary->>'seed', '') NOT IN ('true', 'True')
+                        THEN (grade_summary->>'scalar_accuracy_score')::float
+                        ELSE NULL
+                      END
+                    ) AS mean_scalar_in_memory
                 FROM migration_memories
                 """
             )
@@ -127,7 +166,7 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
     high_risk = (
         await session.execute(
             text(
-                """
+                f"""
                 SELECT
                     COUNT(*) FILTER (
                         WHERE high_risk_flags_present
@@ -145,7 +184,8 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
                         WHERE NOT high_risk_flags_present
                           AND outcome_class NOT IN ('failure', 'partial', 'timeout')
                     ) AS true_negative
-                FROM grades
+                FROM grades g
+                WHERE {_GRADE_OK}
                 """
             )
         )
@@ -154,7 +194,7 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
     retrieval_usefulness = (
         await session.execute(
             text(
-                """
+                f"""
                 SELECT
                     AVG(g.scalar_accuracy_score) AS mean_scalar,
                     AVG(
@@ -172,6 +212,7 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
                     ) AS corr_retrieval_count_vs_accuracy
                 FROM grades g
                 JOIN migration_runs mr ON mr.id = g.migration_run_id
+                WHERE {_GRADE_OK}
                 """
             )
         )
@@ -216,6 +257,10 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
             "recall": recall,
         },
         "retrieval_usefulness_vs_accuracy": dict(retrieval_usefulness),
+        "integrity_note": (
+            "Accuracy aggregates exclude open_source_documented_incident and "
+            "synthetic_seed memories; those are not predicted-then-measured grades."
+        ),
     }
 
 

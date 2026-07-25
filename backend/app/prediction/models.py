@@ -31,6 +31,16 @@ class ModelPredictionOutput(BaseModel):
     key_assumptions: list[str] = Field(min_length=1)
     uncertainty_notes: list[str] = Field(min_length=1)
 
+    @field_validator("key_assumptions", "uncertainty_notes", mode="before")
+    @classmethod
+    def coerce_string_lists(cls, value: object) -> object:
+        # Smaller models (e.g. Haiku) sometimes emit a single string instead of
+        # a JSON array; coerce so the pipeline still accepts valid content.
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
+        return value
+
     @field_validator("key_assumptions", "uncertainty_notes")
     @classmethod
     def non_empty_strings(cls, value: list[str]) -> list[str]:
@@ -94,6 +104,14 @@ class RecommendationOutput(BaseModel):
         if not normalized:
             raise ValueError("field must not be empty")
         return normalized
+
+    @field_validator("rollout_steps", "monitoring_checklist", mode="before")
+    @classmethod
+    def coerce_string_lists(cls, value: object) -> object:
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
+        return value
 
     @field_validator("rollout_steps", "monitoring_checklist")
     @classmethod

@@ -8,6 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.grade import integrity_fields
+
 
 class MemoryListItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -27,12 +29,16 @@ class MemoryListItem(BaseModel):
     embedding_model_id: str | None = None
     has_embedding: bool = False
     scalar_accuracy_score: float | None = None
+    not_a_graded_run: bool = False
+    source_url: str | None = None
+    ui_label: str | None = None
+    integrity_kind: str | None = None
     created_at: datetime
     updated_at: datetime
 
     @classmethod
     def from_orm_memory(cls, memory: Any) -> MemoryListItem:
-        grade = memory.grade_summary or {}
+        integrity = integrity_fields(memory.grade_summary)
         return cls(
             id=memory.id,
             migration_run_id=memory.migration_run_id,
@@ -49,7 +55,11 @@ class MemoryListItem(BaseModel):
             embedding_model_id=memory.embedding_model_id,
             has_embedding=memory.embedding is not None
             and memory.embedding_status == "ready",
-            scalar_accuracy_score=grade.get("scalar_accuracy_score"),
+            scalar_accuracy_score=integrity["scalar_accuracy_score"],
+            not_a_graded_run=integrity["not_a_graded_run"],
+            source_url=integrity["source_url"],
+            ui_label=integrity["ui_label"],
+            integrity_kind=integrity["integrity_kind"],
             created_at=memory.created_at,
             updated_at=memory.updated_at,
         )
@@ -136,3 +146,4 @@ class ModelTrace(BaseModel):
     repair_retried: bool = False
     final_parsed: dict[str, Any] | None = None
     latency_ms_total: float | None = None
+

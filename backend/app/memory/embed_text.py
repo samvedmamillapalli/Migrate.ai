@@ -2,7 +2,13 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
+
+_DDL_LEAD = re.compile(
+    r"^\s*(create|alter|drop|truncate|comment|grant|revoke)\b",
+    re.IGNORECASE,
+)
 
 
 def compose_embed_text(
@@ -17,22 +23,48 @@ def compose_embed_text(
 
     Raw DDL may appear briefly but must not dominate. Ordering is load-bearing
     for retrieval quality: summary → risk → lessons → surprise → optional DDL.
+
+    Summaries that are just pasted SQL are stripped down to a type hint so Titan
+    matches on mechanism (locks, backfill, rewrite) rather than SQL vocabulary.
     """
+    summary = _mechanism_first_summary(migration_summary.strip())
     parts = [
-        f"Migration summary: {migration_summary.strip()}",
+        f"Migration summary: {summary}",
         f"Risk narrative: {risk_narrative.strip()}",
         f"Lessons learned: {lessons_learned.strip()}",
     ]
     if surprise_notes and surprise_notes.strip():
         parts.append(f"Surprise: {surprise_notes.strip()}")
     if migration_sql and migration_sql.strip():
-        # Cap DDL so it cannot become the majority of the text.
-        ddl = migration_sql.strip()
-        max_ddl = max(120, sum(len(p) for p in parts) // 3)
+        narrative_len = sum(len(p) for p in parts)
+        # Cap DDL to at most ~20% of the narrative so mechanism text wins.
+        max_ddl = max(80, narrative_len // 5)
+        ddl = " ".join(migration_sql.strip().split())
         if len(ddl) > max_ddl:
             ddl = ddl[:max_ddl] + "…"
         parts.append(f"DDL excerpt: {ddl}")
     return "\n\n".join(parts)
+
+
+def _mechanism_first_summary(summary: str) -> str:
+    """Prefer prose. If the summary is type:DDL, keep the type and drop the SQL."""
+    if not summary:
+        return "unknown migration"
+    # "create_index: CREATE INDEX ..." → keep mechanism label only when rest is DDL
+    if ":" in summary:
+        head, tail = summary.split(":", 1)
+        if _DDL_LEAD.match(tail.strip()) or _DDL_LEAD.match(summary):
+            label = head.strip() or "migration"
+            return (
+                f"{label} migration — mechanism and operational risk described "
+                "in the narrative fields below"
+            )
+    if _DDL_LEAD.match(summary):
+        return (
+            "Schema migration — mechanism and operational risk described "
+            "in the narrative fields below"
+        )
+    return summary
 
 
 def classify_migration_type(statement_types: list[str] | None, sql: str) -> str:

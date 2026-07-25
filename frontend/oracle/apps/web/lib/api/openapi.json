@@ -1,0 +1,2850 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Migration Oracle",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "Root",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Root  Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Health Check",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Health Check Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs": {
+      "post": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Create Run",
+        "operationId": "create_run_runs_post",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MigrationRunCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "List Runs",
+        "operationId": "list_runs_runs_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/MigrationRunStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationRunListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/metrics/accuracy": {
+      "get": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Get Accuracy Metrics",
+        "description": "Plain SQL accuracy / learning metrics (Phase 11 chart source).",
+        "operationId": "get_accuracy_metrics_runs_metrics_accuracy_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Accuracy Metrics Runs Metrics Accuracy Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/debug/fake-migration": {
+      "post": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Create Debug Fake Migration",
+        "description": "Debug helper: random SQL + synthetic schema so predict works without a real DB.\n\nStores a connection_secret_arn (control-plane DATABASE_URL) so approve can\nstart Step Functions. DiscoverSchema is skipped because discovery already\nSUCCEEDED on the synthetic snapshot. Does not create graded memories.",
+        "operationId": "create_debug_fake_migration_runs_debug_fake_migration_post",
+        "parameters": [
+          {
+            "name": "owner_identity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "default": "debug",
+              "title": "Owner Identity"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}": {
+      "get": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Get Run",
+        "operationId": "get_run_runs__run_id__get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Update Run Status",
+        "operationId": "update_run_status_runs__run_id__patch",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MigrationRunStatusUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/discover": {
+      "post": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Discover Schema",
+        "description": "Discover customer schema (read-only) and store connection_secret_arn pointer.",
+        "operationId": "discover_schema_runs__run_id__discover_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverSchemaRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/predict": {
+      "post": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Run Prediction Pipeline",
+        "description": "Run Phase 9 policy \u2192 predict \u2192 recommend and stop at awaiting_approval.",
+        "operationId": "run_prediction_pipeline_runs__run_id__predict_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/pipeline-progress": {
+      "get": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Get Pipeline Progress",
+        "description": "Live stage progress for a long-running predict / local-verify (in-process).",
+        "operationId": "get_pipeline_progress_runs__run_id__pipeline_progress_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Pipeline Progress Runs  Run Id  Pipeline Progress Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/approve": {
+      "post": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Approve Run",
+        "description": "Record approval. On proceed, auto-starts the verify workflow when configured.",
+        "operationId": "approve_run_runs__run_id__approve_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApprovalCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/closed-loop": {
+      "post": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Run Closed Loop",
+        "description": "Predict (if needed) \u2192 proceed \u2192 start SFN when ARN + connection secret exist.",
+        "operationId": "run_closed_loop_runs__run_id__closed_loop_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ClosedLoopRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/start-workflow": {
+      "post": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Start Workflow",
+        "description": "Start Step Functions verify after prediction + proceed approval.",
+        "operationId": "start_workflow_runs__run_id__start_workflow_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StartWorkflowRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/verify-local": {
+      "post": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Verify Local",
+        "description": "Run in-process mock shadow verify when Step Functions is not deployed.\n\nSame handler chain as the durable workflow (discover \u2192 provision \u2192 load \u2192\nexecute \u2192 collect \u2192 persist/grade \u2192 cleanup), using SHADOW_PROVIDER=mock.\nUse this for local demos; set MIGRATION_WORKFLOW_ARN for real AWS verify.",
+        "operationId": "verify_local_runs__run_id__verify_local_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/sync-workflow": {
+      "post": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Sync Workflow",
+        "operationId": "sync_workflow_runs__run_id__sync_workflow_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/approval": {
+      "get": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Get Approval",
+        "operationId": "get_approval_runs__run_id__approval_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApprovalResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/grade": {
+      "post": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Grade Run",
+        "operationId": "grade_run_runs__run_id__grade_post",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MigrationRunResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Get Grade",
+        "operationId": "get_grade_runs__run_id__grade_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GradeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/memory": {
+      "get": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Get Memory",
+        "operationId": "get_memory_runs__run_id__memory_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/shadow-cluster": {
+      "get": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Get Shadow Cluster",
+        "description": "Read-only shadow cluster lifecycle row (Phase 7 data; Phase 11 exposure).",
+        "operationId": "get_shadow_cluster_runs__run_id__shadow_cluster_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShadowClusterResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/execution-result": {
+      "get": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Get Execution Result",
+        "description": "Read-only shadow execution actuals (Phase 8 data; Phase 11 exposure).",
+        "operationId": "get_execution_result_runs__run_id__execution_result_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExecutionResultResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/{run_id}/model-traces": {
+      "get": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Get Model Traces",
+        "description": "Durable Bedrock traces from explainability (prediction + recommendation).",
+        "operationId": "get_model_traces_runs__run_id__model_traces_get",
+        "parameters": [
+          {
+            "name": "run_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Run Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Model Traces Runs  Run Id  Model Traces Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/runs/memories/repair-embeddings": {
+      "post": {
+        "tags": [
+          "migration-runs"
+        ],
+        "summary": "Repair Embeddings",
+        "operationId": "repair_embeddings_runs_memories_repair_embeddings_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepairEmbeddingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Repair Embeddings Runs Memories Repair Embeddings Post"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memories/health": {
+      "get": {
+        "tags": [
+          "memories"
+        ],
+        "summary": "Get Corpus Health",
+        "description": "Structured corpus health for terminal + UI. Loud about problems.",
+        "operationId": "get_corpus_health_memories_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Corpus Health Memories Health Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memories": {
+      "get": {
+        "tags": [
+          "memories"
+        ],
+        "summary": "Browse Memories",
+        "operationId": "browse_memories_memories_get",
+        "parameters": [
+          {
+            "name": "owner_identity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by owner. Use the reserved corpus owner identity (CORPUS_OWNER_IDENTITY) for the shared open-source corpus.",
+              "title": "Owner Identity"
+            },
+            "description": "Filter by owner. Use the reserved corpus owner identity (CORPUS_OWNER_IDENTITY) for the shared open-source corpus."
+          },
+          {
+            "name": "embedding_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Embedding Status"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Offset"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/memories/corpus-identity": {
+      "get": {
+        "tags": [
+          "memories"
+        ],
+        "summary": "Get Corpus Identity",
+        "description": "Expose the reserved corpus owner constant for UI filters.",
+        "operationId": "get_corpus_identity_memories_corpus_identity_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object",
+                  "title": "Response Get Corpus Identity Memories Corpus Identity Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ApprovalCreateRequest": {
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/ApprovalDecision"
+          },
+          "approver_identity": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Approver Identity"
+          },
+          "override_rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Rationale"
+          },
+          "connection_secret_arn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Secret Arn"
+          },
+          "start_workflow": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Workflow",
+            "description": "Override auto-start of SFN on proceed (default: server auto)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision",
+          "approver_identity"
+        ],
+        "title": "ApprovalCreateRequest"
+      },
+      "ApprovalDecision": {
+        "type": "string",
+        "enum": [
+          "proceed",
+          "accept_recommended",
+          "cancel"
+        ],
+        "title": "ApprovalDecision",
+        "description": "Human decision at the Phase 9 approval gate."
+      },
+      "ApprovalResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "migration_run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Migration Run Id"
+          },
+          "approver_identity": {
+            "type": "string",
+            "title": "Approver Identity"
+          },
+          "decision": {
+            "$ref": "#/components/schemas/ApprovalDecision"
+          },
+          "override_rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Rationale"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "migration_run_id",
+          "approver_identity",
+          "decision",
+          "override_rationale",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ApprovalResponse"
+      },
+      "ClosedLoopRequest": {
+        "properties": {
+          "approver_identity": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Approver Identity",
+            "default": "closed-loop"
+          },
+          "connection_secret_arn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Secret Arn"
+          },
+          "override_rationale": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Override Rationale"
+          },
+          "start_workflow": {
+            "type": "boolean",
+            "title": "Start Workflow",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "ClosedLoopRequest",
+        "description": "Drive the operator happy path from a single POST."
+      },
+      "CompatibilityRisk": {
+        "type": "string",
+        "enum": [
+          "low",
+          "medium",
+          "high"
+        ],
+        "title": "CompatibilityRisk",
+        "description": "Whether the change breaks application code that has not been deployed yet."
+      },
+      "DiscoverSchemaRequest": {
+        "properties": {
+          "connection_secret_arn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Secret Arn"
+          },
+          "database_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Database Url",
+            "description": "One-shot connection URL; stored as a secret, never on the run row"
+          }
+        },
+        "type": "object",
+        "title": "DiscoverSchemaRequest",
+        "description": "Discover schema for a run and optionally register the connection secret.\n\nProvide either ``connection_secret_arn`` (preferred \u2014 password stays in\nSecrets Manager / local secret store) or a one-shot ``database_url`` which\nis stored under a run-scoped secret name and never persisted on the row."
+      },
+      "ExecutionResultResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "migration_run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Migration Run Id"
+          },
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "actual_duration_seconds": {
+            "type": "number",
+            "title": "Actual Duration Seconds"
+          },
+          "actual_storage_mb": {
+            "type": "number",
+            "title": "Actual Storage Mb"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "rollback_required": {
+            "type": "boolean",
+            "title": "Rollback Required"
+          },
+          "timed_out": {
+            "type": "boolean",
+            "title": "Timed Out"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "migration_run_id",
+          "success",
+          "actual_duration_seconds",
+          "actual_storage_mb",
+          "rollback_required",
+          "timed_out",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ExecutionResultResponse"
+      },
+      "GradeResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "migration_run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Migration Run Id"
+          },
+          "scale_tier": {
+            "type": "string",
+            "title": "Scale Tier"
+          },
+          "timed_out": {
+            "type": "boolean",
+            "title": "Timed Out"
+          },
+          "duration_abs_error_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Abs Error Seconds"
+          },
+          "duration_pct_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Pct Error"
+          },
+          "duration_within_band": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Duration Within Band"
+          },
+          "duration_unverifiable": {
+            "type": "boolean",
+            "title": "Duration Unverifiable"
+          },
+          "storage_abs_error_mb": {
+            "type": "number",
+            "title": "Storage Abs Error Mb"
+          },
+          "storage_pct_error": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Storage Pct Error"
+          },
+          "storage_within_band": {
+            "type": "boolean",
+            "title": "Storage Within Band"
+          },
+          "rollback_predicted": {
+            "type": "string",
+            "title": "Rollback Predicted"
+          },
+          "rollback_actual_class": {
+            "type": "string",
+            "title": "Rollback Actual Class"
+          },
+          "rollback_consistent": {
+            "type": "boolean",
+            "title": "Rollback Consistent"
+          },
+          "rollback_within_band": {
+            "type": "boolean",
+            "title": "Rollback Within Band"
+          },
+          "outcome_class": {
+            "type": "string",
+            "title": "Outcome Class"
+          },
+          "high_risk_flags_present": {
+            "type": "boolean",
+            "title": "High Risk Flags Present"
+          },
+          "adjusted_confidence": {
+            "type": "number",
+            "title": "Adjusted Confidence"
+          },
+          "scalar_accuracy_score": {
+            "type": "number",
+            "title": "Scalar Accuracy Score"
+          },
+          "dimension_details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Dimension Details"
+          },
+          "surprise_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Surprise Notes"
+          },
+          "lessons_learned": {
+            "type": "string",
+            "title": "Lessons Learned"
+          },
+          "prose_status": {
+            "type": "string",
+            "title": "Prose Status"
+          },
+          "prose_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prose Error"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "migration_run_id",
+          "scale_tier",
+          "timed_out",
+          "duration_unverifiable",
+          "storage_abs_error_mb",
+          "storage_within_band",
+          "rollback_predicted",
+          "rollback_actual_class",
+          "rollback_consistent",
+          "rollback_within_band",
+          "outcome_class",
+          "high_risk_flags_present",
+          "adjusted_confidence",
+          "scalar_accuracy_score",
+          "dimension_details",
+          "lessons_learned",
+          "prose_status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "GradeResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "MemoryListItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "migration_run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Migration Run Id"
+          },
+          "owner_identity": {
+            "type": "string",
+            "title": "Owner Identity"
+          },
+          "scale_tier": {
+            "type": "string",
+            "title": "Scale Tier"
+          },
+          "migration_type": {
+            "type": "string",
+            "title": "Migration Type"
+          },
+          "migration_summary": {
+            "type": "string",
+            "title": "Migration Summary"
+          },
+          "schema_summary": {
+            "type": "string",
+            "title": "Schema Summary"
+          },
+          "lessons_learned": {
+            "type": "string",
+            "title": "Lessons Learned"
+          },
+          "surprise_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Surprise Notes"
+          },
+          "embed_text": {
+            "type": "string",
+            "title": "Embed Text"
+          },
+          "embedding_status": {
+            "type": "string",
+            "title": "Embedding Status"
+          },
+          "embedding_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Error"
+          },
+          "embedding_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model Id"
+          },
+          "has_embedding": {
+            "type": "boolean",
+            "title": "Has Embedding",
+            "default": false
+          },
+          "scalar_accuracy_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scalar Accuracy Score"
+          },
+          "not_a_graded_run": {
+            "type": "boolean",
+            "title": "Not A Graded Run",
+            "default": false
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "ui_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ui Label"
+          },
+          "integrity_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Integrity Kind"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "migration_run_id",
+          "owner_identity",
+          "scale_tier",
+          "migration_type",
+          "migration_summary",
+          "schema_summary",
+          "lessons_learned",
+          "embed_text",
+          "embedding_status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MemoryListItem"
+      },
+      "MemoryListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MemoryListItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          },
+          "health": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Health"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset",
+          "health"
+        ],
+        "title": "MemoryListResponse"
+      },
+      "MemoryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "migration_run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Migration Run Id"
+          },
+          "owner_identity": {
+            "type": "string",
+            "title": "Owner Identity"
+          },
+          "scale_tier": {
+            "type": "string",
+            "title": "Scale Tier"
+          },
+          "migration_type": {
+            "type": "string",
+            "title": "Migration Type"
+          },
+          "migration_summary": {
+            "type": "string",
+            "title": "Migration Summary"
+          },
+          "schema_summary": {
+            "type": "string",
+            "title": "Schema Summary"
+          },
+          "lessons_learned": {
+            "type": "string",
+            "title": "Lessons Learned"
+          },
+          "surprise_notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Surprise Notes"
+          },
+          "embed_text": {
+            "type": "string",
+            "title": "Embed Text"
+          },
+          "embedding_status": {
+            "type": "string",
+            "title": "Embedding Status"
+          },
+          "embedding_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Error"
+          },
+          "embedding_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Model Id"
+          },
+          "scalar_accuracy_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scalar Accuracy Score"
+          },
+          "not_a_graded_run": {
+            "type": "boolean",
+            "title": "Not A Graded Run",
+            "default": false
+          },
+          "source_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Url"
+          },
+          "ui_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ui Label"
+          },
+          "integrity_kind": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Integrity Kind"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "migration_run_id",
+          "owner_identity",
+          "scale_tier",
+          "migration_type",
+          "migration_summary",
+          "schema_summary",
+          "lessons_learned",
+          "embed_text",
+          "embedding_status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MemoryResponse"
+      },
+      "MigrationRunCreateRequest": {
+        "properties": {
+          "migration_sql": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Migration Sql",
+            "description": "SQL migration to analyze"
+          },
+          "owner_identity": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Owner Identity",
+            "description": "Soft owner identity (no real auth yet); scopes memory retrieval",
+            "default": "anonymous"
+          },
+          "revises_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revises Run Id",
+            "description": "Optional link to an earlier run this migration revises"
+          }
+        },
+        "type": "object",
+        "required": [
+          "migration_sql"
+        ],
+        "title": "MigrationRunCreateRequest"
+      },
+      "MigrationRunListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MigrationRunSummaryResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "offset": {
+            "type": "integer",
+            "title": "Offset"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "limit",
+          "offset"
+        ],
+        "title": "MigrationRunListResponse"
+      },
+      "MigrationRunResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "migration_sql": {
+            "type": "string",
+            "title": "Migration Sql"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MigrationRunStatus"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "owner_identity": {
+            "type": "string",
+            "title": "Owner Identity",
+            "default": "anonymous"
+          },
+          "revises_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revises Run Id"
+          },
+          "schema_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Snapshot"
+          },
+          "schema_discovered_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Discovered At"
+          },
+          "schema_discovery_duration_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Discovery Duration Ms"
+          },
+          "schema_database_engine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Database Engine"
+          },
+          "schema_database_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Database Version"
+          },
+          "schema_discovery_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SchemaDiscoveryStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sfn_execution_arn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sfn Execution Arn"
+          },
+          "connection_secret_arn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Secret Arn"
+          },
+          "workflow_status": {
+            "$ref": "#/components/schemas/WorkflowStatus",
+            "default": "not_started"
+          },
+          "workflow_started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Started At"
+          },
+          "workflow_finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Finished At"
+          },
+          "risk_flags": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Risk Flags"
+          },
+          "compatibility_risk": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompatibilityRisk"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requires_expand_contract": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires Expand Contract"
+          },
+          "requires_manual_review": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires Manual Review"
+          },
+          "policy_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PolicyDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "parsed_statement_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Parsed Statement Types"
+          },
+          "recommendation": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation"
+          },
+          "explainability": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Explainability"
+          },
+          "prediction_scale_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prediction Scale Tier"
+          },
+          "recommendation_outcome": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recommendation Outcome"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "migration_sql",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "MigrationRunResponse"
+      },
+      "MigrationRunStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "predicting",
+          "awaiting_approval",
+          "running",
+          "completed",
+          "failed"
+        ],
+        "title": "MigrationRunStatus"
+      },
+      "MigrationRunStatusUpdateRequest": {
+        "properties": {
+          "status": {
+            "$ref": "#/components/schemas/MigrationRunStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "MigrationRunStatusUpdateRequest"
+      },
+      "MigrationRunSummaryResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "migration_sql": {
+            "type": "string",
+            "title": "Migration Sql"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MigrationRunStatus"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "owner_identity": {
+            "type": "string",
+            "title": "Owner Identity",
+            "default": "anonymous"
+          },
+          "revises_run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revises Run Id"
+          },
+          "schema_discovered_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Discovered At"
+          },
+          "schema_discovery_duration_ms": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Discovery Duration Ms"
+          },
+          "schema_database_engine": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Database Engine"
+          },
+          "schema_database_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Database Version"
+          },
+          "schema_discovery_status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SchemaDiscoveryStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sfn_execution_arn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sfn Execution Arn"
+          },
+          "workflow_status": {
+            "$ref": "#/components/schemas/WorkflowStatus",
+            "default": "not_started"
+          },
+          "workflow_started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Started At"
+          },
+          "workflow_finished_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workflow Finished At"
+          },
+          "policy_decision": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PolicyDecision"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requires_manual_review": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requires Manual Review"
+          },
+          "prediction_scale_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prediction Scale Tier"
+          },
+          "has_schema_snapshot": {
+            "type": "boolean",
+            "title": "Has Schema Snapshot",
+            "readOnly": true
+          },
+          "is_terminal": {
+            "type": "boolean",
+            "title": "Is Terminal",
+            "readOnly": true
+          },
+          "sql_snippet": {
+            "type": "string",
+            "title": "Sql Snippet",
+            "readOnly": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "migration_sql",
+          "status",
+          "created_at",
+          "updated_at",
+          "has_schema_snapshot",
+          "is_terminal",
+          "sql_snippet"
+        ],
+        "title": "MigrationRunSummaryResponse",
+        "description": "List item without the large JSONB schema snapshot."
+      },
+      "PolicyDecision": {
+        "type": "string",
+        "enum": [
+          "allow",
+          "allow_with_warning",
+          "block"
+        ],
+        "title": "PolicyDecision",
+        "description": "Deterministic policy outcome. Authoritative over the model."
+      },
+      "RepairEmbeddingsRequest": {
+        "properties": {
+          "memory_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memory Id"
+          },
+          "run_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Run Id"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "default": 20
+          }
+        },
+        "type": "object",
+        "title": "RepairEmbeddingsRequest"
+      },
+      "SchemaDiscoveryStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "succeeded",
+          "failed",
+          "rejected"
+        ],
+        "title": "SchemaDiscoveryStatus"
+      },
+      "ShadowClusterResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "migration_run_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Migration Run Id"
+          },
+          "cluster_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Id"
+          },
+          "cluster_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cluster Name"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "region": {
+            "type": "string",
+            "title": "Region"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "scale_tier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scale Tier"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "stage_timings": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stage Timings"
+          },
+          "error_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Message"
+          },
+          "destroyed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Destroyed At"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "migration_run_id",
+          "provider",
+          "region",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ShadowClusterResponse"
+      },
+      "StartWorkflowRequest": {
+        "properties": {
+          "connection_secret_arn": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Connection Secret Arn",
+            "description": "Override; defaults to the ARN stored on the run"
+          }
+        },
+        "type": "object",
+        "title": "StartWorkflowRequest"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "WorkflowStatus": {
+        "type": "string",
+        "enum": [
+          "not_started",
+          "running",
+          "succeeded",
+          "failed",
+          "timed_out",
+          "aborted"
+        ],
+        "title": "WorkflowStatus",
+        "description": "Durable Step Functions execution status mirrored in CockroachDB."
+      }
+    }
+  }
+}

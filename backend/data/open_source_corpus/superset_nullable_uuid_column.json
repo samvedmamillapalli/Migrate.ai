@@ -1,0 +1,43 @@
+{
+  "source_key": "superset:add_nullable_uuid_column_low_risk",
+  "project": "Apache Superset",
+  "repo": "https://github.com/apache/superset",
+  "license": "Apache-2.0",
+  "migration_file": "https://github.com/apache/superset/tree/master/superset/migrations/versions",
+  "incident_issue": "https://github.com/apache/superset/blob/master/LICENSE.txt",
+  "migration_summary": "Low-risk additive nullable UUID column on a dashboard metadata table—no default rewrite, no constraint scan, easy downgrade DROP COLUMN.",
+  "migration_sql": "ALTER TABLE dashboards ADD COLUMN uuid UUID;",
+  "scale_tier": "small",
+  "migration_type": "add_column",
+  "parsed_statement_types": ["AlterTable"],
+  "schema_summary": "Superset metadata tables are typically modest compared to OLTP fact tables; additive Alembic revisions are common.",
+  "index_count": 4,
+  "table_complexity": 12,
+  "risk_flags": [],
+  "risk_narrative": "Nullable UUID add without NOT NULL or index is a short metadata change. Superset's Alembic history is dominated by this class of additive DDL, which is useful as the low-risk end of a retrieval corpus.",
+  "lessons_learned": "Corpus needs successful low-risk examples so the model does not treat every ALTER as catastrophic. Expand with nullable columns first; attach uniqueness indexes and NOT NULL later.",
+  "surprise_notes": "Even 'safe' additive columns can collide with application assumptions if code starts requiring the column before backfill—but the database blast radius remains small.",
+  "documented_outcomes": {
+    "success": true,
+    "actual_duration_seconds": 1.0,
+    "actual_storage_mb": 0.0,
+    "rollback_required": false,
+    "timed_out": false,
+    "error_message": null
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 1.0,
+    "estimated_storage_mb": 0.0,
+    "rollback_risk": "low",
+    "confidence_score": 0.9,
+    "risk_explanation": "Nullable additive column on metadata table."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "low_risk_additive",
+    "duration_within_band": true,
+    "storage_within_band": true,
+    "rollback_within_band": true,
+    "dimension_details": { "source": "open_source", "representative": true }
+  }
+}

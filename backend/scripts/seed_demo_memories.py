@@ -5,8 +5,8 @@ WARNING (Phase 10 / Phase 11): This creates *synthetic* completed runs without a
 real shadow verify. Do NOT use these rows for the hackathon demo accuracy curve
 or as evidence of learning. Prefer real closed-loop graded runs.
 
-Phase 10 fix: owner_identity must be CORPUS_OWNER_IDENTITY
-(__migration_oracle_corpus__), not the legacy string "demo-corpus", or hybrid
+Phase 10 fix: owner_identity must be CORPUS_OWNER_IDENTITY from
+app.memory.constants (never the legacy string "demo-corpus"), or hybrid
 retrieval will never treat the rows as shared corpus.
 
 Embeddings stay pending until POST /runs/memories/repair-embeddings (or live Titan).
