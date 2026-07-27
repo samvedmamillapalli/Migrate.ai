@@ -8,12 +8,13 @@ import {
   GalleryVerticalEnd,
   History,
   LayoutDashboard,
-  Settings2,
   Workflow,
 } from "lucide-react"
 
 import { NavMain } from "@/components/nav-main"
+import { NavUser } from "@/components/nav-user"
 import { OwnerIdentityField } from "@/components/owner-identity-field"
+import { SidebarSettingsMenu } from "@/components/sidebar-settings-menu"
 import { TeamSwitcher } from "@/components/team-switcher"
 import {
   Sidebar,
@@ -21,9 +22,6 @@ import {
   SidebarFooter,
   SidebarGroup,
   SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
   SidebarRail,
 } from "@workspace/ui/components/sidebar"
 
@@ -89,19 +87,16 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarGroup className="group-data-[collapsible=icon]:hidden p-2">
           <OwnerIdentityField id="owner-identity-sidebar" />
         </SidebarGroup>
+        <SidebarGroup className="p-2 pt-0">
+          <NavUser
+            user={{
+              name: "Operator",
+              email: "",
+            }}
+          />
+        </SidebarGroup>
         <SidebarGroup className="p-0">
-          <SidebarMenu>
-            <SidebarMenuItem>
-              <SidebarMenuButton
-                tooltip="Settings"
-                isActive={pathname === "/dashboard/settings"}
-                render={<Link href="/dashboard/settings" />}
-              >
-                <Settings2 />
-                <span>Settings</span>
-              </SidebarMenuButton>
-            </SidebarMenuItem>
-          </SidebarMenu>
+          <SidebarSettingsMenu />
         </SidebarGroup>
       </SidebarFooter>
       <SidebarRail />

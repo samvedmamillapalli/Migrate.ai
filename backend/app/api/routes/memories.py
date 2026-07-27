@@ -38,10 +38,9 @@ async def browse_memories(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> MemoryListResponse:
-    from app.auth.tenancy import session_owner
-    from app.config import get_settings
+    from app.auth.tenancy import auth_enforced, session_owner
 
-    if get_settings().auth_enabled:
+    if auth_enforced():
         owner_identity = session_owner(request)
     health = await fetch_corpus_health(session)
     rows, total = await list_memories(

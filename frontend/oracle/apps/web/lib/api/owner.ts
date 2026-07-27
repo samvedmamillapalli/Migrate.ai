@@ -1,4 +1,4 @@
-/** Soft identity — no Clerk. Matches backend owner_identity / approver_identity. */
+/** Owner identity for API scoping — synced from Clerk user id when signed in. */
 
 const OWNER_KEY = "oracle:owner_identity"
 const CURRENT_RUN_KEY = "oracle:current_run_id"

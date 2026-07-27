@@ -1,17 +1,15 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
+import { useAuth } from "@clerk/nextjs"
 
 import { apiBaseUrl } from "@/lib/api/client"
-import { useClerk } from "@clerk/nextjs"
-import { clearAccessToken, getAccessToken } from "@/lib/api/auth-token"
+import { DashboardSignOutButton } from "@/components/dashboard-sign-out-button"
 import {
   getConnectionSecretArn,
   setConnectionSecretArn,
 } from "@/lib/api/owner"
 import { OwnerIdentityField } from "@/components/owner-identity-field"
-import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
 
@@ -41,17 +39,16 @@ function Section({
 }
 
 export default function SettingsPage() {
-  const router = useRouter()
-  const { signOut } = useClerk()
+  const { isLoaded, isSignedIn } = useAuth()
   const [secretArn, setSecretArn] = React.useState("")
   const [mounted, setMounted] = React.useState(false)
-  const [hasSession, setHasSession] = React.useState(false)
 
   React.useEffect(() => {
     setSecretArn(getConnectionSecretArn())
-    setHasSession(Boolean(getAccessToken()))
     setMounted(true)
   }, [])
+
+  const hasSession = isLoaded && isSignedIn
 
   return (
     <div className="flex flex-1 flex-col gap-5 px-4 pb-6 md:px-6">
@@ -67,19 +64,7 @@ export default function SettingsPage() {
       <Section title="Identity">
         <OwnerIdentityField id="owner-identity-settings" className="max-w-sm" />
         {hasSession ? (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="w-fit"
-            onClick={() => {
-              clearAccessToken()
-              setHasSession(false)
-              signOut({ redirectUrl: "/login" })
-            }}
-          >
-            Sign out
-          </Button>
+          <DashboardSignOutButton />
         ) : null}
       </Section>
 

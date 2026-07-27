@@ -75,9 +75,9 @@ async def list_runs(
 ) -> MigrationRunListResponse:
     # Auth mode always scopes to the session owner (ignore client filter).
     scoped = session_owner(request) if request else None
-    from app.config import get_settings
+    from app.auth.tenancy import auth_enforced, session_owner
 
-    if get_settings().auth_enabled:
+    if auth_enforced():
         owner_identity = scoped
     runs = await service.list_migration_runs(
         offset=offset,

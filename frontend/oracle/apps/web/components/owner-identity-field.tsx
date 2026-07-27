@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useAuth } from "@clerk/nextjs"
 
 import {
   getOwnerIdentity,
@@ -16,15 +17,22 @@ export function OwnerIdentityField({
   id?: string
   className?: string
 }) {
-  // Always controlled (`value` never undefined) so Base UI Input does not
-  // flip uncontrolled → controlled after localStorage hydration.
+  const { isLoaded, isSignedIn, userId } = useAuth()
   const [value, setValue] = React.useState("")
   const [ready, setReady] = React.useState(false)
 
+  const clerkLocked = isLoaded && isSignedIn && Boolean(userId)
+
   React.useEffect(() => {
+    if (clerkLocked && userId) {
+      setValue(userId)
+      setOwnerIdentity(userId)
+      setReady(true)
+      return
+    }
     setValue(getOwnerIdentity())
     setReady(true)
-  }, [])
+  }, [clerkLocked, userId])
 
   return (
     <div className={className}>
@@ -34,8 +42,10 @@ export function OwnerIdentityField({
       <Input
         id={id}
         value={value}
+        readOnly={clerkLocked}
         disabled={!ready}
         onChange={(e) => {
+          if (clerkLocked) return
           setValue(e.target.value)
           setOwnerIdentity(e.target.value)
         }}
@@ -44,7 +54,9 @@ export function OwnerIdentityField({
         autoComplete="username"
       />
       <p className="text-muted-foreground/70 mt-1.5 text-[10px] leading-snug">
-        Soft identity for memory scope and approvals. No account system.
+        {clerkLocked
+          ? "Scoped to your signed-in account (Clerk user id)."
+          : "Scopes runs and memories. Set manually when auth is off."}
       </p>
     </div>
   )

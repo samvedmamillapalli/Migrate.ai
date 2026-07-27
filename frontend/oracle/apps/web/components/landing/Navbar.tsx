@@ -95,7 +95,7 @@ export function Navbar() {
             Sign in
           </Link>
           <Link
-            href="/signup"
+            href="/get-started"
             className={cn(
               buttonVariants({ variant: "default", size: "sm" }),
               "rounded-full px-4 transition-colors duration-200"
@@ -152,7 +152,7 @@ export function Navbar() {
                 Sign in
               </Link>
               <Link
-                href="/signup"
+                href="/get-started"
                 onClick={() => setMobileOpen(false)}
                 className={cn(
                   buttonVariants({ variant: "default" }),

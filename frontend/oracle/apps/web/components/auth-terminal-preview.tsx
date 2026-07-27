@@ -291,7 +291,7 @@ export function AuthTerminalPreview({
     <div
       aria-hidden
       className={cn(
-        "flex h-full w-full items-center justify-start py-8 pl-3 pr-10 md:pl-4 md:pr-12",
+        "flex h-full w-full items-center justify-center py-8 px-4 sm:px-8",
         className
       )}
     >

@@ -1,4 +1,4 @@
-"""Tenant isolation helpers for Wave 2 auth."""
+"""Tenant isolation helpers for Wave 2 auth (custom HMAC + Clerk JWT)."""
 
 from __future__ import annotations
 
@@ -9,14 +9,21 @@ from app.core.exceptions import UnauthorizedError, ValidationError
 from app.database.models import MigrationRun
 
 
+def auth_enforced() -> bool:
+    """True when API requires a validated Bearer token (custom or Clerk)."""
+    settings = get_settings()
+    if settings.auth_enabled:
+        return True
+    return bool(settings.clerk_secret_key and settings.clerk_publishable_key)
+
+
 def session_owner(request: Request) -> str | None:
     return getattr(request.state, "owner_identity", None)
 
 
 def require_session_owner(request: Request) -> str:
-    settings = get_settings()
     owner = session_owner(request)
-    if settings.auth_enabled:
+    if auth_enforced():
         if not owner:
             raise UnauthorizedError("Authentication required")
         return owner
@@ -25,8 +32,7 @@ def require_session_owner(request: Request) -> str:
 
 def resolve_owner_identity(request: Request, client_owner: str | None) -> str:
     """When auth is on, the token owner wins; otherwise use the client value."""
-    settings = get_settings()
-    if settings.auth_enabled:
+    if auth_enforced():
         return require_session_owner(request)
     identity = (client_owner or "").strip()
     if not identity:
@@ -35,8 +41,7 @@ def resolve_owner_identity(request: Request, client_owner: str | None) -> str:
 
 
 def assert_run_access(request: Request, run: MigrationRun) -> None:
-    settings = get_settings()
-    if not settings.auth_enabled:
+    if not auth_enforced():
         return
     owner = require_session_owner(request)
     if (run.owner_identity or "") != owner:

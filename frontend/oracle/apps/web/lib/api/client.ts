@@ -7,7 +7,7 @@
  * Types are generated from the live OpenAPI spec — see `npm run gen:api`.
  */
 
-import { getAccessToken } from "./auth-token"
+import { resolveAuthToken } from "./clerk-token"
 
 export const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
 
@@ -76,7 +76,7 @@ export async function api<T = unknown>(
 ): Promise<T> {
   const { body, quiet: _quiet, headers, clerkToken, ...rest } = options
   const key = demoApiKey()
-  const token = clerkToken || getAccessToken()
+  const token = clerkToken ?? (await resolveAuthToken())
   const res = await fetch(`${apiBaseUrl()}${path}`, {
     ...rest,
     headers: {
