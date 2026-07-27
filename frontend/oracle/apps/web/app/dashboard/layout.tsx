@@ -8,12 +8,20 @@ import {
   SidebarTrigger,
 } from "@workspace/ui/components/sidebar"
 import { TooltipProvider } from "@workspace/ui/components/tooltip"
+import { auth } from "@clerk/nextjs/server"
+import { redirect } from "next/navigation"
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  // Protect dashboard routes with Clerk auth
+  const { userId } = await auth()
+  if (!userId) {
+    redirect("/login")
+  }
+
   return (
     <TooltipProvider>
       <ShadowWatchProvider>

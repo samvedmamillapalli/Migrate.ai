@@ -1,6 +1,11 @@
-import { redirect } from "next/navigation"
+import { SignupForm } from "@/components/signup-form"
 
-/** Signup is handled on /login (register mode) when AUTH_ENABLED. */
 export default function SignupPage() {
-  redirect("/login")
+  return (
+    <div className="flex min-h-svh flex-col items-center justify-center gap-6 bg-background p-6 md:p-10">
+      <div className="w-full max-w-sm">
+        <SignupForm />
+      </div>
+    </div>
+  )
 }

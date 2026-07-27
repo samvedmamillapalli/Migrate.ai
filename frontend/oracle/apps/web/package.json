@@ -13,6 +13,7 @@
     "gen:api": "openapi-typescript ./lib/api/openapi.json -o ./lib/api/schema.ts"
   },
   "dependencies": {
+    "@clerk/nextjs": "^6.39.6",
     "@workspace/ui": "*",
     "@xyflow/react": "^12.11.2",
     "lucide-react": "^1.26.0",

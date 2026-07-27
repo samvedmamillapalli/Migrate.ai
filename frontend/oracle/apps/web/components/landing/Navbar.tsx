@@ -86,13 +86,22 @@ export function Navbar() {
         <div className="hidden items-center gap-2 md:flex">
           <ThemeToggle />
           <Link
-            href="/dashboard"
+            href="/login"
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "sm" }),
+              "rounded-full px-4 transition-colors duration-200"
+            )}
+          >
+            Sign in
+          </Link>
+          <Link
+            href="/signup"
             className={cn(
               buttonVariants({ variant: "default", size: "sm" }),
               "rounded-full px-4 transition-colors duration-200"
             )}
           >
-            Open console
+            Get Started
           </Link>
         </div>
 
@@ -133,14 +142,24 @@ export function Navbar() {
                 <ThemeToggle />
               </div>
               <Link
-                href="/dashboard"
+                href="/login"
+                onClick={() => setMobileOpen(false)}
+                className={cn(
+                  buttonVariants({ variant: "ghost" }),
+                  "rounded-full transition-colors duration-200"
+                )}
+              >
+                Sign in
+              </Link>
+              <Link
+                href="/signup"
                 onClick={() => setMobileOpen(false)}
                 className={cn(
                   buttonVariants({ variant: "default" }),
                   "rounded-full transition-colors duration-200"
                 )}
               >
-                Open console
+                Get Started
               </Link>
             </div>
           </SheetContent>

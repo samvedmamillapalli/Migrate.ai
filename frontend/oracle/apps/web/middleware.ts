@@ -1,33 +1,27 @@
-import { NextResponse } from "next/server"
-import type { NextRequest } from "next/server"
+import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server"
 
-/**
- * When NEXT_PUBLIC_AUTH_ENABLED=true, require an access token cookie/header
- * signal before entering the dashboard. The real Bearer token lives in
- * localStorage (client); this gate only redirects unauthenticated browsers
- * that never visited /login (soft check via cookie mirror).
- */
-export function middleware(request: NextRequest) {
-  const authOn = process.env.NEXT_PUBLIC_AUTH_ENABLED === "true"
-  if (!authOn) {
-    return NextResponse.next()
-  }
+// Routes that don't require authentication
+const isPublicRoute = createRouteMatcher([
+  "/",
+  "/sign-in(.*)",
+  "/sign-up(.*)",
+  "/login(.*)",
+  "/signup(.*)",
+  "/api(.*)",
+  "/health(.*)",
+])
 
-  const { pathname } = request.nextUrl
-  if (!pathname.startsWith("/dashboard")) {
-    return NextResponse.next()
+export default clerkMiddleware(async (auth, req) => {
+  if (!isPublicRoute(req)) {
+    await auth.protect()
   }
-
-  const token = request.cookies.get("oracle_access_token")?.value
-  if (!token) {
-    const url = request.nextUrl.clone()
-    url.pathname = "/login"
-    url.searchParams.set("next", pathname)
-    return NextResponse.redirect(url)
-  }
-  return NextResponse.next()
-}
+})
 
 export const config = {
-  matcher: ["/dashboard/:path*"],
+  matcher: [
+    // Skip Next.js internals and all static files, unless found in search params
+    "/((?!_next|[^?]*\\.(?:html?|css|js(?!on)|jpe?g|webp|png|gif|svg|ttf|woff2?|ico|csv|docx?|xlsx?|zip|webmanifest)).*)",
+    // Always run for API routes
+    "/(api|trpc)(.*)",
+  ],
 }

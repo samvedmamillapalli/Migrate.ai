@@ -43,9 +43,14 @@ class AuthMeResponse(BaseModel):
 @router.get("/status")
 async def auth_status() -> dict[str, object]:
     settings = get_settings()
+    clerk_configured = bool(
+        settings.clerk_secret_key and settings.clerk_publishable_key
+    )
     return {
-        "auth_enabled": bool(settings.auth_enabled),
+        "auth_enabled": bool(settings.auth_enabled) or clerk_configured,
         "register_enabled": bool(settings.auth_enabled),
+        "clerk_configured": clerk_configured,
+        "auth_method": "clerk" if clerk_configured else ("custom" if settings.auth_enabled else "none"),
     }
 
 

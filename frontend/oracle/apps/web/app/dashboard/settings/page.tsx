@@ -4,6 +4,7 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 
 import { apiBaseUrl } from "@/lib/api/client"
+import { useClerk } from "@clerk/nextjs"
 import { clearAccessToken, getAccessToken } from "@/lib/api/auth-token"
 import {
   getConnectionSecretArn,
@@ -41,6 +42,7 @@ function Section({
 
 export default function SettingsPage() {
   const router = useRouter()
+  const { signOut } = useClerk()
   const [secretArn, setSecretArn] = React.useState("")
   const [mounted, setMounted] = React.useState(false)
   const [hasSession, setHasSession] = React.useState(false)
@@ -73,7 +75,7 @@ export default function SettingsPage() {
             onClick={() => {
               clearAccessToken()
               setHasSession(false)
-              router.push("/login")
+              signOut({ redirectUrl: "/login" })
             }}
           >
             Sign out

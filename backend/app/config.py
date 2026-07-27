@@ -99,6 +99,23 @@ class Settings(BaseSettings):
         validation_alias="AUTH_TOKEN_TTL_SECONDS",
     )
 
+    # --- Clerk Authentication ---
+    # Clerk provides authentication via JWTs. When configured, the backend
+    # validates Clerk-issued tokens using the JWKS endpoint.
+    clerk_secret_key: str | None = Field(
+        default=None,
+        validation_alias="CLERK_SECRET_KEY",
+    )
+    clerk_publishable_key: str | None = Field(
+        default=None,
+        validation_alias="CLERK_PUBLISHABLE_KEY",
+    )
+    # Optional: Clerk Frontend API URL (e.g., "clerk.abc123.accounts.dev")
+    clerk_frontend_api_url: str | None = Field(
+        default=None,
+        validation_alias="CLERK_FRONTEND_API_URL",
+    )
+
     # CockroachDB Managed MCP endpoint (hackathon tool #2 alongside Vector Index).
     # Used for documentation and optional job-watch correlation; IDE config lives
     # in .cursor/mcp.json. Runtime job watch uses CRDB SQL (same job surface).

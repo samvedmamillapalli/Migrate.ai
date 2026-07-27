@@ -66,15 +66,17 @@ export type ApiOptions = Omit<RequestInit, "body"> & {
   body?: unknown
   /** Suppress nothing — reserved for parity with legacy quiet polls. */
   quiet?: boolean
+  /** Clerk session token for API authentication */
+  clerkToken?: string | null
 }
 
 export async function api<T = unknown>(
   path: string,
   options: ApiOptions = {}
 ): Promise<T> {
-  const { body, quiet: _quiet, headers, ...rest } = options
+  const { body, quiet: _quiet, headers, clerkToken, ...rest } = options
   const key = demoApiKey()
-  const token = getAccessToken()
+  const token = clerkToken || getAccessToken()
   const res = await fetch(`${apiBaseUrl()}${path}`, {
     ...rest,
     headers: {
@@ -100,9 +102,9 @@ export async function api<T = unknown>(
   if (!res.ok) {
     const detail =
       parsed &&
-      typeof parsed === "object" &&
-      parsed !== null &&
-      "detail" in parsed
+        typeof parsed === "object" &&
+        parsed !== null &&
+        "detail" in parsed
         ? (parsed as { detail: unknown }).detail
         : parsed
     throw new ApiError(formatDetail(detail), res.status, detail)

@@ -7,6 +7,7 @@ psycopg[binary]>=3.2.0
 alembic>=1.14.0
 httpx>=0.28.0
 boto3>=1.35.0
+pyjwt[crypto]>=2.10.0
 sqlglot>=26.0.0
 PyYAML>=6.0.0
 pytest>=8.3.0

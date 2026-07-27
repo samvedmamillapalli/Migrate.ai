@@ -8,6 +8,7 @@ import {
   LogOut,
   Sparkles,
 } from "lucide-react"
+import { useUser, useClerk } from "@clerk/nextjs"
 
 import {
   Avatar,
@@ -31,7 +32,7 @@ import {
 } from "@workspace/ui/components/sidebar"
 
 export function NavUser({
-  user,
+  user: _user,
 }: {
   user: {
     name: string
@@ -40,6 +41,13 @@ export function NavUser({
   }
 }) {
   const { isMobile } = useSidebar()
+  const { user } = useUser()
+  const { signOut, openUserProfile } = useClerk()
+
+  const displayName = user?.fullName || user?.username || _user.name || "User"
+  const emailAddress = user?.primaryEmailAddress?.emailAddress || _user.email || ""
+  const avatarUrl = user?.imageUrl || _user.avatar || ""
+  const initials = displayName.charAt(0).toUpperCase()
 
   return (
     <SidebarMenu>
@@ -54,12 +62,12 @@ export function NavUser({
             }
           >
             <Avatar className="h-8 w-8 rounded-lg">
-              <AvatarImage src={user.avatar} alt={user.name} />
-              <AvatarFallback className="rounded-lg">MO</AvatarFallback>
+              <AvatarImage src={avatarUrl} alt={displayName} />
+              <AvatarFallback className="rounded-lg">{initials}</AvatarFallback>
             </Avatar>
             <div className="grid flex-1 text-left text-sm leading-tight">
-              <span className="truncate font-medium">{user.name}</span>
-              <span className="truncate text-xs">{user.email}</span>
+              <span className="truncate font-medium">{displayName}</span>
+              <span className="truncate text-xs">{emailAddress}</span>
             </div>
             <ChevronsUpDown className="ml-auto size-4" />
           </DropdownMenuTrigger>
@@ -72,25 +80,18 @@ export function NavUser({
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                 <Avatar className="h-8 w-8 rounded-lg">
-                  <AvatarImage src={user.avatar} alt={user.name} />
-                  <AvatarFallback className="rounded-lg">MO</AvatarFallback>
+                  <AvatarImage src={avatarUrl} alt={displayName} />
+                  <AvatarFallback className="rounded-lg">{initials}</AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-medium">{user.name}</span>
-                  <span className="truncate text-xs">{user.email}</span>
+                  <span className="truncate font-medium">{displayName}</span>
+                  <span className="truncate text-xs">{emailAddress}</span>
                 </div>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             <DropdownMenuGroup>
-              <DropdownMenuItem>
-                <Sparkles />
-                Upgrade to Pro
-              </DropdownMenuItem>
-            </DropdownMenuGroup>
-            <DropdownMenuSeparator />
-            <DropdownMenuGroup>
-              <DropdownMenuItem>
+              <DropdownMenuItem onClick={() => openUserProfile()}>
                 <BadgeCheck />
                 Account
               </DropdownMenuItem>
@@ -104,7 +105,7 @@ export function NavUser({
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />
-            <DropdownMenuItem>
+            <DropdownMenuItem onClick={() => signOut({ redirectUrl: "/login" })}>
               <LogOut />
               Log out
             </DropdownMenuItem>
