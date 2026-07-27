@@ -184,6 +184,7 @@ class MigrationRunService:
         offset: int = 0,
         limit: int = 50,
         status: MigrationRunStatus | None = None,
+        owner_identity: str | None = None,
     ) -> list[MigrationRun]:
         if offset < 0:
             raise ValidationError("offset must be >= 0")
@@ -194,14 +195,19 @@ class MigrationRunService:
             offset=offset,
             limit=limit,
             status=status,
+            owner_identity=owner_identity,
         )
 
     async def count_migration_runs(
         self,
         *,
         status: MigrationRunStatus | None = None,
+        owner_identity: str | None = None,
     ) -> int:
-        return await self._repository.count(status=status)
+        return await self._repository.count(
+            status=status,
+            owner_identity=owner_identity,
+        )
 
     async def update_status(
         self,

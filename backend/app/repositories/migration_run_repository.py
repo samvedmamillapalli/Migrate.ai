@@ -88,6 +88,7 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         offset: int = 0,
         limit: int = 50,
         status: MigrationRunStatus | None = None,
+        owner_identity: str | None = None,
         load_children: bool = False,
     ) -> list[MigrationRun]:
         query = self._base_query(
@@ -96,16 +97,21 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         ).order_by(MigrationRun.created_at.desc())
         if status is not None:
             query = query.where(MigrationRun.status == status)
+        if owner_identity is not None:
+            query = query.where(MigrationRun.owner_identity == owner_identity)
         return await super().list(offset=offset, limit=limit, statement=query)
 
     async def count(
         self,
         *,
         status: MigrationRunStatus | None = None,
+        owner_identity: str | None = None,
     ) -> int:
         query = select(MigrationRun)
         if status is not None:
             query = query.where(MigrationRun.status == status)
+        if owner_identity is not None:
+            query = query.where(MigrationRun.owner_identity == owner_identity)
         return await super().count(query)
 
     async def update(self, entity: MigrationRun) -> MigrationRun:

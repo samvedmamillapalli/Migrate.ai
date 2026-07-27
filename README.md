@@ -4,6 +4,25 @@
 
 Built for the [CockroachDB × AWS Hackathon](https://cockroachdb-ai.devpost.com/).
 
+## Demo (judges)
+
+| Asset | Location |
+| --- | --- |
+| Day-of checklist + roles | [`demo/DEMO_DAY.md`](demo/DEMO_DAY.md) |
+| SQL A/B playbook | [`demo/SQL_PLAYBOOK.md`](demo/SQL_PLAYBOOK.md) |
+| Shadow / closed-loop proof | [`demo/SHADOW_PROOF.md`](demo/SHADOW_PROOF.md) |
+| 5–7 min talk track | [`demo/TALK_TRACK.md`](demo/TALK_TRACK.md) |
+| Video script (&lt;3 min) | [`demo/VIDEO_SCRIPT.md`](demo/VIDEO_SCRIPT.md) |
+| Chaos backup lines | [`demo/CHAOS_BACKUPS.md`](demo/CHAOS_BACKUPS.md) |
+| Public deploy | [`demo/DEPLOY_CHECKLIST.md`](demo/DEPLOY_CHECKLIST.md) |
+| Freeze / Devpost | [`demo/SUBMIT.md`](demo/SUBMIT.md) |
+| E2E click path | [`docs/E2E_WALKTHROUGH.md`](docs/E2E_WALKTHROUGH.md) |
+| Tool narrative | [`docs/HACKATHON_TOOLS.md`](docs/HACKATHON_TOOLS.md) |
+
+**Thesis:** Predict → verify → grade → remember — not another risk labeler.
+
+**Public URL:** _add after Phase 7 deploy_
+
 ## Stack
 
 | Layer | Choice |
@@ -56,7 +75,7 @@ The AWS stack (`migration-oracle`) is **already deployed** and shared. You do
 | **Network** | Reach AWS `us-east-1` + CockroachDB Cloud |
 | **Team `.env`** | Filled file at repo root (out of band — never commit) |
 
-That is everything beyond your IDE. No Docker, SAM CLI, AWS CLI, Node, or Make for the normal demo path. The Cockroach CA cert ships in `certs/cockroach-cloud-ca.crt`; `setup` installs it for you.
+That is everything beyond your IDE for the **API**. For the operator console you also need **Node.js 20+** (`npm`). No Docker, SAM CLI, AWS CLI, or Make for the normal demo path. The Cockroach CA cert ships in `certs/cockroach-cloud-ca.crt`; `setup` installs it for you.
 
 ### Run it
 
@@ -72,8 +91,9 @@ python scripts/dev.py restart
 Windows wrapper: `.\restart.ps1`  
 macOS/Linux wrapper: `./restart.sh` (or `bash ./restart.sh`)
 
-Open **http://localhost:3000** for the Next.js operator UI (start it separately —
-see below). API health: **http://127.0.0.1:8000/health** should show **SFN ready**.
+Open **http://localhost:3000** for the Next.js operator UI (start it in a
+second terminal — `scripts/dev.py` starts the **API only**). API health:
+**http://127.0.0.1:8000/health** should show `integrations.sfn_ready: true`.
 
 In a second terminal:
 
@@ -83,18 +103,25 @@ npm install
 npm run dev
 ```
 
-Point the web app at the API with `frontend/oracle/apps/web/.env.local`:
+Point the web app at the API with `frontend/oracle/apps/web/.env.local`
+(see `frontend/oracle/apps/web/.env.example`):
 
 ```text
 NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-Demo click-path:
+Demo click-path (real CockroachDB Cloud shadow — SFN required):
 
-1. **Create a run** (paste SQL or fake migration)
-2. **Discover schema** (connection ARN or one-shot database URL)
-3. **Run prediction** (Bedrock)
-4. **Approve → Start shadow test** (real Step Functions → CockroachDB Cloud shadow → grade → memory; ~1–2 minutes)
+1. Set your **owner identity** in the sidebar / Settings
+2. **New Migration** → paste or upload SQL → Create
+3. **Attach database** → Discover schema (read-only URL or Secrets Manager ARN)
+4. **Run prediction** (Bedrock + memory retrieval)
+5. **Proceed to shadow test** → **Start shadow test**
+6. Watch lifecycle → grade + memory appear when the workflow finishes (~1–2 min)
+
+Local mock verify is **not** exposed in the product UI. If `sfn_ready` is false,
+fix `MIGRATION_WORKFLOW_ARN` and `RUN_ARTIFACTS_BUCKET`, restart the API, and
+re-check `/health`.
 
 Check wiring anytime: `python scripts/dev.py doctor`
 
@@ -119,7 +146,9 @@ cd infra\sam
 .\deploy.ps1   # writes ARN + bucket into .env
 ```
 
-Until that ARN+bucket are set, step 4 falls back to local mock verify.
+Until that ARN+bucket are set, **Start shadow test** is blocked in the UI
+(`sfn_ready` false). The engineer-only `POST /runs/{id}/verify-local` mock path
+remains on the API but is not part of the product console.
 
 ## See All Steps Working (Dev Verification)
 
@@ -143,14 +172,13 @@ For durable AWS execution-plane checks (Step Functions/Lambda/S3/Secrets/CloudWa
 python scripts/verify_phase8_full.py --skip-lambda-chain
 ```
 
-For a real browser walk-through:
+For a real browser walk-through (Next.js console — **not** the retired `/ui`):
 
-1. Open `http://127.0.0.1:8000/ui`
-2. Click **Make a fake migration**
-3. Click **Read schema & predict**
-4. Click **Approve**
-5. Click **Run shadow test**
-6. Inspect results via `/runs/{id}`, `/runs/{id}/grade`, and `/runs/{id}/memory` in `http://127.0.0.1:8000/docs`
+1. Open `http://localhost:3000/dashboard`
+2. Create a migration (paste SQL)
+3. Discover schema, run prediction, approve **Proceed**
+4. Start shadow test and wait for grade + memory
+5. Or inspect via `http://127.0.0.1:8000/docs` (`/runs/{id}`, `/grade`, `/memory`)
 
 Corpus health from the terminal (no browser):
 
@@ -159,9 +187,16 @@ cd backend
 python scripts/corpus_health.py
 ```
 
+Pending embeddings (not searchable until Titan succeeds):
+
+```bash
+# Via OpenAPI / curl when authenticated with DEMO_API_KEY if set
+POST /runs/memories/repair-embeddings
+```
+
 ### Demo API gate
 
-Set `DEMO_API_KEY` in the environment and send `X-API-Key` on API calls (health and `/ui` stay public). Leave unset for open local development.
+Set `DEMO_API_KEY` in the environment and send `X-API-Key` on API calls (health and docs stay public). Leave unset for open local development. Mirror the key in the UI with `NEXT_PUBLIC_DEMO_API_KEY` if needed.
 
 ### Seed a small memory corpus (demo)
 
@@ -196,6 +231,10 @@ Then copy stack outputs into `.env`:
 
 ## Docs
 
+- [`docs/E2E_WALKTHROUGH.md`](docs/E2E_WALKTHROUGH.md) — real SFN shadow click-path
+- [`docs/DEMO_OPS.md`](docs/DEMO_OPS.md) — local start + timings
+- [`docs/HOSTING.md`](docs/HOSTING.md) — API/frontend hosting + auth env
+- [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) — SAM / Step Functions deploy + promote
 - [`docs/PROJECT.md`](docs/PROJECT.md)
 - [`docs/API.md`](docs/API.md) — HTTP API
 - [`docs/PHASE_9_AI_PREDICTION.md`](docs/PHASE_9_AI_PREDICTION.md)

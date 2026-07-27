@@ -33,58 +33,64 @@ function Comparisons({ rows }: { rows: ComparisonRow[] }) {
   if (rows.length === 0) {
     return (
       <p className="text-muted-foreground/70 font-mono text-[11px] tracking-tight">
-        Prediction vs actual appears once Bedrock prediction is on the run.
+        Pred → actual appears after measurement.
       </p>
     )
   }
+  const allWithin =
+    rows.every((r) => r.withinBand === true) &&
+    rows.some((r) => r.withinBand === true)
   return (
-    <dl className="space-y-2.5">
-      {rows.map((row) => (
-        <div
-          key={row.label}
-          className="grid gap-1 border-b border-border/40 pb-2.5 last:border-b-0 last:pb-0 sm:grid-cols-[7rem_1fr_auto] sm:items-baseline sm:gap-4"
-        >
-          <dt className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-            {row.label}
-          </dt>
-          <dd className="text-foreground/85 font-mono text-xs tracking-tight">
-            <span className="text-muted-foreground/55">pred </span>
-            {row.predicted}
-            <span className="text-muted-foreground/40 mx-1.5">→</span>
-            <span className="text-muted-foreground/55">actual </span>
-            {row.actual}
-          </dd>
-          {row.delta ? (
-            <span
-              className={cn(
-                "font-mono text-[11px] tracking-tight sm:text-right",
-                row.withinBand === true && "text-[var(--oracle-verified)]",
-                row.withinBand === false && "text-[var(--oracle-risk)]",
-                row.withinBand == null && "text-muted-foreground"
-              )}
-            >
-              {row.delta}
-              {row.withinBand === true
-                ? " · within band"
-                : row.withinBand === false
-                  ? " · outside band"
-                  : ""}
-            </span>
-          ) : row.withinBand != null ? (
-            <span
-              className={cn(
-                "font-mono text-[11px] tracking-tight sm:text-right",
-                row.withinBand
-                  ? "text-[var(--oracle-verified)]"
-                  : "text-[var(--oracle-risk)]"
-              )}
-            >
-              {row.withinBand ? "within band" : "outside band"}
-            </span>
-          ) : null}
-        </div>
-      ))}
-    </dl>
+    <div className="space-y-3">
+      {allWithin ? (
+        <p className="text-xs text-[var(--oracle-verified)]/90">
+          All metrics within band.
+        </p>
+      ) : null}
+      <dl className="space-y-2.5">
+        {rows.map((row) => (
+          <div
+            key={row.label}
+            className="grid gap-1 border-b border-border/40 pb-2.5 last:border-b-0 last:pb-0 sm:grid-cols-[7rem_1fr_auto] sm:items-baseline sm:gap-4"
+          >
+            <dt className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
+              {row.label}
+            </dt>
+            <dd className="space-y-0.5">
+              <p className="text-foreground/85 font-mono text-xs tracking-tight">
+                <span className="text-muted-foreground/55">pred </span>
+                {row.predicted}
+                <span className="text-muted-foreground/40 mx-1.5">→</span>
+                <span className="text-muted-foreground/55">actual </span>
+                {row.actual}
+              </p>
+              {row.bandNote ? (
+                <p className="text-muted-foreground/70 text-[11px] leading-snug">
+                  {row.bandNote}
+                </p>
+              ) : null}
+            </dd>
+            {row.delta || row.withinBand != null ? (
+              <span
+                className={cn(
+                  "font-mono text-[11px] tracking-tight sm:text-right",
+                  row.withinBand === true && "text-[var(--oracle-verified)]",
+                  row.withinBand === false && "text-[var(--oracle-risk)]",
+                  row.withinBand == null && "text-muted-foreground"
+                )}
+              >
+                {row.delta ? `${row.delta} · ` : ""}
+                {row.withinBand === true
+                  ? "within band"
+                  : row.withinBand === false
+                    ? "outside band"
+                    : ""}
+              </span>
+            ) : null}
+          </div>
+        ))}
+      </dl>
+    </div>
   )
 }
 
@@ -135,132 +141,92 @@ export function ShadowLivePanel({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-muted-foreground font-mono text-[11px] tracking-tight">
           {isLive
-            ? "Live — steps update as the real cluster advances"
+            ? "Live"
             : awaitingStart
-              ? "Ready — start the shadow to watch these steps run"
+              ? "Ready to start"
               : shadow
-                ? "Shadow lifecycle (from live API)"
-                : "Shadow steps (waiting)"}
+                ? "Shadow steps"
+                : "Waiting"}
         </p>
         <p className="text-muted-foreground/70 font-mono text-[10px] tabular-nums tracking-tight">
-          {doneCount}/{stages.length} complete
-          {current ? ` · now: ${current.label.replace(/^\d+\.\s*/, "")}` : null}
+          {doneCount}/{stages.length}
+          {current ? ` · ${current.label.replace(/^\d+\.\s*/, "")}` : null}
         </p>
       </div>
 
-      {isLive && run.sfn_execution_arn ? (
-        <p className="text-muted-foreground/60 break-all font-mono text-[10px] tracking-tight">
-          SFN {run.sfn_execution_arn}
-        </p>
-      ) : null}
-
       <div className="grid gap-6 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="space-y-1">
-          <p className="text-muted-foreground/60 mb-3 font-mono text-[10px] tracking-[0.12em] uppercase">
-            What happens on the shadow
-          </p>
-          <ol className="relative space-y-0">
-            {stages.map((stage, idx) => (
-              <li key={stage.id} className="relative flex gap-3 pb-5 last:pb-0">
-                {idx < stages.length - 1 ? (
-                  <span
-                    aria-hidden
-                    className={cn(
-                      "absolute top-3 left-[4px] h-[calc(100%-4px)] w-px",
-                      stage.state === "complete"
-                        ? "bg-[var(--oracle-verified)]/50"
-                        : "bg-border"
-                    )}
-                  />
-                ) : null}
-                <StageDot state={stage.state} />
-                <div className="min-w-0 flex-1 pt-0.5">
-                  <div className="flex flex-wrap items-baseline justify-between gap-2">
-                    <p
-                      className={cn(
-                        "text-sm font-medium tracking-tight",
-                        stage.state === "current" && "text-foreground",
-                        stage.state === "complete" && "text-foreground/85",
-                        stage.state === "failed" && "text-[var(--oracle-risk)]",
-                        stage.state === "pending" && "text-muted-foreground/60"
-                      )}
-                    >
-                      {stage.label}
-                      {stage.state === "current" ? (
-                        <span className="ml-2 font-mono text-[10px] tracking-[0.14em] text-amber-400/90 uppercase">
-                          in progress
-                        </span>
-                      ) : null}
-                      {stage.state === "complete" ? (
-                        <span className="ml-2 font-mono text-[10px] tracking-[0.14em] text-[var(--oracle-verified)] uppercase">
-                          done
-                        </span>
-                      ) : null}
-                    </p>
-                    <span className="font-mono text-[10px] tabular-nums tracking-tight text-muted-foreground/75">
-                      {stage.durationLabel
-                        ? stage.durationLabel
-                        : stage.state === "current"
-                          ? "…"
-                          : stage.typical
-                            ? `typical ${stage.typical}`
-                            : ""}
-                    </span>
-                  </div>
+        <ol className="relative space-y-0">
+          {stages.map((stage, idx) => (
+            <li key={stage.id} className="relative flex gap-3 pb-4 last:pb-0">
+              {idx < stages.length - 1 ? (
+                <span
+                  aria-hidden
+                  className={cn(
+                    "absolute top-3 left-[4px] h-[calc(100%-4px)] w-px",
+                    stage.state === "complete"
+                      ? "bg-[var(--oracle-verified)]/50"
+                      : "bg-border"
+                  )}
+                />
+              ) : null}
+              <StageDot state={stage.state} />
+              <div className="min-w-0 flex-1 pt-0.5">
+                <div className="flex flex-wrap items-baseline justify-between gap-2">
                   <p
                     className={cn(
-                      "mt-0.5 text-xs leading-relaxed",
-                      stage.state === "pending"
-                        ? "text-muted-foreground/50"
-                        : "text-muted-foreground/80"
+                      "text-sm font-medium tracking-tight",
+                      stage.state === "current" && "text-foreground",
+                      stage.state === "complete" && "text-foreground/85",
+                      stage.state === "failed" && "text-[var(--oracle-risk)]",
+                      stage.state === "pending" && "text-muted-foreground/60"
                     )}
                   >
+                    {stage.label}
+                    {stage.state === "current" ? (
+                      <span className="ml-2 font-mono text-[10px] tracking-[0.14em] text-amber-400/90 uppercase">
+                        now
+                      </span>
+                    ) : null}
+                    {stage.state === "complete" ? (
+                      <span className="ml-2 font-mono text-[10px] tracking-[0.14em] text-[var(--oracle-verified)] uppercase">
+                        done
+                      </span>
+                    ) : null}
+                  </p>
+                  <span className="font-mono text-[10px] tabular-nums tracking-tight text-muted-foreground/75">
+                    {stage.durationLabel
+                      ? stage.durationLabel
+                      : stage.state === "current"
+                        ? "…"
+                        : stage.state === "pending"
+                          ? "—"
+                          : ""}
+                  </span>
+                </div>
+                {stage.state === "current" || stage.state === "failed" ? (
+                  <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground/80">
                     {stage.hint}
                   </p>
-                  {stage.detail ? (
-                    <p className="text-muted-foreground/65 mt-1 truncate font-mono text-[10px] tracking-tight">
-                      {stage.detail}
-                    </p>
-                  ) : null}
-                </div>
-              </li>
-            ))}
-          </ol>
-        </div>
+                ) : null}
+                {stage.detail ? (
+                  <p className="text-muted-foreground/65 mt-1 truncate font-mono text-[10px] tracking-tight">
+                    {stage.detail}
+                  </p>
+                ) : null}
+              </div>
+            </li>
+          ))}
+        </ol>
 
         <div className="space-y-3">
           <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-            Cluster facts
+            Cluster
           </p>
           {shadow ? (
             <dl className="space-y-1.5 font-mono text-[11px] tracking-tight">
               <div className="flex justify-between gap-3">
-                <dt className="text-muted-foreground/60">Name</dt>
-                <dd className="text-foreground/85 truncate">
-                  {shadow.cluster_name || "—"}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-muted-foreground/60">Id</dt>
-                <dd className="text-foreground/85 truncate">
-                  {shadow.cluster_id || "—"}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-3">
                 <dt className="text-muted-foreground/60">Status</dt>
                 <dd className="text-foreground/85">{shadow.status}</dd>
-              </div>
-              <div className="flex justify-between gap-3">
-                <dt className="text-muted-foreground/60">Provider</dt>
-                <dd
-                  className={cn(
-                    "text-foreground/85",
-                    !isRealProvider && "text-[var(--oracle-risk)]"
-                  )}
-                >
-                  {shadow.provider}
-                  {!isRealProvider ? " (not a real cloud cluster)" : ""}
-                </dd>
               </div>
               <div className="flex justify-between gap-3">
                 <dt className="text-muted-foreground/60">Region</dt>
@@ -273,14 +239,6 @@ export function ShadowLivePanel({
                 </dd>
               </div>
               <div className="flex justify-between gap-3">
-                <dt className="text-muted-foreground/60">Created</dt>
-                <dd className="text-foreground/85">
-                  {shadow.created_at
-                    ? formatRelativeTime(shadow.created_at)
-                    : "—"}
-                </dd>
-              </div>
-              <div className="flex justify-between gap-3">
                 <dt className="text-muted-foreground/60">Torn down</dt>
                 <dd className="text-foreground/85">
                   {shadow.destroyed_at
@@ -290,9 +248,8 @@ export function ShadowLivePanel({
               </div>
             </dl>
           ) : (
-            <p className="text-muted-foreground/70 text-xs leading-relaxed">
-              Cluster name, id, and region appear here as soon as provisioning
-              reports back from Cockroach Cloud.
+            <p className="text-muted-foreground/70 text-xs">
+              Cluster details appear when provisioning starts.
             </p>
           )}
           {shadow?.error_message ? (
@@ -300,12 +257,17 @@ export function ShadowLivePanel({
               {shadow.error_message}
             </p>
           ) : null}
+          {!isRealProvider && shadow ? (
+            <p className="text-xs text-[var(--oracle-risk)]">
+              Not a real cloud cluster ({shadow.provider}).
+            </p>
+          ) : null}
         </div>
       </div>
 
       <div className="border-border/60 space-y-3 border-t pt-4">
         <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-          Prediction vs your migration (measured on shadow)
+          Pred → actual
         </p>
         <Comparisons rows={comparisons} />
       </div>

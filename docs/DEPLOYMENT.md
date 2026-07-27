@@ -6,6 +6,16 @@
 > `python scripts/dev.py setup` and `python scripts/dev.py restart`.
 > Only re-deploy here when Lambda / ASL / stack params change.
 
+## Promote checklist (after Lambda/ASL changes)
+
+1. `cd infra/sam` → `.\build.ps1` → `.\deploy.ps1`
+2. Confirm `.env` has updated `MIGRATION_WORKFLOW_ARN` / `RUN_ARTIFACTS_BUCKET`
+3. Restart the API (`python scripts/dev.py restart` or redeploy the hosted control plane)
+4. `GET /health` → `integrations.sfn_ready: true`
+5. Smoke one real shadow run — [`docs/E2E_WALKTHROUGH.md`](E2E_WALKTHROUGH.md)
+
+Control-plane + frontend hosting: [`docs/HOSTING.md`](HOSTING.md).
+
 One-command repeatable deploy for: **S3 artifacts bucket**, **seven workflow
 Lambdas** (ZIP packages using `SHADOW_PROVIDER=ccloud_api`), **EventBridge orphan
 sweeper**, and the **Step Functions** state machine whose ASL is

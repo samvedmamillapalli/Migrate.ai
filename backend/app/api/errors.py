@@ -15,6 +15,7 @@ from app.core.exceptions import (
     SchemaNetworkError,
     SchemaSSLError,
     SchemaTimeoutError,
+    UnauthorizedError,
     UnsupportedDatabaseError,
     ValidationError,
 )
@@ -34,6 +35,7 @@ _STATUS_BY_ERROR: dict[type[AppError], int] = {
     NotFoundError: status.HTTP_404_NOT_FOUND,
     ValidationError: _HTTP_422_UNPROCESSABLE,
     ConflictError: status.HTTP_409_CONFLICT,
+    UnauthorizedError: status.HTTP_401_UNAUTHORIZED,
     ReadWriteCredentialsError: status.HTTP_403_FORBIDDEN,
     SchemaAuthenticationError: status.HTTP_401_UNAUTHORIZED,
     SchemaDatabaseNotFoundError: status.HTTP_404_NOT_FOUND,

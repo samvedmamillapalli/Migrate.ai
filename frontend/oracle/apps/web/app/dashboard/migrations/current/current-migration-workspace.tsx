@@ -9,6 +9,7 @@ import { cn } from "@workspace/ui/lib/utils"
 
 import { OwnerIdentityField } from "@/components/owner-identity-field"
 import { ShadowLivePanel } from "@/components/shadow-live-panel"
+import { useShadowWatch } from "@/components/shadow-watch-context"
 import {
   ApiError,
   abortWorkflow,
@@ -35,6 +36,7 @@ import {
   getShadowCluster,
   hasRealSfnArn,
   isSfnReady,
+  sfnNotReadyMessage,
   mapAssessment,
   mapComparisons,
   mapProcessStages,
@@ -50,7 +52,6 @@ import {
   statusLabel,
   syncWorkflow,
   usePolling,
-  workflowLabel,
   type ApprovalDecision,
   type ApprovalResponse,
   type AssessmentView,
@@ -121,23 +122,6 @@ function Section({
       </div>
       {children}
     </section>
-  )
-}
-
-function SubBlock({
-  label,
-  children,
-}: {
-  label: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="border-border/60 space-y-2.5 border-t pt-4 first:border-t-0 first:pt-0">
-      <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-        {label}
-      </p>
-      {children}
-    </div>
   )
 }
 
@@ -385,16 +369,22 @@ function MemoryCard({ memory }: { memory: RetrievedMemoryView }) {
 
 function RetrievalPanel({
   assessment,
-  run,
 }: {
   assessment: AssessmentView
-  run: MigrationRun
 }) {
   const { retrieval } = assessment
-  const topMemory = retrieval.memories[0]
+  const [open, setOpen] = React.useState(false)
+  const summary =
+    retrieval.emptyVsNeverAttempted === "never_attempted"
+      ? "Learning not run yet"
+      : retrieval.emptyVsNeverAttempted === "empty"
+        ? "No similar past runs yet"
+        : retrieval.emptyVsNeverAttempted === "hits"
+          ? `Learning from ${retrieval.retrievedCount} similar run${retrieval.retrievedCount === 1 ? "" : "s"}`
+          : "Learning status unknown"
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         <StatusDot
           tone={
@@ -407,75 +397,22 @@ function RetrievalPanel({
                 : "muted"
           }
         />
-        <p className="font-mono text-xs tracking-tight text-foreground/85">
-          {retrieval.emptyVsNeverAttempted === "never_attempted"
-            ? "Retrieval not attempted"
-            : retrieval.emptyVsNeverAttempted === "empty"
-              ? "Retrieval ran — no similar past migrations found"
-              : retrieval.emptyVsNeverAttempted === "hits"
-                ? `Retrieved ${retrieval.retrievedCount} similar migration${retrieval.retrievedCount === 1 ? "" : "s"}`
-                : "Retrieval status unknown"}
-        </p>
-        {retrieval.mode ? (
-          <span className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.1em] uppercase">
-            mode: {retrieval.mode}
-          </span>
-        ) : null}
-        {retrieval.weakRetrieval ? (
-          <span className="font-mono text-[10px] tracking-[0.1em] text-amber-400/90 uppercase">
-            weak match{retrieval.weakSimilarityThreshold != null ? ` (below ${formatPercent(retrieval.weakSimilarityThreshold)} threshold)` : ""}
-          </span>
+        <p className="text-sm text-foreground/85">{summary}</p>
+        {retrieval.memories.length > 0 ? (
+          <button
+            type="button"
+            className="text-muted-foreground hover:text-foreground font-mono text-[10px] tracking-[0.1em] uppercase transition-colors"
+            onClick={() => setOpen((v) => !v)}
+          >
+            {open ? "Hide" : "View"}
+          </button>
         ) : null}
       </div>
-
-      <p className="text-muted-foreground max-w-3xl text-xs leading-relaxed">
-        {retrieval.vectorIndexNote} CockroachDB serves nearest-neighbor lookups over the
-        memory corpus using Distributed Vector Indexing (a C-SPANN-style algorithm), so
-        retrieval quality here reflects the live vector index, not a canned demo.
-      </p>
-
-      {retrieval.attributionSignals.length > 0 ? (
-        <div className="flex flex-wrap gap-3">
-          {retrieval.attributionSignals.map((sig) => (
-            <span
-              key={sig.key}
-              className="text-muted-foreground/70 font-mono text-[10px] tracking-tight"
-            >
-              {sig.key}=<span className="text-foreground/70">{sig.value}</span>
-            </span>
+      {open && retrieval.memories.length > 0 ? (
+        <div className="grid gap-2 sm:grid-cols-2">
+          {retrieval.memories.map((mem) => (
+            <MemoryCard key={mem.rank} memory={mem} />
           ))}
-        </div>
-      ) : null}
-
-      {retrieval.memories.length > 0 ? (
-        <div className="grid gap-4 lg:grid-cols-2">
-          <div className="space-y-2">
-            <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-              This migration
-            </p>
-            <pre className="border-border/50 max-h-56 overflow-auto rounded-md border p-3 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-foreground/80">
-              {run.migration_sql}
-            </pre>
-          </div>
-          <div className="space-y-2">
-            <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-              Top retrieved memory
-            </p>
-            {topMemory ? <MemoryCard memory={topMemory} /> : null}
-          </div>
-        </div>
-      ) : null}
-
-      {retrieval.memories.length > 1 ? (
-        <div className="space-y-2">
-          <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-            All retrieved memories
-          </p>
-          <div className="grid gap-2 sm:grid-cols-2">
-            {retrieval.memories.slice(1).map((mem) => (
-              <MemoryCard key={mem.rank} memory={mem} />
-            ))}
-          </div>
         </div>
       ) : null}
     </div>
@@ -484,212 +421,211 @@ function RetrievalPanel({
 
 function AssessmentPanel({ assessment }: { assessment: AssessmentView }) {
   const { prediction, confidence, recommendation } = assessment
+  const [detailsOpen, setDetailsOpen] = React.useState(false)
+  const hasDetails =
+    Boolean(prediction?.keyAssumptions.length) ||
+    Boolean(prediction?.uncertaintyNotes.length) ||
+    Boolean(prediction?.framingNote) ||
+    Boolean(recommendation?.rolloutSteps.length) ||
+    Boolean(recommendation?.monitoringChecklist.length) ||
+    Boolean(recommendation?.rollbackGuidance) ||
+    Boolean(recommendation?.saferAlternativePlan) ||
+    Boolean(confidence?.wasReduced) ||
+    assessment.riskFlags.length > 0
 
   return (
-    <div className="space-y-0">
-      <SubBlock label="Policy">
-        <div className="grid gap-3 sm:grid-cols-3">
-          <div className="space-y-0.5">
-            <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
-              Decision
-            </p>
-            <p className="font-mono text-xs tracking-[0.08em] text-amber-400/90 uppercase">
-              {policyLabel(assessment.policyDecision)}
-            </p>
-          </div>
-          <div className="space-y-0.5">
-            <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
-              Compatibility risk
-            </p>
-            <p
-              className={cn(
-                "font-mono text-xs tracking-[0.08em] uppercase",
-                riskClass(riskTone(assessment.compatibilityRisk))
-              )}
-            >
-              {assessment.compatibilityRisk || "—"}
-            </p>
-          </div>
-          <div className="space-y-0.5">
-            <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
-              Manual review
-            </p>
-            <p className="font-mono text-xs tracking-tight text-foreground/85">
-              {assessment.requiresManualReview ? "Required" : "Not required"}
-            </p>
-          </div>
-        </div>
-        {assessment.parsedStatementTypes.length > 0 ? (
-          <p className="text-muted-foreground/60 font-mono text-[10px] tracking-tight">
-            statements: {assessment.parsedStatementTypes.join(", ")}
+    <div className="space-y-4">
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="space-y-0.5">
+          <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
+            Policy
           </p>
-        ) : null}
-      </SubBlock>
-
-      <SubBlock label="Risk flags">
-        <RiskFlags flags={assessment.riskFlags} />
-      </SubBlock>
-
-      {prediction ? (
-        <SubBlock label="Prediction">
-          <dl className="max-w-md space-y-1.5">
-            <FieldRow
-              label="Estimated duration"
-              value={formatDuration(prediction.estimatedDurationSeconds)}
-            />
-            <FieldRow
-              label="Estimated storage"
-              value={formatStorage(prediction.estimatedStorageMb)}
-            />
-            <FieldRow
-              label="Rollback risk"
-              value={prediction.rollbackRisk || "—"}
-              valueClassName={riskClass(riskTone(prediction.rollbackRisk))}
-            />
-            {prediction.scaleTier ? (
-              <FieldRow label="Scale tier" value={prediction.scaleTier} />
-            ) : null}
-          </dl>
-          {prediction.riskExplanation ? (
-            <p className="text-foreground/80 max-w-3xl text-sm leading-relaxed">
-              {prediction.riskExplanation}
+          <p className="font-mono text-xs tracking-[0.08em] text-amber-400/90 uppercase">
+            {policyLabel(assessment.policyDecision)}
+          </p>
+        </div>
+        <div className="space-y-0.5">
+          <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
+            Risk
+          </p>
+          <p
+            className={cn(
+              "font-mono text-xs tracking-[0.08em] uppercase",
+              riskClass(riskTone(assessment.compatibilityRisk))
+            )}
+          >
+            {assessment.compatibilityRisk || "—"}
+          </p>
+        </div>
+        {confidence ? (
+          <div className="space-y-0.5">
+            <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
+              Confidence
             </p>
-          ) : null}
-          {prediction.keyAssumptions.length > 0 ? (
-            <div>
-              <p className="text-muted-foreground/55 mb-1 font-mono text-[10px] tracking-[0.1em] uppercase">
-                Key assumptions
-              </p>
-              <ul className="space-y-1">
-                {prediction.keyAssumptions.map((item) => (
-                  <li key={item} className="flex gap-2 text-xs text-foreground/75">
-                    <span className="text-muted-foreground/50 shrink-0">·</span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {prediction.uncertaintyNotes.length > 0 ? (
-            <div>
-              <p className="text-muted-foreground/55 mb-1 font-mono text-[10px] tracking-[0.1em] uppercase">
-                Uncertainty
-              </p>
-              <ul className="space-y-1">
-                {prediction.uncertaintyNotes.map((item) => (
-                  <li key={item} className="flex gap-2 text-xs text-foreground/75">
-                    <span className="text-muted-foreground/50 shrink-0">·</span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-          {prediction.framingNote ? (
-            <p className="text-muted-foreground/60 font-mono text-[10px] leading-relaxed tracking-tight">
-              {prediction.framingNote}
-            </p>
-          ) : null}
-        </SubBlock>
-      ) : null}
-
-      {confidence ? (
-        <SubBlock label="Confidence">
-          <div className="flex items-baseline gap-3">
-            <p className="font-mono text-2xl leading-none tracking-tight text-[var(--oracle-reasoning-soft)]">
+            <p className="font-mono text-lg leading-none tracking-tight text-[var(--oracle-reasoning-soft)]">
               {confidence.percentLabel}
             </p>
-            {confidence.wasReduced && confidence.raw != null ? (
-              <p className="text-muted-foreground/60 font-mono text-[10px] tracking-tight">
-                raw {formatPercent(confidence.raw)} → adjusted
-              </p>
-            ) : null}
           </div>
-          {confidence.wasReduced ? (
-            <ul className="space-y-1">
-              {confidence.adjustments.map((adj, idx) => (
-                <li
-                  key={`${adj.reasonCode}-${idx}`}
-                  className="flex gap-2 text-xs text-foreground/75"
-                >
-                  <span className="text-amber-400/80 shrink-0 font-mono tabular-nums">
-                    {adj.amount > 0 ? "+" : ""}
-                    {adj.amount}
-                  </span>
-                  <span>{adj.reason || adj.reasonCode}</span>
-                </li>
-              ))}
-            </ul>
-          ) : null}
-        </SubBlock>
+        ) : null}
+      </div>
+
+      {prediction ? (
+        <dl className="max-w-md space-y-1.5">
+          <FieldRow
+            label="Duration"
+            value={formatDuration(prediction.estimatedDurationSeconds)}
+          />
+          <FieldRow
+            label="Storage"
+            value={formatStorage(prediction.estimatedStorageMb)}
+          />
+          <FieldRow
+            label="Rollback"
+            value={prediction.rollbackRisk || "—"}
+            valueClassName={riskClass(riskTone(prediction.rollbackRisk))}
+          />
+        </dl>
       ) : null}
 
-      {recommendation ? (
-        <SubBlock label="Recommendation">
-          <div className="space-y-1">
-            {recommendation.strategy ? (
-              <p className="font-mono text-xs tracking-[0.08em] text-foreground/85 uppercase">
-                {recommendation.strategy}
-              </p>
-            ) : null}
-            {recommendation.suggestedDeploymentWindow ? (
-              <p className="text-muted-foreground/70 font-mono text-[10px] tracking-tight">
-                window: {recommendation.suggestedDeploymentWindow}
-              </p>
-            ) : null}
-          </div>
+      {prediction?.riskExplanation ? (
+        <p className="text-foreground/80 max-w-2xl text-sm leading-relaxed">
+          {prediction.riskExplanation}
+        </p>
+      ) : null}
+
+      {recommendation?.strategy ? (
+        <div className="space-y-1">
+          <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
+            Recommendation
+          </p>
+          <p className="text-sm font-medium tracking-tight text-foreground/90">
+            {recommendation.strategy}
+          </p>
           {recommendation.rationale ? (
-            <p className="text-foreground/80 max-w-3xl text-sm leading-relaxed">
+            <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
               {recommendation.rationale}
             </p>
           ) : null}
-          {recommendation.rolloutSteps.length > 0 ? (
-            <ol className="space-y-1.5">
-              {recommendation.rolloutSteps.map((step, idx) => (
-                <li
-                  key={idx}
-                  className="flex gap-2 text-sm leading-relaxed text-foreground/80"
-                >
-                  <span className="text-muted-foreground/50 shrink-0 font-mono tabular-nums">
-                    {idx + 1}.
-                  </span>
-                  <span>{step}</span>
-                </li>
-              ))}
-            </ol>
-          ) : null}
-          {recommendation.monitoringChecklist.length > 0 ? (
-            <div>
-              <p className="text-muted-foreground/55 mb-1 font-mono text-[10px] tracking-[0.1em] uppercase">
-                Monitoring checklist
-              </p>
-              <ul className="space-y-1">
-                {recommendation.monitoringChecklist.map((item) => (
-                  <li key={item} className="flex gap-2 text-xs text-foreground/75">
-                    <span className="text-muted-foreground/50 shrink-0">☐</span>
-                    {item}
-                  </li>
-                ))}
-              </ul>
+        </div>
+      ) : null}
+
+      {hasDetails ? (
+        <div>
+          <button
+            type="button"
+            className="text-muted-foreground hover:text-foreground font-mono text-[10px] tracking-[0.1em] uppercase transition-colors"
+            onClick={() => setDetailsOpen((v) => !v)}
+          >
+            {detailsOpen ? "Hide details" : "Show details"}
+          </button>
+          {detailsOpen ? (
+            <div className="border-border/50 mt-3 space-y-4 border-t pt-3">
+              {assessment.riskFlags.length > 0 ? (
+                <div>
+                  <p className="text-muted-foreground/55 mb-1 font-mono text-[10px] tracking-[0.1em] uppercase">
+                    Risk flags
+                  </p>
+                  <RiskFlags flags={assessment.riskFlags} />
+                </div>
+              ) : null}
+              {prediction?.keyAssumptions.length ? (
+                <div>
+                  <p className="text-muted-foreground/55 mb-1 font-mono text-[10px] tracking-[0.1em] uppercase">
+                    Assumptions
+                  </p>
+                  <ul className="space-y-1">
+                    {prediction.keyAssumptions.map((item) => (
+                      <li
+                        key={item}
+                        className="flex gap-2 text-xs text-foreground/75"
+                      >
+                        <span className="text-muted-foreground/50 shrink-0">·</span>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {prediction?.uncertaintyNotes.length ? (
+                <div>
+                  <p className="text-muted-foreground/55 mb-1 font-mono text-[10px] tracking-[0.1em] uppercase">
+                    Uncertainty
+                  </p>
+                  <ul className="space-y-1">
+                    {prediction.uncertaintyNotes.map((item) => (
+                      <li
+                        key={item}
+                        className="flex gap-2 text-xs text-foreground/75"
+                      >
+                        <span className="text-muted-foreground/50 shrink-0">·</span>
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+              {confidence?.wasReduced ? (
+                <ul className="space-y-1">
+                  {confidence.adjustments.map((adj, idx) => (
+                    <li
+                      key={`${adj.reasonCode}-${idx}`}
+                      className="flex gap-2 text-xs text-foreground/75"
+                    >
+                      <span className="text-amber-400/80 shrink-0 font-mono tabular-nums">
+                        {adj.amount > 0 ? "+" : ""}
+                        {adj.amount}
+                      </span>
+                      <span>{adj.reason || adj.reasonCode}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {recommendation?.rolloutSteps.length ? (
+                <ol className="space-y-1.5">
+                  {recommendation.rolloutSteps.map((step, idx) => (
+                    <li
+                      key={idx}
+                      className="flex gap-2 text-sm leading-relaxed text-foreground/80"
+                    >
+                      <span className="text-muted-foreground/50 shrink-0 font-mono tabular-nums">
+                        {idx + 1}.
+                      </span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              ) : null}
+              {recommendation?.monitoringChecklist.length ? (
+                <ul className="space-y-1">
+                  {recommendation.monitoringChecklist.map((item) => (
+                    <li
+                      key={item}
+                      className="flex gap-2 text-xs text-foreground/75"
+                    >
+                      <span className="text-muted-foreground/50 shrink-0">·</span>
+                      {item}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {prediction?.framingNote ? (
+                <p className="text-muted-foreground text-xs leading-relaxed">
+                  {prediction.framingNote}
+                </p>
+              ) : null}
+              {recommendation?.rollbackGuidance ? (
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  {recommendation.rollbackGuidance}
+                </p>
+              ) : null}
+              {recommendation?.saferAlternativePlan ? (
+                <p className="text-muted-foreground text-sm leading-relaxed">
+                  {recommendation.saferAlternativePlan}
+                </p>
+              ) : null}
             </div>
           ) : null}
-          {recommendation.rollbackGuidance ? (
-            <p className="text-muted-foreground text-sm leading-relaxed">
-              <span className="text-muted-foreground/60 font-mono text-[10px] uppercase">
-                Rollback:{" "}
-              </span>
-              {recommendation.rollbackGuidance}
-            </p>
-          ) : null}
-          {recommendation.saferAlternativePlan ? (
-            <p className="text-muted-foreground text-sm leading-relaxed">
-              <span className="text-muted-foreground/60 font-mono text-[10px] uppercase">
-                Safer alternative:{" "}
-              </span>
-              {recommendation.saferAlternativePlan}
-            </p>
-          ) : null}
-        </SubBlock>
+        </div>
       ) : null}
     </div>
   )
@@ -703,40 +639,63 @@ function ComparisonsPanel({ rows }: { rows: ComparisonRow[] }) {
       </p>
     )
   }
+  const allWithin =
+    rows.every((r) => r.withinBand === true) &&
+    rows.some((r) => r.withinBand === true)
   return (
-    <dl className="space-y-2.5">
-      {rows.map((row) => (
-        <div
-          key={row.label}
-          className="grid gap-1 border-b border-border/40 pb-2.5 last:border-b-0 last:pb-0 sm:grid-cols-[7rem_1fr_auto] sm:items-baseline sm:gap-4"
-        >
-          <dt className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-            {row.label}
-          </dt>
-          <dd className="text-foreground/85 font-mono text-xs tracking-tight">
-            {row.predicted}
-            <span className="text-muted-foreground/40 mx-1.5">→</span>
-            {row.actual}
-          </dd>
-          {row.delta ? (
-            <span
-              className={cn(
-                "font-mono text-[11px] tracking-tight sm:text-right",
-                row.withinBand === true && "text-[var(--oracle-verified)]",
-                row.withinBand === false && "text-[var(--oracle-risk)]",
-                row.withinBand == null && "text-muted-foreground"
-              )}
-            >
-              {row.delta}
-            </span>
-          ) : null}
-        </div>
-      ))}
-    </dl>
+    <div className="space-y-3">
+      {allWithin ? (
+        <p className="text-xs text-[var(--oracle-verified)]/90">
+          All metrics within band.
+        </p>
+      ) : null}
+      <dl className="space-y-2.5">
+        {rows.map((row) => (
+          <div
+            key={row.label}
+            className="grid gap-1 border-b border-border/40 pb-2.5 last:border-b-0 last:pb-0 sm:grid-cols-[7rem_1fr_auto] sm:items-baseline sm:gap-4"
+          >
+            <dt className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
+              {row.label}
+            </dt>
+            <dd className="space-y-0.5">
+              <p className="text-foreground/85 font-mono text-xs tracking-tight">
+                {row.predicted}
+                <span className="text-muted-foreground/40 mx-1.5">→</span>
+                {row.actual}
+              </p>
+              {row.bandNote ? (
+                <p className="text-muted-foreground/70 text-[11px] leading-snug">
+                  {row.bandNote}
+                </p>
+              ) : null}
+            </dd>
+            {row.delta || row.withinBand != null ? (
+              <span
+                className={cn(
+                  "font-mono text-[11px] tracking-tight sm:text-right",
+                  row.withinBand === true && "text-[var(--oracle-verified)]",
+                  row.withinBand === false && "text-[var(--oracle-risk)]",
+                  row.withinBand == null && "text-muted-foreground"
+                )}
+              >
+                {row.delta ? `${row.delta} · ` : ""}
+                {row.withinBand === true
+                  ? "within band"
+                  : row.withinBand === false
+                    ? "outside band"
+                    : ""}
+              </span>
+            ) : null}
+          </div>
+        ))}
+      </dl>
+    </div>
   )
 }
 
 export function CurrentMigrationWorkspace() {
+  const { openWatch } = useShadowWatch()
   const [initializing, setInitializing] = React.useState(true)
   const [run, setRun] = React.useState<MigrationRun | null>(null)
   const [extras, setExtras] = React.useState<RunExtras>(EMPTY_EXTRAS)
@@ -840,7 +799,7 @@ export function CurrentMigrationWorkspace() {
         const updated = await syncWorkflow(run.id)
         setRun(updated)
         setStatusMessage(
-          `Shadow status: ${statusLabel(updated.status)} / workflow ${workflowLabel(updated.workflow_status)}`
+          `Shadow: ${statusLabel(updated.status)}`
         )
         // Keep shadow lifecycle + measured actuals visible while the workflow runs.
         const [shadow, execution] = await Promise.all([
@@ -1088,9 +1047,7 @@ export function CurrentMigrationWorkspace() {
     setStartingShadow(true)
     try {
       if (!isSfnReady(health)) {
-        throw new Error(
-          "Step Functions is not configured (MIGRATION_WORKFLOW_ARN / RUN_ARTIFACTS_BUCKET). Real shadow verify requires a deployed workflow — local mock verify is disabled."
-        )
+        throw new Error(sfnNotReadyMessage(health))
       }
       const secret =
         connectionSecretArn.trim() || run.connection_secret_arn || null
@@ -1100,7 +1057,7 @@ export function CurrentMigrationWorkspace() {
           "No database attached. Go to Attach database, paste a read-only URL (or secret ARN), click Discover schema, then start the shadow."
         )
       }
-      setStatusMessage("Starting AWS Step Functions shadow workflow…")
+      setStatusMessage("Starting shadow…")
       let current = run
       if (!hasRealSfnArn(current)) {
         current = await startWorkflow(current.id, {
@@ -1114,12 +1071,11 @@ export function CurrentMigrationWorkspace() {
       }
       if (!hasRealSfnArn(current)) {
         throw new Error(
-          "Step Functions is configured but no execution ARN was returned. Check the connection secret ARN."
+          "Shadow did not start. Check database attachment."
         )
       }
-      setStatusMessage(
-        `Shadow workflow running: ${current.sfn_execution_arn}`
-      )
+      openWatch(current.id)
+      setStatusMessage("Shadow running — live watch opened.")
     } catch (err) {
       setError(errorMessage(err))
     } finally {
@@ -1137,7 +1093,7 @@ export function CurrentMigrationWorkspace() {
       setRun(updated)
       await refreshExtras(updated)
       setStatusMessage(
-        `Shadow aborted — status ${statusLabel(updated.status)} / workflow ${workflowLabel(updated.workflow_status)}`
+        `Shadow aborted — ${statusLabel(updated.status)}`
       )
     } catch (err) {
       setError(errorMessage(err))
@@ -1224,9 +1180,7 @@ export function CurrentMigrationWorkspace() {
                 </span>
               </div>
               <p className="text-muted-foreground/55 font-mono text-[10px] tracking-tight">
-                workflow: {workflowLabel(run.workflow_status)}
-                <span className="text-muted-foreground/35 mx-1.5">·</span>
-                created {formatRelativeTime(run.created_at)}
+                {formatRelativeTime(run.created_at)}
               </p>
             </div>
           ) : null}
@@ -1269,12 +1223,9 @@ export function CurrentMigrationWorkspace() {
         <Section title="Start a migration">
           <div className="space-y-6">
             <ol className="text-muted-foreground max-w-2xl list-decimal space-y-1 pl-5 text-sm leading-relaxed">
-              <li>Paste your migration SQL and create a run.</li>
-              <li>
-                Attach your database (read-only URL or secret ARN) and discover
-                schema.
-              </li>
-              <li>Run prediction → Proceed to shadow → watch the live steps.</li>
+              <li>Paste SQL and create a run.</li>
+              <li>Attach your database and discover schema.</li>
+              <li>Predict → decide → shadow → outcome.</li>
             </ol>
 
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_16rem]">
@@ -1306,33 +1257,41 @@ export function CurrentMigrationWorkspace() {
                   {creating ? "Creating…" : "Create run"}
                 </Button>
                 <p className="text-muted-foreground/70 max-w-md text-xs leading-relaxed">
-                  After create, you’ll attach any CockroachDB / Postgres
-                  read-only database so the app can see your schema.
+                  Next: attach a read-only database so we can see your schema.
                 </p>
               </div>
               <OwnerIdentityField id="owner-identity-empty" />
             </div>
 
-            {/* === DEV_MODE_START: delete this whole block to remove developer mode === */}
-            <div className="border-amber-500/30 bg-amber-500/5 space-y-3 rounded-lg border p-4">
-              <p className="font-mono text-[10px] tracking-[0.14em] text-amber-400/90 uppercase">
-                Developer mode — remove this block later
-              </p>
-              <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
-                One click: sample SQL + real demo database (customer_demo) +
-                schema discovery. Uses the server-side demo RO URL — not mock
-                metrics.
-              </p>
-              <Button
-                type="button"
-                variant="secondary"
-                disabled={creating}
-                onClick={() => void handleDemoWithDb()}
-              >
-                {creating ? "Attaching demo DB…" : "Use demo database"}
-              </Button>
-            </div>
-            {/* === DEV_MODE_END === */}
+            {process.env.NEXT_PUBLIC_ENABLE_DEBUG_TOOLS === "true" ? (
+              <div className="border-amber-500/30 bg-amber-500/5 space-y-3 rounded-lg border p-4">
+                <p className="font-mono text-[10px] tracking-[0.14em] text-amber-400/90 uppercase">
+                  Developer tools
+                </p>
+                <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
+                  One click: sample SQL + real demo database (customer_demo) +
+                  schema discovery. Uses the server-side demo RO URL.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    disabled={creating}
+                    onClick={() => void handleDemoWithDb()}
+                  >
+                    {creating ? "Attaching demo DB…" : "Use demo database"}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={creating}
+                    onClick={() => void handleFakeMigration()}
+                  >
+                    {creating ? "Creating…" : "Fake migration (no DB)"}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </div>
         </Section>
       ) : (
@@ -1355,18 +1314,12 @@ export function CurrentMigrationWorkspace() {
                 )}
               >
                 {dbAttached
-                  ? `Connected — schema ${run.schema_discovery_status || "ready"}${
-                      run.connection_secret_arn
-                        ? ` · secret ${run.connection_secret_arn.slice(0, 48)}…`
-                        : ""
-                    }`
-                  : "Not connected — paste a read-only database URL (any Cockroach/Postgres cluster) or a Secrets Manager ARN, then Discover."}
+                  ? `Connected — schema ${run.schema_discovery_status || "ready"}`
+                  : "Not connected — paste a read-only URL or secret, then Discover."}
               </div>
 
               <p className="text-muted-foreground max-w-2xl text-sm leading-relaxed">
-                This is your real database (read-only). The app reads schema here,
-                then later copies enough of it onto a disposable shadow cluster to
-                test your SQL. Production is never written.
+                Read-only access to your schema. Production is never written.
               </p>
 
               <form
@@ -1402,7 +1355,7 @@ export function CurrentMigrationWorkspace() {
                       htmlFor="connection-secret-arn"
                       className="text-muted-foreground font-mono text-[10px] tracking-[0.12em] uppercase"
                     >
-                      Or Secrets Manager ARN
+                      Or secret
                     </label>
                     <Input
                       id="connection-secret-arn"
@@ -1455,11 +1408,11 @@ export function CurrentMigrationWorkspace() {
                 </p>
               )}
 
-              {/* === DEV_MODE_START === */}
-              {!dbAttached ? (
+              {process.env.NEXT_PUBLIC_ENABLE_DEBUG_TOOLS === "true" &&
+              !dbAttached ? (
                 <div className="border-amber-500/25 space-y-2 rounded-md border border-dashed p-3">
                   <p className="font-mono text-[10px] tracking-[0.12em] text-amber-400/80 uppercase">
-                    Developer mode
+                    Developer tools
                   </p>
                   <Button
                     type="button"
@@ -1472,7 +1425,6 @@ export function CurrentMigrationWorkspace() {
                   </Button>
                 </div>
               ) : null}
-              {/* === DEV_MODE_END === */}
             </div>
           </Section>
 
@@ -1489,9 +1441,8 @@ export function CurrentMigrationWorkspace() {
                       ? "Predicting…"
                       : "Run prediction"}
                   </Button>
-                  <p className="text-muted-foreground/70 font-mono text-[11px] tracking-tight">
-                    Runs policy → Bedrock prediction → memory retrieval →
-                    recommendation.
+                  <p className="text-muted-foreground text-sm">
+                    Estimates duration, storage, and risk.
                   </p>
                 </div>
                 {predicting || run.status === "predicting" ? (
@@ -1515,9 +1466,8 @@ export function CurrentMigrationWorkspace() {
             </Section>
           ) : run.status === "pending" && !canPredict ? (
             <Section title="3. Prediction">
-              <p className="text-amber-200/90 text-sm leading-relaxed">
-                Attach your database and discover schema first (step 2). Prediction
-                needs a real schema snapshot.
+              <p className="text-muted-foreground text-sm">
+                Attach and discover schema first.
               </p>
             </Section>
           ) : null}
@@ -1529,8 +1479,8 @@ export function CurrentMigrationWorkspace() {
           ) : null}
 
           {hasPrediction && assessment ? (
-            <Section title="Retrieval transparency">
-              <RetrievalPanel assessment={assessment} run={run} />
+            <Section title="Learning">
+              <RetrievalPanel assessment={assessment} />
             </Section>
           ) : null}
 
@@ -1538,16 +1488,9 @@ export function CurrentMigrationWorkspace() {
             <Section title="Approval">
               {canApprove ? (
                 <div className="space-y-4">
-                  <p className="text-foreground/80 text-sm leading-relaxed">
-                    Pick one.{" "}
-                    <span className="text-foreground font-medium">
-                      Proceed to shadow
-                    </span>{" "}
-                    runs your SQL on a real disposable cluster.{" "}
-                    <span className="text-foreground font-medium">
-                      Skip shadow
-                    </span>{" "}
-                    ends this run and keeps the recommendation only — no cluster.
+                  <p className="text-muted-foreground text-sm leading-relaxed">
+                    Proceed runs a disposable shadow test. Skip keeps the plan
+                    only.
                   </p>
 
                   {assessment.policyDecision === "block" ? (
@@ -1649,18 +1592,13 @@ export function CurrentMigrationWorkspace() {
           ) : null}
 
           {run.status === "running" || shadowLive ? (
-            <Section title="Shadow cluster">
+            <Section title="Shadow">
               {canStartShadow ? (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {comparisons.length > 0 ? (
-                    <div className="space-y-2">
-                      <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-                        Prediction (awaiting shadow measurement)
-                      </p>
-                      <ComparisonsPanel rows={comparisons} />
-                    </div>
+                    <ComparisonsPanel rows={comparisons} />
                   ) : null}
-                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button
                       type="button"
                       disabled={startingShadow || !isSfnReady(health)}
@@ -1668,12 +1606,27 @@ export function CurrentMigrationWorkspace() {
                     >
                       {startingShadow ? "Starting…" : "Start shadow test"}
                     </Button>
-                    <p className="text-muted-foreground/70 font-mono text-[11px] tracking-tight">
-                      {isSfnReady(health)
-                        ? "Provisions a real CockroachDB Cloud cluster via AWS Step Functions, runs your SQL, measures actuals, then tears it down."
-                        : "Step Functions not ready — configure MIGRATION_WORKFLOW_ARN before starting a real shadow."}
-                    </p>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => openWatch(run.id)}
+                    >
+                      Watch live
+                    </Button>
+                    <Link
+                      href="/dashboard/migrations/current/shadow"
+                      className={cn(
+                        buttonVariants({ variant: "ghost", size: "sm" })
+                      )}
+                    >
+                      Open full page
+                    </Link>
                   </div>
+                  {!isSfnReady(health) ? (
+                    <p className="text-sm text-[var(--oracle-risk)]">
+                      Shadow not ready — check Settings / health.
+                    </p>
+                  ) : null}
                 </div>
               ) : (
                 <ShadowLivePanel
@@ -1683,20 +1636,35 @@ export function CurrentMigrationWorkspace() {
                   isLive={isSfnWorkflowPolling}
                   awaitingStart={canStartShadow}
                 >
-                  {hasRealSfnArn(run) &&
-                  (run.workflow_status === "running" ||
-                    run.status === "running") ? (
+                  <div className="flex flex-wrap gap-2">
                     <Button
                       type="button"
-                      variant="outline"
-                      disabled={abortingShadow}
-                      onClick={() => void handleAbortShadow()}
+                      variant="secondary"
+                      onClick={() => openWatch(run.id)}
                     >
-                      {abortingShadow
-                        ? "Aborting…"
-                        : "Abort shadow + tear down cluster"}
+                      Watch live
                     </Button>
-                  ) : null}
+                    <Link
+                      href="/dashboard/migrations/current/shadow"
+                      className={cn(
+                        buttonVariants({ variant: "outline", size: "sm" })
+                      )}
+                    >
+                      Open full page
+                    </Link>
+                    {hasRealSfnArn(run) &&
+                    (run.workflow_status === "running" ||
+                      run.status === "running") ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={abortingShadow}
+                        onClick={() => void handleAbortShadow()}
+                      >
+                        {abortingShadow ? "Aborting…" : "Abort"}
+                      </Button>
+                    ) : null}
+                  </div>
                 </ShadowLivePanel>
               )}
             </Section>
@@ -1704,118 +1672,49 @@ export function CurrentMigrationWorkspace() {
 
           {hasOutcome ? (
             <Section title="Outcome">
-              <ComparisonsPanel rows={comparisons} />
+              <div className="space-y-4">
+                <ComparisonsPanel rows={comparisons} />
 
-              {extras.grade ? (
-                <SubBlock label="Grade">
+                {extras.grade ? (
                   <dl className="max-w-md space-y-1.5">
                     <FieldRow
-                      label="Accuracy score"
+                      label="Grade"
                       value={extras.grade.scalar_accuracy_score.toFixed(3)}
                     />
-                    <FieldRow label="Outcome class" value={extras.grade.outcome_class} />
-                  </dl>
-                  {extras.grade.lessons_learned ? (
-                    <p className="text-foreground/80 max-w-3xl text-sm leading-relaxed">
-                      {extras.grade.lessons_learned}
-                    </p>
-                  ) : null}
-                  {extras.grade.surprise_notes ? (
-                    <p className="text-muted-foreground text-sm leading-relaxed">
-                      <span className="text-muted-foreground/60 font-mono text-[10px] uppercase">
-                        Surprises:{" "}
-                      </span>
-                      {extras.grade.surprise_notes}
-                    </p>
-                  ) : null}
-                </SubBlock>
-              ) : null}
-
-              {extras.memory ? (
-                <SubBlock label="Memory">
-                  <dl className="max-w-md space-y-1.5">
-                    <FieldRow label="Memory id" value={extras.memory.id.slice(0, 8)} />
                     <FieldRow
-                      label="Embedding status"
-                      value={extras.memory.embedding_status}
-                    />
-                    <FieldRow
-                      label="Migration type"
-                      value={extras.memory.migration_type}
+                      label="Class"
+                      value={extras.grade.outcome_class}
                     />
                   </dl>
-                </SubBlock>
-              ) : null}
+                ) : null}
 
-              {extras.shadow ? (
-                <SubBlock label="Shadow cluster">
-                  <dl className="max-w-md space-y-1.5">
-                    <FieldRow
-                      label="Cluster id"
-                      value={extras.shadow.cluster_id || "—"}
-                    />
-                    <FieldRow label="Provider" value={extras.shadow.provider} />
-                    <FieldRow label="Region" value={extras.shadow.region} />
-                    <FieldRow
-                      label="Scale tier"
-                      value={extras.shadow.scale_tier || "—"}
-                    />
-                    <FieldRow
-                      label="Torn down"
-                      value={
-                        extras.shadow.destroyed_at
-                          ? formatRelativeTime(extras.shadow.destroyed_at)
-                          : "not yet"
-                      }
-                    />
-                  </dl>
-                  {extras.shadow.error_message ? (
-                    <p className="font-mono text-xs leading-relaxed text-[var(--oracle-risk)]">
-                      {extras.shadow.error_message}
-                    </p>
-                  ) : null}
-                </SubBlock>
-              ) : null}
+                {extras.memory &&
+                extras.memory.embedding_status !== "ready" ? (
+                  <p className="text-muted-foreground text-sm">
+                    Memory saved — indexing for next predictions…
+                  </p>
+                ) : extras.memory ? (
+                  <p className="text-muted-foreground text-sm">
+                    Saved to Agent Memory for future runs.
+                  </p>
+                ) : null}
 
-              {extras.execution ? (
-                <SubBlock label="Execution result">
-                  <dl className="max-w-md space-y-1.5">
-                    <FieldRow
-                      label="Actual duration"
-                      value={formatDuration(extras.execution.actual_duration_seconds)}
-                    />
-                    <FieldRow
-                      label="Actual storage"
-                      value={formatStorage(extras.execution.actual_storage_mb)}
-                    />
-                    <FieldRow
-                      label="Success"
-                      value={extras.execution.success ? "yes" : "no"}
-                      valueClassName={
-                        extras.execution.success
-                          ? "text-[var(--oracle-verified)]"
-                          : "text-[var(--oracle-risk)]"
-                      }
-                    />
-                  </dl>
-                  {extras.execution.error_message ? (
-                    <p className="font-mono text-xs leading-relaxed text-[var(--oracle-risk)]">
-                      {extras.execution.error_message}
-                    </p>
-                  ) : null}
-                </SubBlock>
-              ) : null}
+                {extras.execution?.error_message ||
+                extras.shadow?.error_message ? (
+                  <p className="font-mono text-xs leading-relaxed text-[var(--oracle-risk)]">
+                    {extras.execution?.error_message ||
+                      extras.shadow?.error_message}
+                  </p>
+                ) : null}
 
-              {run.status === "completed" && !extras.execution && !extras.shadow ? (
-                <p className="text-muted-foreground/70 font-mono text-[11px] tracking-tight">
-                  Recommended plan accepted — this run ended without a shadow execution.
-                </p>
-              ) : null}
-              {run.status === "failed" && !extras.execution?.error_message ? (
-                <p className="text-muted-foreground/70 font-mono text-[11px] tracking-tight">
-                  Run failed — see console / API logs for detail.
-                </p>
-              ) : null}
+                {run.status === "completed" &&
+                !extras.execution &&
+                !extras.shadow ? (
+                  <p className="text-muted-foreground text-sm">
+                    Completed without a shadow test.
+                  </p>
+                ) : null}
+              </div>
             </Section>
           ) : null}
         </>

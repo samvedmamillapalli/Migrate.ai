@@ -7,6 +7,7 @@ import { Button, buttonVariants } from "@workspace/ui/components/button"
 import { cn } from "@workspace/ui/lib/utils"
 
 import { ShadowLivePanel } from "@/components/shadow-live-panel"
+import { useShadowWatch } from "@/components/shadow-watch-context"
 import {
   ApiError,
   abortWorkflow,
@@ -23,12 +24,12 @@ import {
   getShadowCluster,
   hasRealSfnArn,
   isSfnReady,
+  sfnNotReadyMessage,
   mapComparisons,
   startWorkflow,
   statusLabel,
   syncWorkflow,
   usePolling,
-  workflowLabel,
   type ExecutionResult,
   type Grade,
   type HealthResponse,
@@ -132,6 +133,7 @@ function errorMessage(err: unknown): string {
 }
 
 export default function ShadowExecutionPage() {
+  const { openWatch } = useShadowWatch()
   const [initializing, setInitializing] = React.useState(true)
   const [run, setRun] = React.useState<MigrationRun | null>(null)
   const [extras, setExtras] = React.useState<RunExtras>(EMPTY_EXTRAS)
@@ -233,7 +235,7 @@ export default function ShadowExecutionPage() {
         setStatusMessage(
           updated.status === "completed"
             ? "Shadow finished — see prediction vs actual below."
-            : `Run ${statusLabel(updated.status)} / workflow ${workflowLabel(updated.workflow_status)}`
+            : `Run ${statusLabel(updated.status)}`
         )
       }
     },
@@ -261,29 +263,28 @@ export default function ShadowExecutionPage() {
         const h = await getHealth()
         setHealth(h)
         if (!isSfnReady(h)) {
-          throw new Error(
-            "Step Functions is not ready. Check MIGRATION_WORKFLOW_ARN on the API."
-          )
+          throw new Error(sfnNotReadyMessage(h))
         }
       }
       const secret =
         getConnectionSecretArn().trim() || run.connection_secret_arn || null
       if (!secret) {
         throw new Error(
-          "No database attached to this run. Go to Current Migration → Attach your database → Discover schema (or use Developer mode), then start shadow again."
+          "No database attached to this run. Go to Current Migration → Attach your database → Discover schema, then start shadow again."
         )
       }
-      setStatusMessage("Starting real CockroachDB Cloud shadow via Step Functions…")
+      setStatusMessage("Starting shadow…")
       const updated = await startWorkflow(run.id, {
         connection_secret_arn: secret,
       })
       setRun(updated)
       if (!hasRealSfnArn(updated)) {
         throw new Error(
-          "No Step Functions execution ARN returned. Check connection secret ARN on Current Migration."
+          "Shadow did not start. Check database attachment on Current Migration."
         )
       }
-      setStatusMessage(`Shadow workflow running — watch the steps below.`)
+      openWatch(updated.id)
+      setStatusMessage("Shadow running — live watch opened.")
       const shadow = await safeGet(() => getShadowCluster(updated.id))
       if (shadow) setExtras((prev) => ({ ...prev, shadow }))
     } catch (err) {
@@ -385,75 +386,66 @@ export default function ShadowExecutionPage() {
       ) : (
         <>
           <Section title="Controls">
-            <dl className="mb-4 max-w-md space-y-1.5">
-              <FieldRow label="Run status" value={statusLabel(run.status)} />
-              <FieldRow
-                label="Workflow status"
-                value={workflowLabel(run.workflow_status)}
-              />
-              <FieldRow
-                label="Mode"
-                value={
-                  hasRealSfnArn(run)
-                    ? "AWS Step Functions (real cloud shadow)"
-                    : canStart
-                      ? "Approved — waiting for you to start"
-                      : run.status === "awaiting_approval"
-                        ? "Approve on Current Migration first"
-                        : "Not started"
-                }
-              />
-            </dl>
-
             {run.status === "awaiting_approval" ? (
-              <p className="text-muted-foreground text-sm leading-relaxed">
-                This run still needs approval. Go back to Current Migration →{" "}
-                <span className="text-foreground">Proceed to shadow test</span>, then
-                return here.
+              <p className="text-muted-foreground text-sm">
+                Approve on Current Migration first, then return here.
               </p>
             ) : null}
 
             {canStart ? (
-              <div className="flex flex-col gap-3">
-                {!run.connection_secret_arn && !getConnectionSecretArn().trim() ? (
-                  <p className="text-sm leading-relaxed text-[var(--oracle-risk)]">
-                    This run has no database attached (that’s why Start was failing with
-                    422). Go to Current Migration, attach a read-only URL / Discover,
-                    or click Developer mode → Use demo database on a new run.
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  disabled={
+                    starting ||
+                    !isSfnReady(health) ||
+                    (!run.connection_secret_arn &&
+                      !getConnectionSecretArn().trim())
+                  }
+                  onClick={() => void handleStart()}
+                >
+                  {starting ? "Starting…" : "Start shadow test"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => openWatch(run.id)}
+                >
+                  Watch live
+                </Button>
+                {!isSfnReady(health) ? (
+                  <p className="basis-full text-sm text-[var(--oracle-risk)]">
+                    Shadow not ready — check Settings / health.
                   </p>
                 ) : null}
-                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-                  <Button
-                    type="button"
-                    disabled={
-                      starting ||
-                      (!run.connection_secret_arn && !getConnectionSecretArn().trim())
-                    }
-                    onClick={() => void handleStart()}
-                  >
-                    {starting ? "Starting…" : "Start shadow test"}
-                  </Button>
-                  <p className="text-muted-foreground text-sm leading-relaxed">
-                    Spins up a real disposable CockroachDB Cloud cluster and runs
-                    through the steps on this page (~1.5–2 min).
+                {!run.connection_secret_arn &&
+                !getConnectionSecretArn().trim() ? (
+                  <p className="basis-full text-sm text-[var(--oracle-risk)]">
+                    Attach a database on Current Migration first.
                   </p>
-                </div>
+                ) : null}
               </div>
             ) : null}
 
             {isPolling ? (
-              <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   disabled={aborting}
                   onClick={() => void handleAbort()}
                 >
-                  {aborting ? "Aborting…" : "Abort + tear down"}
+                  {aborting ? "Aborting…" : "Abort"}
                 </Button>
-                <p className="text-muted-foreground/70 font-mono text-[11px] tracking-tight">
-                  Live updates every ~1.5s
-                </p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => openWatch(run.id)}
+                >
+                  Watch live
+                </Button>
               </div>
             ) : null}
 
@@ -461,17 +453,17 @@ export default function ShadowExecutionPage() {
             run.status !== "awaiting_approval" &&
             !canStart &&
             !isPolling ? (
-              <p className="text-muted-foreground text-sm leading-relaxed">
+              <p className="text-muted-foreground text-sm">
                 {run.status === "completed"
-                  ? "This shadow run finished. Steps below show what happened."
+                  ? "Finished."
                   : run.status === "failed"
-                    ? "This run failed or was aborted."
-                    : "Finish discover → predict → Proceed on Current Migration first."}
+                    ? "Failed or aborted."
+                    : "Finish predict → Proceed on Current Migration first."}
               </p>
             ) : null}
           </Section>
 
-          <Section title="Live shadow steps">
+          <Section title="Live">
             <ShadowLivePanel
               run={run}
               extras={extras}
@@ -481,38 +473,44 @@ export default function ShadowExecutionPage() {
             />
           </Section>
 
-          {extras.execution ? (
-            <Section title="Execution result">
+          {extras.execution || extras.grade ? (
+            <Section title="Result">
               <dl className="max-w-md space-y-1.5">
-                <FieldRow
-                  label="Actual duration"
-                  value={formatDuration(extras.execution.actual_duration_seconds)}
-                />
-                <FieldRow
-                  label="Actual storage"
-                  value={formatStorage(extras.execution.actual_storage_mb)}
-                />
-                <FieldRow
-                  label="Success"
-                  value={extras.execution.success ? "yes" : "no"}
-                  valueClassName={
-                    extras.execution.success
-                      ? "text-[var(--oracle-verified)]"
-                      : "text-[var(--oracle-risk)]"
-                  }
-                />
-              </dl>
-            </Section>
-          ) : null}
-
-          {extras.grade ? (
-            <Section title="Grade">
-              <dl className="max-w-md space-y-1.5">
-                <FieldRow
-                  label="Accuracy score"
-                  value={extras.grade.scalar_accuracy_score.toFixed(3)}
-                />
-                <FieldRow label="Outcome class" value={extras.grade.outcome_class} />
+                {extras.execution ? (
+                  <>
+                    <FieldRow
+                      label="Duration"
+                      value={formatDuration(
+                        extras.execution.actual_duration_seconds
+                      )}
+                    />
+                    <FieldRow
+                      label="Storage"
+                      value={formatStorage(extras.execution.actual_storage_mb)}
+                    />
+                    <FieldRow
+                      label="Success"
+                      value={extras.execution.success ? "yes" : "no"}
+                      valueClassName={
+                        extras.execution.success
+                          ? "text-[var(--oracle-verified)]"
+                          : "text-[var(--oracle-risk)]"
+                      }
+                    />
+                  </>
+                ) : null}
+                {extras.grade ? (
+                  <>
+                    <FieldRow
+                      label="Grade"
+                      value={extras.grade.scalar_accuracy_score.toFixed(3)}
+                    />
+                    <FieldRow
+                      label="Class"
+                      value={extras.grade.outcome_class}
+                    />
+                  </>
+                ) : null}
               </dl>
             </Section>
           ) : null}
@@ -522,7 +520,7 @@ export default function ShadowExecutionPage() {
               href="/dashboard/migrations/current"
               className={cn(buttonVariants({ variant: "ghost", size: "sm" }), "-ml-2")}
             >
-              ← Back to Current Migration
+              ← Current Migration
             </Link>
           </div>
         </>

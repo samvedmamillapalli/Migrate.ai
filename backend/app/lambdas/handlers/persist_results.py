@@ -52,24 +52,51 @@ def _extract_metrics(event: dict[str, Any]) -> dict[str, Any]:
 
 def _build_grading_pipeline(session, runtime) -> GradingPipelineService:
     aws = runtime.aws_settings
-    # Prefer live clients when configured; fall back to mocks in local mode.
+    from app.config import get_settings
+
+    env = get_settings().environment.strip().lower()
+    allow_mock = env in {"development", "dev", "local", "test"}
+    local_mode = __import__(
+        "app.lambdas.runtime", fromlist=["is_local_mode"]
+    ).is_local_mode()
+
     bedrock: Any
     embedding: Any
     try:
         if aws.bedrock_prediction_model_id:
             bedrock = AwsBedrockClient(settings=aws)
-        else:
+        elif allow_mock or local_mode:
             bedrock = MockBedrockClient()
-    except Exception:  # noqa: BLE001
-        bedrock = MockBedrockClient()
-    try:
-        if aws.aws_enabled and not __import__(
-            "app.lambdas.runtime", fromlist=["is_local_mode"]
-        ).is_local_mode():
-            embedding = AwsTitanEmbeddingClient(settings=aws)
         else:
+            raise RuntimeError(
+                "BEDROCK_PREDICTION_MODEL_ID is required for grading prose "
+                f"in environment={env}"
+            )
+    except Exception as exc:  # noqa: BLE001
+        if aws.bedrock_prediction_model_id and not allow_mock and not local_mode:
+            raise RuntimeError(
+                "Failed to construct AwsBedrockClient for grading; "
+                "refusing MockBedrockClient outside local/dev"
+            ) from exc
+        if not allow_mock and not local_mode:
+            raise
+        bedrock = MockBedrockClient()
+
+    try:
+        if aws.aws_enabled and not local_mode:
+            embedding = AwsTitanEmbeddingClient(settings=aws)
+        elif allow_mock or local_mode:
             embedding = MockEmbeddingClient()
-    except Exception:  # noqa: BLE001
+        else:
+            raise RuntimeError(
+                f"Live Titan embeddings required in environment={env}"
+            )
+    except Exception as exc:  # noqa: BLE001
+        if not allow_mock and not local_mode:
+            raise RuntimeError(
+                "Failed to construct AwsTitanEmbeddingClient; "
+                "refusing MockEmbeddingClient outside local/dev"
+            ) from exc
         embedding = MockEmbeddingClient()
 
     return GradingPipelineService(

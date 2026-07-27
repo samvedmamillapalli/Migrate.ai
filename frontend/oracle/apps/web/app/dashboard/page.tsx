@@ -14,7 +14,7 @@ import {
   listRuns,
 } from "@/lib/api/endpoints"
 import { mapRunListItem } from "@/lib/api/map-run"
-import { setCurrentRunId } from "@/lib/api/owner"
+import { getOwnerIdentity, setCurrentRunId } from "@/lib/api/owner"
 import { buttonVariants } from "@workspace/ui/components/button"
 import { cn } from "@workspace/ui/lib/utils"
 
@@ -95,9 +95,13 @@ export default function DashboardPage() {
     let cancelled = false
     async function load() {
       setLoading(true)
+      const owner = getOwnerIdentity()
       const [healthRes, runsRes, metricsRes] = await Promise.allSettled([
         getHealth(),
-        listRuns({ limit: 5 }),
+        listRuns({
+          limit: 5,
+          ...(owner ? { owner_identity: owner } : {}),
+        }),
         getAccuracyMetrics(),
       ])
       if (cancelled) return
@@ -149,8 +153,6 @@ export default function DashboardPage() {
   const acceptance = asRecord(recRates?.acceptance)
   const success = asRecord(recRates?.success)
   const memoryCorpus = asRecord(metrics?.memory_corpus)
-  const integrityNote =
-    typeof metrics?.integrity_note === "string" ? metrics.integrity_note : null
 
   const integrations = health?.integrations
   const sfnReady = health ? isSfnReady(health) : null
@@ -187,29 +189,39 @@ export default function DashboardPage() {
                 API
               </span>
               <span className="text-muted-foreground/60 font-mono text-[11px] tracking-tight">
-                {health?.status ?? (loading ? "loading…" : "unknown")}
+                {apiOk == null
+                  ? loading
+                    ? "…"
+                    : "unknown"
+                  : apiOk
+                    ? "Ready"
+                    : "Needs setup"}
               </span>
             </div>
             <div className="flex items-center gap-2">
               <StatusDot ok={sfnReady} />
               <span className="text-foreground/85 font-mono text-xs tracking-tight">
-                Step Functions
+                Shadow
               </span>
               <span className="text-muted-foreground/60 font-mono text-[11px] tracking-tight">
-                {sfnReady == null ? "unknown" : sfnReady ? "ready" : "not ready"}
+                {sfnReady == null
+                  ? "unknown"
+                  : sfnReady
+                    ? "Ready"
+                    : "Needs setup"}
               </span>
             </div>
             <div className="flex items-center gap-2">
               <StatusDot ok={bedrockReady} />
               <span className="text-foreground/85 font-mono text-xs tracking-tight">
-                Bedrock
+                Predictions
               </span>
               <span className="text-muted-foreground/60 font-mono text-[11px] tracking-tight">
                 {bedrockReady == null
                   ? "unknown"
                   : bedrockReady
-                    ? "configured"
-                    : "not configured"}
+                    ? "Ready"
+                    : "Needs setup"}
               </span>
             </div>
           </div>
@@ -235,10 +247,8 @@ export default function DashboardPage() {
                   {latest.sqlSnippet}
                 </p>
                 <p className="text-muted-foreground font-mono text-xs tracking-tight">
-                  {latest.createdAgo}
-                  <span className="text-muted-foreground/40 mx-1.5">·</span>
-                  owner: {latest.ownerIdentity}
-                </p>
+              {latest.createdAgo}
+            </p>
               </div>
               <div className="flex items-center gap-2 self-start sm:self-auto">
                 <span
@@ -266,21 +276,6 @@ export default function DashboardPage() {
                 </span>
               </div>
             </div>
-            <p className="text-muted-foreground/70 font-mono text-[11px] tracking-tight">
-              {latest.workflowLabel}
-              {latest.policyDecision ? (
-                <>
-                  <span className="text-muted-foreground/35 mx-1.5">·</span>
-                  policy: {latest.policyDecision}
-                </>
-              ) : null}
-              {latest.scaleTier ? (
-                <>
-                  <span className="text-muted-foreground/35 mx-1.5">·</span>
-                  tier: {latest.scaleTier}
-                </>
-              ) : null}
-            </p>
             <div className="flex flex-wrap gap-2 border-t border-border/60 pt-3">
               <button
                 type="button"
@@ -327,13 +322,13 @@ export default function DashboardPage() {
       </Section>
 
       <Section
-        title="Accuracy Metrics"
+        title="Accuracy"
         action={
           <Link
             href="/dashboard/memory"
             className="text-muted-foreground hover:text-foreground font-mono text-[10px] tracking-[0.1em] uppercase transition-colors"
           >
-            Agent memory →
+            Memory →
           </Link>
         }
       >
@@ -342,15 +337,14 @@ export default function DashboardPage() {
             {metricsError}
           </p>
         ) : trend.length === 0 ? (
-          <p className="text-[var(--oracle-risk)] font-mono text-xs leading-relaxed tracking-tight">
-            No graded runs yet — accuracy cannot be measured until at least one
-            migration completes shadow execution and grading.
+          <p className="text-muted-foreground text-sm">
+            No graded runs yet.
           </p>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="space-y-0.5">
               <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
-                Graded runs
+                Graded
               </p>
               <p className="text-foreground font-mono text-lg tracking-tight">
                 {trend.length}
@@ -358,7 +352,7 @@ export default function DashboardPage() {
             </div>
             <div className="space-y-0.5">
               <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
-                Recommendation acceptance
+                Accepted
               </p>
               <p className="text-foreground font-mono text-lg tracking-tight">
                 {formatRate(
@@ -372,7 +366,7 @@ export default function DashboardPage() {
             </div>
             <div className="space-y-0.5">
               <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
-                Recommendation success
+                Succeeded
               </p>
               <p className="text-foreground font-mono text-lg tracking-tight">
                 {formatRate(
@@ -389,28 +383,14 @@ export default function DashboardPage() {
 
         {memoryCorpus ? (
           <div className="border-border/60 flex flex-wrap items-baseline gap-x-6 gap-y-1 border-t pt-3 font-mono text-[11px] tracking-tight">
-            <span className="text-muted-foreground/60 uppercase">
-              Memory corpus
-            </span>
+            <span className="text-muted-foreground/60 uppercase">Memory</span>
             <span className="text-foreground/80">
               {String(memoryCorpus.memories_ready ?? 0)} ready
             </span>
             <span className="text-foreground/80">
               {String(memoryCorpus.pending ?? 0)} pending
             </span>
-            {memoryCorpus.mean_scalar_in_memory != null ? (
-              <span className="text-foreground/80">
-                mean scalar{" "}
-                {Number(memoryCorpus.mean_scalar_in_memory).toFixed(3)}
-              </span>
-            ) : null}
           </div>
-        ) : null}
-
-        {integrityNote ? (
-          <p className="text-muted-foreground/50 font-mono text-[10px] leading-relaxed tracking-tight">
-            {integrityNote}
-          </p>
         ) : null}
       </Section>
     </div>

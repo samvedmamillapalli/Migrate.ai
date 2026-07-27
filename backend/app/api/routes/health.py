@@ -63,7 +63,8 @@ async def health_check(request: Request, response: Response) -> dict[str, Any]:
                 and aws_settings.run_artifacts_bucket
             ),
             "shadow_provider": settings.shadow_provider,
-            "local_verify_available": True,
+            # Local mock verify exists as an engineer API only — product UI requires SFN.
+            "local_verify_available": False,
             "environment": settings.environment,
         },
     }

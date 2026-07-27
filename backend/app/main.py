@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.errors import register_exception_handlers
 from app.api.middleware import DemoApiKeyMiddleware
+from app.api.middleware_auth import SessionAuthMiddleware
+from app.api.routes.auth import router as auth_router
 from app.api.routes.health import router as health_router
 from app.api.routes.memories import router as memories_router
 from app.api.routes.runs import router as runs_router
@@ -146,14 +148,16 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    # Outer-most after CORS: gate mutating API when DEMO_API_KEY is set.
+    # Outer-most after CORS: session auth (when enabled), then optional demo API key.
     app.add_middleware(DemoApiKeyMiddleware)
+    app.add_middleware(SessionAuthMiddleware)
 
     @app.get("/")
     def root() -> dict[str, str]:
         return {"name": settings.app_name, "status": "healthy"}
 
     register_exception_handlers(app)
+    app.include_router(auth_router)
     app.include_router(health_router)
     app.include_router(runs_router)
     app.include_router(memories_router)

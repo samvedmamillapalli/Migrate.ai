@@ -16,9 +16,36 @@ export function HowItWorks() {
     >
       <SectionHeader
         title="How It Works"
-        description="One migration travels the bus — analyzed, predicted, verified in shadow, then remembered."
+        description="Predict on Bedrock, verify on a real disposable CockroachDB cluster (Step Functions), grade pred→actual, remember with VECTOR search."
       />
 
+      <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="space-y-1">
+          <p className="font-mono text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
+            CockroachDB
+          </p>
+          <p className="text-sm text-foreground/85">
+            Distributed Vector Indexing on graded migration memories.
+          </p>
+        </div>
+        <div className="space-y-1">
+          <p className="font-mono text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
+            CockroachDB
+          </p>
+          <p className="text-sm text-foreground/85">
+            Managed MCP / SHOW JOBS watch during shadow ExecuteMigration.
+          </p>
+        </div>
+        <div className="space-y-1">
+          <p className="font-mono text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
+            AWS
+          </p>
+          <p className="text-sm text-foreground/85">
+            Bedrock + Step Functions + Lambda + S3 + Secrets Manager +
+            CloudWatch.
+          </p>
+        </div>
+      </div>
       <div className="mt-14 overflow-x-auto md:mt-16">
         <ExecutionFlow />
       </div>

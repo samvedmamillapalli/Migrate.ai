@@ -67,6 +67,9 @@ class Settings(BaseSettings):
     shadow_ready_poll_interval_seconds: float = Field(default=5.0, ge=0.5, le=120.0)
     shadow_seed_timeout_seconds: int = Field(default=300, ge=1, le=3600)
     shadow_migrate_timeout_seconds: int = Field(default=600, ge=1, le=3600)
+    # After schema load, insert tier-capped synthetic rows so storage/runtime
+    # metrics are meaningful (default on for demo/hackathon).
+    shadow_seed_synthetic_rows: bool = Field(default=True)
     # ccloud CLI executable (interactive-auth path only; kept for optional demos).
     ccloud_binary: str = Field(default="ccloud")
     # CockroachDB Cloud service-account credential. ``ccloud_api_secret`` is the
@@ -85,6 +88,16 @@ class Settings(BaseSettings):
 
     # Demo deploy gate (optional). When set, API routes require X-API-Key.
     demo_api_key: str | None = Field(default=None, validation_alias="DEMO_API_KEY")
+
+    # Wave 2 session auth (JWT-like HMAC tokens). Off by default for local demos.
+    auth_enabled: bool = Field(default=False, validation_alias="AUTH_ENABLED")
+    auth_secret: str | None = Field(default=None, validation_alias="AUTH_SECRET")
+    auth_token_ttl_seconds: int = Field(
+        default=60 * 60 * 24 * 7,
+        ge=300,
+        le=60 * 60 * 24 * 30,
+        validation_alias="AUTH_TOKEN_TTL_SECONDS",
+    )
 
     # CockroachDB Managed MCP endpoint (hackathon tool #2 alongside Vector Index).
     # Used for documentation and optional job-watch correlation; IDE config lives

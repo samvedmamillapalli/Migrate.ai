@@ -25,7 +25,10 @@ NEXT_PUBLIC_API_BASE_URL=http://127.0.0.1:8000
 
 (Use `:8003` if that is where the API is listening — check `GET /health`.)
 
-5. Check `GET /health` → `sfn_ready: true`, `shadow_provider: ccloud_api`.
+5. Check `GET /health` → `sfn_ready: true`, `shadow_provider: ccloud_api`,
+   `local_verify_available: false` (product UI requires real SFN).
+
+6. Browser path: see [`docs/E2E_WALKTHROUGH.md`](E2E_WALKTHROUGH.md).
 
 Legacy `/ui` is retired. Use only the Next app.
 

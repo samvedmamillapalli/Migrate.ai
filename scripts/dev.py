@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Developer entrypoint — bootstrap + run API.
+"""Developer entrypoint - bootstrap + run API.
 
 The operator UI is the Next.js app under ``frontend/oracle``
-(``npm run dev`` → http://localhost:3000). The legacy static ``/ui`` console
+(``npm run dev`` -> http://localhost:3000). The legacy static ``/ui`` console
 is retired.
 
 Usage (from repo root):
@@ -194,7 +194,7 @@ def _print_env_gaps(env: dict[str, str]) -> list[str]:
 
 def cmd_doctor(_args: argparse.Namespace) -> int:
     """Readiness check for full AWS + Cockroach + Bedrock + SFN path."""
-    print("Migration Oracle — doctor")
+    print("Migration Oracle - doctor")
     ok = True
 
     if not ENV_FILE.is_file():
@@ -217,7 +217,7 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
         print("OK    SFN ready (workflow ARN + artifacts bucket)")
     else:
         ok = False
-        print("FAIL  SFN not ready — need MIGRATION_WORKFLOW_ARN + RUN_ARTIFACTS_BUCKET")
+        print("FAIL  SFN not ready - need MIGRATION_WORKFLOW_ARN + RUN_ARTIFACTS_BUCKET")
         print("      Shared stack is already deployed; copy outputs from a teammate .env")
 
     db_url = env.get("DATABASE_URL", "")
@@ -243,20 +243,20 @@ def cmd_doctor(_args: argparse.Namespace) -> int:
     if py:
         print(f"OK    venv python: {py}")
     else:
-        print("WARN  no backend/.venv — run: python scripts/dev.py setup")
+        print("WARN  no backend/.venv - run: python scripts/dev.py setup")
 
     print()
     if ok:
-        print("RESULT: ready — run: python scripts/dev.py restart")
+        print("RESULT: ready - run: python scripts/dev.py restart")
         print("         (or .\\restart.ps1 / ./restart.sh)")
         return 0
-    print("RESULT: not ready — fix FAIL lines above, then re-run doctor")
+    print("RESULT: not ready - fix FAIL lines above, then re-run doctor")
     return 1
 
 
 def cmd_setup(args: argparse.Namespace) -> int:
     """Create venv, install deps, migrate DB, then doctor."""
-    print("Migration Oracle — setup")
+    print("Migration Oracle - setup")
     _check_python_version()
 
     if not ENV_FILE.is_file():
@@ -296,7 +296,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
     if not args.skip_migrate:
         _alembic_upgrade(py)
 
-    print("Ensuring open-source migration corpus …")
+    print("Ensuring open-source migration corpus ...")
     _run([str(py), str(BACKEND_DIR / "scripts" / "seed_open_source_corpus.py")])
 
     print()
@@ -313,7 +313,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
         return 1
 
     if _venv_python() is None and not _env_bool("DEV_SKIP_SETUP", False):
-        print("No backend/.venv found — running setup first...")
+        print("No backend/.venv found - running setup first...")
         print()
         code = cmd_setup(argparse.Namespace(allow_partial=False, skip_install=False, skip_migrate=False))
         if code != 0:
@@ -323,16 +323,40 @@ def cmd_serve(args: argparse.Namespace) -> int:
     py = _resolve_python()
     docs = f"http://{host}:{port}/docs"
     health = f"http://{host}:{port}/health"
-    print("Migration Oracle — local development")
+    print("Migration Oracle - local development")
     print(f"  Interpreter : {py}")
     print(f"  API         : uvicorn (host={host} port={port} reload={reload})")
     print(f"  Health      : {health}")
     print(f"  OpenAPI     : {docs}")
-    print("  Operator UI : cd frontend/oracle && npm run dev  →  http://localhost:3000")
+    print("  Operator UI : cd frontend/oracle && npm run dev  ->  http://localhost:3000")
     print("  Tip: /health integrations.sfn_ready should be true for real AWS shadows.")
     if sys.platform == "win32":
         print("  Windows tip: keep --reload (default) so psycopg gets a Selector loop.")
     print()
+    # #region agent log
+    try:
+        import json as _json
+        import time as _time
+
+        _log = REPO_ROOT / "debug-a64fa9.log"
+        with _log.open("a", encoding="utf-8") as _f:
+            _f.write(
+                _json.dumps(
+                    {
+                        "sessionId": "a64fa9",
+                        "runId": "post-fix",
+                        "hypothesisId": "F",
+                        "location": "scripts/dev.py:cmd_serve",
+                        "message": "serve_starting_after_banner",
+                        "data": {"host": host, "port": port, "reload": reload},
+                        "timestamp": int(_time.time() * 1000),
+                    }
+                )
+                + "\n"
+            )
+    except Exception:
+        pass
+    # #endregion
 
     cmd = [
         py,
@@ -405,8 +429,8 @@ def cmd_restart(args: argparse.Namespace) -> int:
     """Stop the local API on DEV_PORT, clear stale env, then start fresh."""
     host = args.host or os.environ.get("DEV_HOST", "127.0.0.1")
     port = int(args.port or os.environ.get("DEV_PORT", "8000"))
-    print(f"Migration Oracle — fresh restart (port {port})")
-    print(f"  Stopping anything listening on {host}:{port} …")
+    print(f"Migration Oracle - fresh restart (port {port})")
+    print(f"  Stopping anything listening on {host}:{port} ...")
     _stop_port(port)
     _clear_stale_dotenv_overrides()
     print("  Cleared stale process env overrides (will reload repo .env)")
@@ -422,7 +446,7 @@ def cmd_restart(args: argparse.Namespace) -> int:
 
 def cmd_deploy(_args: argparse.Namespace) -> int:
     print(
-        "Teammates do NOT need to deploy — the shared stack `migration-oracle`\n"
+        "Teammates do NOT need to deploy - the shared stack `migration-oracle`\n"
         "is already up. Put MIGRATION_WORKFLOW_ARN + RUN_ARTIFACTS_BUCKET in .env.\n"
         "\n"
         "Only re-deploy when Lambda/ASL code changes (once per account):\n"

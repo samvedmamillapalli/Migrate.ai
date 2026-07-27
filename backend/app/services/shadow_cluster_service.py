@@ -176,9 +176,9 @@ class ShadowClusterService:
     async def merge_timings(
         self,
         shadow_id: uuid.UUID,
-        **partial: float | None,
+        **partial: Any,
     ) -> ShadowCluster:
-        """Merge stage timing keys without wiping earlier measurements."""
+        """Merge stage timing / artifact keys without wiping earlier measurements."""
         entity = await self._repository.get_by_id_or_raise(shadow_id)
         merged = dict(entity.stage_timings or {})
         for key, value in partial.items():

@@ -73,6 +73,10 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
         await shadow_service.merge_timings(
             shadow.id,
             migrate_ms=round(migrate_ms, 1),
+            job_watch=outcome.job_watch or [],
+            cockroachdb_tools=(
+                "Distributed Vector Indexing + Managed MCP / SQL job watch"
+            ),
         )
         return {
             "run_id": str(run_id),

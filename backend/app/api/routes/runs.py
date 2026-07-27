@@ -7,7 +7,9 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.tenancy import assert_run_access, resolve_owner_identity, session_owner
 from app.core.exceptions import NotFoundError, ValidationError
+from app.core.logging import get_logger
 from app.database.models import MigrationRunStatus
 from app.dependencies import (
     ApprovalSvc,
@@ -40,6 +42,7 @@ from app.schema_analysis.database_connection import DatabaseConnection, SslMode
 from app.services.closed_loop_service import ClosedLoopRequest
 
 router = APIRouter(prefix="/runs", tags=["migration-runs"])
+logger = get_logger(__name__)
 
 
 @router.post(
@@ -50,10 +53,12 @@ router = APIRouter(prefix="/runs", tags=["migration-runs"])
 async def create_run(
     payload: MigrationRunCreateRequest,
     service: MigrationRunSvc,
+    request: Request,
 ) -> MigrationRunResponse:
+    owner = resolve_owner_identity(request, payload.owner_identity)
     run = await service.create_migration_run(
         payload.migration_sql,
-        owner_identity=payload.owner_identity,
+        owner_identity=owner,
         revises_run_id=payload.revises_run_id,
     )
     return MigrationRunResponse.model_validate(run)
@@ -61,17 +66,29 @@ async def create_run(
 
 @router.get("", response_model=MigrationRunListResponse)
 async def list_runs(
+    request: Request,
     service: MigrationRunSvc,
     status_filter: MigrationRunStatus | None = Query(default=None, alias="status"),
+    owner_identity: str | None = Query(default=None, min_length=1, max_length=256),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> MigrationRunListResponse:
+    # Auth mode always scopes to the session owner (ignore client filter).
+    scoped = session_owner(request) if request else None
+    from app.config import get_settings
+
+    if get_settings().auth_enabled:
+        owner_identity = scoped
     runs = await service.list_migration_runs(
         offset=offset,
         limit=limit,
         status=status_filter,
+        owner_identity=owner_identity,
     )
-    total = await service.count_migration_runs(status=status_filter)
+    total = await service.count_migration_runs(
+        status=status_filter,
+        owner_identity=owner_identity,
+    )
     return MigrationRunListResponse(
         items=[MigrationRunSummaryResponse.model_validate(run) for run in runs],
         total=total,
@@ -166,8 +183,10 @@ async def create_debug_fake_migration(
 async def get_run(
     run_id: uuid.UUID,
     service: MigrationRunSvc,
+    request: Request,
 ) -> MigrationRunResponse:
     run = await service.get_migration_run(run_id)
+    assert_run_access(request, run)
     return MigrationRunResponse.model_validate(run)
 
 
@@ -191,8 +210,11 @@ async def discover_schema(
     payload: DiscoverSchemaRequest,
     discovery: SchemaDiscoverySvc,
     request: Request,
+    service: MigrationRunSvc,
 ) -> MigrationRunResponse:
     """Discover customer schema (read-only) and store connection_secret_arn pointer."""
+    run = await service.get_migration_run(run_id)
+    assert_run_access(request, run)
     secret_arn = payload.connection_secret_arn
     if payload.database_url:
         secret_arn = await _store_connection_url(request, run_id, payload.database_url)
@@ -265,15 +287,20 @@ async def approve_run(
     run_id: uuid.UUID,
     payload: ApprovalCreateRequest,
     service: ApprovalSvc,
+    runs: MigrationRunSvc,
+    request: Request,
 ) -> MigrationRunResponse:
     """Record approval. On proceed, auto-starts the verify workflow when configured."""
     from app.services.pipeline_progress import clear_progress
 
+    existing = await runs.get_migration_run(run_id)
+    assert_run_access(request, existing)
     clear_progress(run_id)
+    approver = resolve_owner_identity(request, payload.approver_identity)
     run = await service.approve(
         run_id,
         decision=payload.decision,
-        approver_identity=payload.approver_identity,
+        approver_identity=approver,
         override_rationale=payload.override_rationale,
         connection_secret_arn=payload.connection_secret_arn,
         start_workflow=payload.start_workflow,
@@ -532,9 +559,22 @@ async def _store_connection_url(
 
         runtime = get_runtime()
         return await runtime.secrets.put_json(name, payload)
-    except Exception:
+    except Exception as exc:
+        from app.config import get_settings
+
+        env = get_settings().environment.strip().lower()
+        if env not in {"development", "dev", "local", "test"}:
+            raise ValidationError(
+                "Unable to store connection secret in Secrets Manager / local "
+                f"secret store (refusing in-memory fallback in {env}): {exc}"
+            ) from exc
+        # Dev-only ephemeral fallback — lost on API restart.
         request.app.state._demo_secrets = getattr(request.app.state, "_demo_secrets", {})
         request.app.state._demo_secrets[name] = payload
+        logger.warning(
+            "Stored connection URL in process memory (dev fallback)",
+            extra={"secret_name": name},
+        )
         return name
 
 

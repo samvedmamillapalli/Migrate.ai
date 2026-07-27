@@ -7,6 +7,8 @@
  * Types are generated from the live OpenAPI spec — see `npm run gen:api`.
  */
 
+import { getAccessToken } from "./auth-token"
+
 export const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
 
 export class ApiError extends Error {
@@ -72,12 +74,14 @@ export async function api<T = unknown>(
 ): Promise<T> {
   const { body, quiet: _quiet, headers, ...rest } = options
   const key = demoApiKey()
+  const token = getAccessToken()
   const res = await fetch(`${apiBaseUrl()}${path}`, {
     ...rest,
     headers: {
       Accept: "application/json",
       ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
       ...(key ? { "X-API-Key": key } : {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(headers || {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),

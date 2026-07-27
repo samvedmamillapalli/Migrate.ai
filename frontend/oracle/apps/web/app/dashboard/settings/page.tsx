@@ -1,13 +1,16 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 
 import { apiBaseUrl } from "@/lib/api/client"
+import { clearAccessToken, getAccessToken } from "@/lib/api/auth-token"
 import {
   getConnectionSecretArn,
   setConnectionSecretArn,
 } from "@/lib/api/owner"
 import { OwnerIdentityField } from "@/components/owner-identity-field"
+import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import { Label } from "@workspace/ui/components/label"
 
@@ -37,11 +40,14 @@ function Section({
 }
 
 export default function SettingsPage() {
+  const router = useRouter()
   const [secretArn, setSecretArn] = React.useState("")
   const [mounted, setMounted] = React.useState(false)
+  const [hasSession, setHasSession] = React.useState(false)
 
   React.useEffect(() => {
     setSecretArn(getConnectionSecretArn())
+    setHasSession(Boolean(getAccessToken()))
     setMounted(true)
   }, [])
 
@@ -58,6 +64,21 @@ export default function SettingsPage() {
 
       <Section title="Identity">
         <OwnerIdentityField id="owner-identity-settings" className="max-w-sm" />
+        {hasSession ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="w-fit"
+            onClick={() => {
+              clearAccessToken()
+              setHasSession(false)
+              router.push("/login")
+            }}
+          >
+            Sign out
+          </Button>
+        ) : null}
       </Section>
 
       <Section title="API Connection">
@@ -87,13 +108,13 @@ export default function SettingsPage() {
         </div>
       </Section>
 
-      <Section title="Shadow Connection Secret">
+      <Section title="Shadow secret">
         <div className="max-w-sm space-y-1.5">
           <Label
             htmlFor="connection-secret-arn"
             className="text-muted-foreground text-[11px]"
           >
-            Connection secret ARN
+            Database secret
           </Label>
           <Input
             id="connection-secret-arn"
@@ -108,8 +129,7 @@ export default function SettingsPage() {
             autoComplete="off"
           />
           <p className="text-muted-foreground/70 text-[10px] leading-snug">
-            Overrides the connection secret used when starting a workflow, if
-            the run does not already have one stored.
+            Optional override when starting a shadow test.
           </p>
         </div>
       </Section>

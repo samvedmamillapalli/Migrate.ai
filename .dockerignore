@@ -1,0 +1,11 @@
+.git
+**/__pycache__
+**/.venv
+**/node_modules
+**/.next
+**/debug-*.log
+frontend
+infra
+docs
+*.md
+!backend/pyproject.toml

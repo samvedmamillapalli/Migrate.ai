@@ -169,6 +169,7 @@ export function abortWorkflow(runId: string) {
   })
 }
 
+/** Engineer-only local mock verify. Not used by the product UI (SFN required). */
 export function verifyLocal(runId: string) {
   return api<MigrationRun>(`/runs/${runId}/verify-local`, {
     method: "POST",
@@ -221,6 +222,55 @@ export function isSfnReady(health: HealthResponse | null | undefined): boolean {
   if (!i) return false
   if (typeof i.sfn_ready === "boolean") return i.sfn_ready
   return Boolean(i.migration_workflow_arn_set && i.run_artifacts_bucket_set)
+}
+
+/** Actionable setup message when real shadow (SFN + Cockroach Cloud) is not ready. */
+export function sfnNotReadyMessage(
+  health: HealthResponse | null | undefined
+): string {
+  const i = health?.integrations
+  const missing: string[] = []
+  if (!i?.migration_workflow_arn_set) missing.push("MIGRATION_WORKFLOW_ARN")
+  if (!i?.run_artifacts_bucket_set) missing.push("RUN_ARTIFACTS_BUCKET")
+  const need =
+    missing.length > 0
+      ? missing.join(" and ")
+      : "MIGRATION_WORKFLOW_ARN and RUN_ARTIFACTS_BUCKET"
+  return (
+    `Real shadow verify requires a deployed AWS Step Functions workflow. ` +
+    `Missing or unset: ${need}. ` +
+    `Set them in the repo-root .env (see docs/DEMO_OPS.md / infra/sam), restart the API, ` +
+    `then confirm GET /health → integrations.sfn_ready is true. ` +
+    `Local mock verify is not available in the product UI.`
+  )
+}
+
+export type AuthStatus = {
+  auth_enabled: boolean
+  register_enabled?: boolean
+}
+
+export type AuthTokenResponse = {
+  access_token: string
+  token_type: string
+  owner_identity: string
+  expires_in_seconds: number
+}
+
+export function getAuthStatus() {
+  return api<AuthStatus>("/auth/status")
+}
+
+export function registerUser(body: {
+  owner_identity: string
+  password: string
+  display_name?: string | null
+}) {
+  return api<AuthTokenResponse>("/auth/register", { method: "POST", body })
+}
+
+export function loginUser(body: { owner_identity: string; password: string }) {
+  return api<AuthTokenResponse>("/auth/login", { method: "POST", body })
 }
 
 export function hasRealSfnArn(run: MigrationRun | null | undefined): boolean {

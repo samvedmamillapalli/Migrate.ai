@@ -1,5 +1,6 @@
 from app.database.base import Base
 from app.database.mixins import TimestampMixin, UUIDPrimaryKeyMixin
+from app.database.models.app_user import AppUser
 from app.database.models.approval import Approval, ApprovalDecision
 from app.database.models.execution_result import ExecutionResult
 from app.database.models.grade import Grade
@@ -24,6 +25,7 @@ from app.database.models.shadow_cluster import (
 __all__ = [
     "ACTIVE_SHADOW_STATUSES",
     "TERMINAL_SHADOW_STATUSES",
+    "AppUser",
     "Approval",
     "ApprovalDecision",
     "Base",

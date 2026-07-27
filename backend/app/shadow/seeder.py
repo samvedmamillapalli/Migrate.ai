@@ -96,6 +96,60 @@ class ShadowSeeder:
         )
         return report
 
+    async def seed_rows_only(
+        self,
+        connection_url: str,
+        metadata: DatabaseMetadata,
+        scale_tier: ScaleTier,
+        *,
+        statement_timeout_ms: int = 300_000,
+    ) -> SeedReport:
+        """Insert synthetic rows into an already-loaded schema (no DDL).
+
+        Used after ``ShadowSchemaLoader`` so FK/CHECK from the real snapshot stay
+        intact. Per-table failures are recorded as warnings (FK order / type
+        mismatches) so a partial seed still yields measurable storage.
+        """
+        normalized = normalize_target_database_url(connection_url, force_cockroach=True)
+        engine = create_async_engine(normalized, pool_pre_ping=True)
+        report = SeedReport(scale_tier=scale_tier)
+        row_cap = TIER_ROW_CAPS[scale_tier]
+        warnings: list[str] = []
+        try:
+            async with engine.connect() as raw:
+                conn = await raw.execution_options(isolation_level="AUTOCOMMIT")
+                await conn.execute(
+                    text(f"SET statement_timeout = {int(statement_timeout_ms)}")
+                )
+                for schema in metadata.schemas:
+                    if schema.name in _SYSTEM_SCHEMAS:
+                        continue
+                    for table in schema.tables:
+                        try:
+                            inserted = await self._load_rows(conn, table, row_cap)
+                            report.rows_inserted += inserted
+                            report.per_table_rows[table.name] = inserted
+                        except Exception as exc:  # noqa: BLE001 - best-effort seed
+                            msg = f"{table.schema_name}.{table.name}: {exc}"
+                            warnings.append(msg[:500])
+                            logger.warning(
+                                "Skipped synthetic seed for table",
+                                extra={"table": table.name, "error": str(exc)[:200]},
+                            )
+        finally:
+            await engine.dispose()
+
+        report.warnings = warnings
+        logger.info(
+            "Seeded synthetic rows on shadow",
+            extra={
+                "scale_tier": scale_tier.value,
+                "rows_inserted": report.rows_inserted,
+                "warning_count": len(warnings),
+            },
+        )
+        return report
+
     # -- DDL ----------------------------------------------------------------
 
     async def _create_table(self, conn: AsyncConnection, table: TableMetadata) -> None:

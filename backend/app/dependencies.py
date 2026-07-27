@@ -202,16 +202,24 @@ def get_embedding_client(
     env = ""
     if settings is not None:
         env = str(getattr(settings, "environment", "")).strip().lower()
+    allow_mock = env in {"development", "dev", "local", "test"}
     try:
-        if env in {"development", "dev", "local", "test"} and not (
+        if allow_mock and not (
             aws_settings.bedrock_embedding_model_id and aws_settings.aws_enabled
         ):
             return MockEmbeddingClient()
         return AwsTitanEmbeddingClient(settings=aws_settings)
-    except AwsConfigurationError:
-        return MockEmbeddingClient()
-    except Exception:
-        return MockEmbeddingClient()
+    except AwsConfigurationError as exc:
+        if allow_mock:
+            return MockEmbeddingClient()
+        raise
+    except Exception as exc:
+        if allow_mock:
+            return MockEmbeddingClient()
+        raise RuntimeError(
+            "Failed to construct AwsTitanEmbeddingClient; "
+            "refusing MockEmbeddingClient outside local/dev"
+        ) from exc
 
 
 EmbeddingClientDep = Annotated[EmbeddingClient, Depends(get_embedding_client)]

@@ -165,10 +165,21 @@ async def list_memories(
     limit: int = 50,
     offset: int = 0,
     include_embed_text: bool = True,
+    include_shared_corpus: bool = True,
 ) -> tuple[list[MigrationMemory], int]:
     filters = []
     if owner_identity:
-        filters.append(MigrationMemory.owner_identity == owner_identity)
+        if (
+            include_shared_corpus
+            and owner_identity != CORPUS_OWNER_IDENTITY
+        ):
+            filters.append(
+                MigrationMemory.owner_identity.in_(
+                    [owner_identity, CORPUS_OWNER_IDENTITY]
+                )
+            )
+        else:
+            filters.append(MigrationMemory.owner_identity == owner_identity)
     if embedding_status:
         filters.append(MigrationMemory.embedding_status == embedding_status)
 

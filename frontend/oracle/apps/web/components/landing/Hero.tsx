@@ -8,9 +8,9 @@ import { ProductPreview } from "@/components/landing/ProductPreview"
 import { buttonVariants } from "@workspace/ui/components/button"
 import { cn } from "@workspace/ui/lib/utils"
 
-const HEADLINE = "Know your migration before your database does."
+const HEADLINE = "Migration Oracle"
 const SUBTITLE =
-  "Predict blast radius, verify on a disposable CockroachDB shadow cluster, grade the forecast against reality, and remember the outcome."
+  "Predict → verify → grade → remember. Forecast blast radius, run it on a disposable CockroachDB shadow cluster, score the forecast, and retrieve graded memories with Distributed Vector Indexing so the next guess is smarter."
 
 const easeOut = [0.16, 1, 0.3, 1] as const
 

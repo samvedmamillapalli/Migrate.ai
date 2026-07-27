@@ -37,12 +37,15 @@ def _admin_url() -> str:
 
 
 def _to_psycopg(url: str) -> str:
-    if url.startswith("postgresql+psycopg://"):
-        return url
+    """Normalize to the SQLAlchemy Cockroach dialect used by the app."""
     if url.startswith("cockroachdb+psycopg://"):
-        return "postgresql+psycopg://" + url.split("://", 1)[1]
+        return url
+    if url.startswith("postgresql+psycopg://"):
+        return "cockroachdb+psycopg://" + url.split("://", 1)[1]
     if url.startswith("postgresql://"):
-        return "postgresql+psycopg://" + url.split("://", 1)[1]
+        return "cockroachdb+psycopg://" + url.split("://", 1)[1]
+    if url.startswith("postgres://"):
+        return "cockroachdb+psycopg://" + url.split("://", 1)[1]
     return url
 
 
@@ -69,13 +72,12 @@ def main() -> None:
         PASSWORD_FILE.write_text(password + "\n", encoding="utf-8")
 
     with engine.begin() as conn:
-        # Role
+        # Role / user (Cockroach SHOW ROLES uses ``username``)
         exists = conn.execute(
-            text("SELECT 1 FROM [SHOW ROLES] WHERE role_name = :r"),
+            text("SELECT 1 FROM [SHOW ROLES] WHERE username = :r"),
             {"r": ROLE},
         ).scalar()
         if not exists:
-            # CRDB: CREATE USER
             conn.execute(text(f"CREATE USER {ROLE} WITH PASSWORD :pw"), {"pw": password})
         else:
             conn.execute(text(f"ALTER USER {ROLE} WITH PASSWORD :pw"), {"pw": password})
@@ -128,9 +130,12 @@ def main() -> None:
         final_count = conn.execute(text(f"SELECT count(*) FROM {TABLE}")).scalar()
 
     ro_url = _build_ro_url(admin, password)
+    url_file = ROOT / ".judge_ro_database_url"
+    url_file.write_text(ro_url + "\n", encoding="utf-8")
     print(f"customers_row_count={final_count}")
     print(f"JUDGE_RO_DATABASE_URL={ro_url}")
     print(f"password_file={PASSWORD_FILE}")
+    print(f"url_file={url_file}")
 
 
 if __name__ == "__main__":

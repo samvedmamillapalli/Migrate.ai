@@ -155,6 +155,8 @@ export type ComparisonRow = {
   actual: string
   delta?: string
   withinBand?: boolean | null
+  /** Human note — e.g. conservative estimate, not a failure. */
+  bandNote?: string | null
 }
 
 export type RunExtras = {
@@ -670,8 +672,6 @@ export type ShadowLiveStage = {
   detail: string | null
   /** Short plain-English description of what this step does. */
   hint: string
-  /** Typical wall time for demos (not a fake measurement). */
-  typical: string | null
 }
 
 /**
@@ -714,14 +714,6 @@ export function mapShadowLiveStages(
     destroying: "Delete the disposable cluster so nothing is left running.",
     destroyed: "Cleanup finished. Prediction vs actual is ready to grade.",
   }
-  const typical: Record<(typeof order)[number], string | null> = {
-    provisioning: "~4–15s",
-    ready: "~5–10s",
-    seeding: "~8s",
-    migrating: "≈ your prediction",
-    destroying: "~3s",
-    destroyed: null,
-  }
   const timingKeys: Record<(typeof order)[number], string[]> = {
     provisioning: ["provision_ms", "provision", "provisioning"],
     ready: ["ready_ms", "ready"],
@@ -753,7 +745,6 @@ export function mapShadowLiveStages(
           ? "Waiting for shadow_cluster row…"
           : null,
       hint: hints[id],
-      typical: typical[id],
     }))
   }
 
@@ -765,7 +756,6 @@ export function mapShadowLiveStages(
       durationLabel: null,
       detail: null,
       hint: hints[id],
-      typical: typical[id],
     }))
   }
 
@@ -815,7 +805,6 @@ export function mapShadowLiveStages(
       durationLabel,
       detail,
       hint: hints[id],
-      typical: typical[id],
     }
   })
 }
@@ -1018,15 +1007,31 @@ export function mapComparisons(
       grade?.duration_abs_error_seconds != null
         ? `±${formatDuration(grade.duration_abs_error_seconds)}`
         : undefined
+    const withinBand = grade?.duration_within_band ?? null
     rows.push({
       label: "Duration",
       predicted,
       actual,
       delta,
-      withinBand: grade?.duration_within_band ?? null,
+      withinBand,
+      bandNote:
+        withinBand === true
+          ? pred &&
+            exec &&
+            Number(pred.estimatedDurationSeconds) >
+              Number(exec.actual_duration_seconds)
+            ? "OK — model was conservative (over-estimated)"
+            : "OK — within the accepted accuracy band"
+          : withinBand === false
+            ? "Outside band — worth reviewing why"
+            : measuring
+              ? "Waiting for shadow measurement"
+              : null,
     })
   }
   if (pred?.estimatedStorageMb != null || exec || grade) {
+    const withinBand = grade?.storage_within_band ?? null
+    const actualMb = exec ? Number(exec.actual_storage_mb) : null
     rows.push({
       label: "Storage",
       predicted: formatStorage(pred?.estimatedStorageMb),
@@ -1035,15 +1040,34 @@ export function mapComparisons(
         grade?.storage_abs_error_mb != null
           ? `±${formatStorage(grade.storage_abs_error_mb)}`
           : undefined,
-      withinBand: grade?.storage_within_band ?? null,
+      withinBand,
+      bandNote:
+        withinBand === true
+          ? actualMb === 0
+            ? "OK — small DDL often shows ~0 MB on approximate disk stats"
+            : "OK — within the accepted accuracy band"
+          : withinBand === false
+            ? "Outside band — worth reviewing why"
+            : measuring
+              ? "Waiting for shadow measurement"
+              : null,
     })
   }
   if (pred?.rollbackRisk || grade) {
+    const withinBand = grade?.rollback_within_band ?? null
     rows.push({
       label: "Rollback",
       predicted: pred?.rollbackRisk || grade?.rollback_predicted || "—",
       actual: grade?.rollback_actual_class || pendingActual,
-      withinBand: grade?.rollback_within_band ?? null,
+      withinBand,
+      bandNote:
+        withinBand === true
+          ? "OK — risk class matched the band (often slightly cautious)"
+          : withinBand === false
+            ? "Outside band — worth reviewing why"
+            : measuring
+              ? "Waiting for grade"
+              : null,
     })
   }
   return rows

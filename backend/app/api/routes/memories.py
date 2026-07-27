@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db_session
@@ -25,6 +25,7 @@ async def get_corpus_health(
 
 @router.get("", response_model=MemoryListResponse)
 async def browse_memories(
+    request: Request,
     session: AsyncSession = Depends(get_db_session),
     owner_identity: str | None = Query(
         default=None,
@@ -37,6 +38,11 @@ async def browse_memories(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> MemoryListResponse:
+    from app.auth.tenancy import session_owner
+    from app.config import get_settings
+
+    if get_settings().auth_enabled:
+        owner_identity = session_owner(request)
     health = await fetch_corpus_health(session)
     rows, total = await list_memories(
         session,

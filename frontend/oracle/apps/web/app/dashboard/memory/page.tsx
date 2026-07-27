@@ -9,6 +9,7 @@ import {
   type MemoryListItem,
   listMemories,
 } from "@/lib/api/endpoints"
+import { getOwnerIdentity } from "@/lib/api/owner"
 import {
   Collapsible,
   CollapsibleContent,
@@ -100,13 +101,19 @@ function MemoryCard({ item }: { item: MemoryListItem }) {
               "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 font-mono text-[10px] tracking-[0.08em] uppercase",
               item.has_embedding
                 ? "border-emerald-500/40 text-[var(--oracle-verified)]"
-                : "border-red-500/40 text-[var(--oracle-risk)]"
+                : "border-amber-500/40 text-amber-300/90"
             )}
           >
-            {item.has_embedding ? "embedded" : item.embedding_status}
+            {item.has_embedding ? "ready" : "indexing"}
           </span>
         </div>
       </div>
+
+      {!item.has_embedding ? (
+        <p className="text-muted-foreground text-xs">
+          Indexing for search…
+        </p>
+      ) : null}
 
       {item.ui_label ? (
         <p className="text-muted-foreground/70 font-mono text-[11px] tracking-tight">
@@ -165,7 +172,11 @@ export default function AgentMemoryPage() {
     async function load() {
       setLoading(true)
       try {
-        const res = await listMemories({ limit: 50 })
+        const owner = getOwnerIdentity()
+        const res = await listMemories({
+          limit: 50,
+          ...(owner ? { owner_identity: owner } : {}),
+        })
         if (cancelled) return
         setItems(res.items)
         setTotal(res.total)
@@ -259,10 +270,17 @@ export default function AgentMemoryPage() {
         ) : loading ? (
           <p className="text-muted-foreground text-sm">Loading…</p>
         ) : !items || items.length === 0 ? (
-          <p className="text-muted-foreground text-sm">
-            No memories recorded yet. Memories are written after a migration
-            run completes shadow execution and grading.
-          </p>
+          <div className="space-y-3">
+            <p className="text-muted-foreground text-sm">
+              No memories yet. Complete a shadow test to start learning.
+            </p>
+            <Link
+              href="/dashboard/migrations/current"
+              className="text-foreground hover:underline font-mono text-[11px] tracking-tight"
+            >
+              Start a migration →
+            </Link>
+          </div>
         ) : (
           <div className="space-y-3">
             {items.map((item) => (

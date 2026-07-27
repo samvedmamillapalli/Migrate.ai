@@ -8,13 +8,15 @@ from typing import Any
 from app.core.logging import get_logger
 from app.database.models import ShadowClusterStatus
 from app.lambdas.errors import LambdaHandlerError, LambdaValidationError
-from app.lambdas.helpers import parse_run_id, shadow_secret_name
+from app.lambdas.helpers import parse_run_id, shadow_secret_name, total_estimated_rows
 from app.lambdas.runtime import get_runtime, run_async, with_session
 from app.repositories.migration_run_repository import MigrationRunRepository
 from app.repositories.shadow_cluster_repository import ShadowClusterRepository
 from app.schema_analysis.models import DatabaseMetadata
 from app.services.shadow_cluster_service import ShadowClusterService
+from app.shadow.models import ScaleTier, select_scale_tier
 from app.shadow.schema_loader import ShadowSchemaLoader
+from app.shadow.seeder import ShadowSeeder
 
 logger = get_logger(__name__)
 
@@ -84,6 +86,25 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
             metadata,
             statement_timeout_ms=int(settings.shadow_seed_timeout_seconds * 1000),
         )
+        rows_inserted = 0
+        seed_warnings: list[str] = []
+        if getattr(settings, "shadow_seed_synthetic_rows", True):
+            tier = ScaleTier.SMALL
+            if shadow.scale_tier:
+                try:
+                    tier = ScaleTier(str(shadow.scale_tier).lower())
+                except ValueError:
+                    tier = select_scale_tier(total_estimated_rows(metadata))
+            else:
+                tier = select_scale_tier(total_estimated_rows(metadata))
+            seed_report = await ShadowSeeder().seed_rows_only(
+                connection_url,
+                metadata,
+                tier,
+                statement_timeout_ms=int(settings.shadow_seed_timeout_seconds * 1000),
+            )
+            rows_inserted = seed_report.rows_inserted
+            seed_warnings = list(seed_report.warnings or [])
         await shadow_service.merge_timings(
             shadow.id,
             seed_ms=round((perf_counter() - t0) * 1000.0, 1),
@@ -95,7 +116,8 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
             "tables_created": report.tables_created,
             "columns_created": report.columns_created,
             "indexes_created": report.indexes_created,
-            "warnings": report.warnings,
+            "rows_inserted": rows_inserted,
+            "warnings": list(report.warnings) + seed_warnings,
             "idempotent": False,
         }
 
@@ -111,6 +133,7 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
         extra={
             "run_id": str(run_id),
             "tables_created": result.get("tables_created"),
+            "rows_inserted": result.get("rows_inserted"),
         },
     )
     return result

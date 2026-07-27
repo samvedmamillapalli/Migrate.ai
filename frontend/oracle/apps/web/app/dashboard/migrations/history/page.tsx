@@ -6,6 +6,7 @@ import Link from "next/link"
 import { ApiError } from "@/lib/api/client"
 import { type MigrationRunSummary, listRuns } from "@/lib/api/endpoints"
 import { mapRunListItem } from "@/lib/api/map-run"
+import { getOwnerIdentity } from "@/lib/api/owner"
 import { cn } from "@workspace/ui/lib/utils"
 
 export default function PastMigrationsPage() {
@@ -18,7 +19,11 @@ export default function PastMigrationsPage() {
     async function load() {
       setLoading(true)
       try {
-        const res = await listRuns({ limit: 50 })
+        const owner = getOwnerIdentity()
+        const res = await listRuns({
+          limit: 50,
+          ...(owner ? { owner_identity: owner } : {}),
+        })
         if (cancelled) return
         setRuns(res.items)
         setError(null)
@@ -49,9 +54,7 @@ export default function PastMigrationsPage() {
         <h1 className="text-foreground text-2xl font-medium tracking-tight">
           Past Migrations
         </h1>
-        <p className="text-muted-foreground text-sm">
-          Review previous migration runs and their shadow execution results.
-        </p>
+        <p className="text-muted-foreground text-sm">Previous runs.</p>
       </div>
 
       <section className="border-border flex w-full flex-col gap-1 rounded-lg border p-2">
@@ -62,18 +65,24 @@ export default function PastMigrationsPage() {
         ) : loading ? (
           <p className="text-muted-foreground p-2 text-sm">Loading…</p>
         ) : items.length === 0 ? (
-          <p className="text-muted-foreground p-2 text-sm">
-            No migration runs yet.
-          </p>
+          <div className="space-y-3 p-2">
+            <p className="text-muted-foreground text-sm">
+              No migration runs yet.
+            </p>
+            <Link
+              href="/dashboard/migrations/current"
+              className="text-foreground hover:underline font-mono text-[11px] tracking-tight"
+            >
+              Start a migration →
+            </Link>
+          </div>
         ) : (
           <>
-            <div className="text-muted-foreground/60 hidden grid-cols-[6rem_1fr_9rem_9rem_7rem_6rem] gap-3 px-2 py-1.5 font-mono text-[10px] tracking-[0.1em] uppercase sm:grid">
+            <div className="text-muted-foreground/60 hidden grid-cols-[6rem_1fr_9rem_7rem] gap-3 px-2 py-1.5 font-mono text-[10px] tracking-[0.1em] uppercase sm:grid">
               <span>ID</span>
               <span>SQL</span>
               <span>Status</span>
-              <span>Workflow</span>
-              <span>Policy</span>
-              <span>Created</span>
+              <span>When</span>
             </div>
             <ul className="divide-border/60 divide-y">
               {items.map((item) => {
@@ -83,7 +92,7 @@ export default function PastMigrationsPage() {
                     <Link
                       href={`/dashboard/migrations/${item.id}`}
                       className={cn(
-                        "grid grid-cols-1 gap-1 rounded-md px-2 py-2.5 transition-colors hover:bg-muted/40 sm:grid-cols-[6rem_1fr_9rem_9rem_7rem_6rem] sm:items-center sm:gap-3",
+                        "grid grid-cols-1 gap-1 rounded-md px-2 py-2.5 transition-colors hover:bg-muted/40 sm:grid-cols-[6rem_1fr_9rem_7rem] sm:items-center sm:gap-3",
                         emphasize && "border-l-2 border-[var(--oracle-risk)]"
                       )}
                     >
@@ -93,7 +102,9 @@ export default function PastMigrationsPage() {
                       <span
                         className={cn(
                           "truncate font-mono text-xs tracking-tight",
-                          emphasize ? "text-[var(--oracle-risk)]" : "text-foreground/85"
+                          emphasize
+                            ? "text-[var(--oracle-risk)]"
+                            : "text-foreground/85"
                         )}
                       >
                         {item.sqlSnippet}
@@ -120,12 +131,6 @@ export default function PastMigrationsPage() {
                         >
                           {item.statusLabel}
                         </span>
-                      </span>
-                      <span className="text-muted-foreground/70 font-mono text-[11px] tracking-tight">
-                        {item.workflowLabel}
-                      </span>
-                      <span className="text-muted-foreground/70 font-mono text-[11px] tracking-tight">
-                        {item.policyDecision ?? "—"}
                       </span>
                       <span className="text-muted-foreground/55 font-mono text-[11px] tracking-tight">
                         {item.createdAgo}

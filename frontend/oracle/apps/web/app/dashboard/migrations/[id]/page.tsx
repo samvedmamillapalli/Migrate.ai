@@ -444,6 +444,17 @@ export default function MigrationRunDetailPage() {
 
   const dimensionDetails = grade ? asRecord(grade.dimension_details) : null
   const stageTimings = shadow ? asRecord(shadow.stage_timings) : null
+  const jobWatchRows = Array.isArray(stageTimings?.job_watch)
+    ? (stageTimings.job_watch as unknown[]).filter(
+        (row): row is Record<string, unknown> =>
+          Boolean(row) && typeof row === "object" && !Array.isArray(row)
+      )
+    : []
+  const timingEntries = stageTimings
+    ? Object.entries(stageTimings).filter(
+        ([key]) => key !== "job_watch" && key !== "cockroachdb_tools"
+      )
+    : []
   const predictionTrace = traces ? asRecord(traces.traces)?.prediction : null
   const recommendationTrace = traces
     ? asRecord(traces.traces)?.recommendation
@@ -558,13 +569,13 @@ export default function MigrationRunDetailPage() {
           comparisons={comparisons}
           isLive={isLiveShadow}
         />
-        {stageTimings ? (
+        {timingEntries.length > 0 ? (
           <div className="border-border/60 mt-4 space-y-1.5 border-t pt-3">
             <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
               Raw stage timings
             </p>
             <dl className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-              {Object.entries(stageTimings).map(([key, value]) => (
+              {timingEntries.map(([key, value]) => (
                 <div key={key} className="flex items-baseline justify-between gap-2">
                   <dt className="text-muted-foreground/60 font-mono text-[10px] tracking-tight">
                     {key}
@@ -578,6 +589,51 @@ export default function MigrationRunDetailPage() {
           </div>
         ) : null}
       </Section>
+
+      {jobWatchRows.length > 0 ||
+      (typeof stageTimings?.cockroachdb_tools === "string" &&
+        stageTimings.cockroachdb_tools) ? (
+        <Section title="Jobs observed">
+          <p className="text-muted-foreground mb-3 max-w-2xl text-sm leading-relaxed">
+            Live{" "}
+            <span className="text-foreground/85 font-mono text-xs">
+              SHOW JOBS
+            </span>{" "}
+            on the shadow cluster during ExecuteMigration — same job surface
+            Managed MCP uses for blast-radius watch.
+          </p>
+          {typeof stageTimings?.cockroachdb_tools === "string" ? (
+            <p className="text-muted-foreground/70 mb-3 font-mono text-[10px] tracking-tight">
+              {stageTimings.cockroachdb_tools}
+            </p>
+          ) : null}
+          {jobWatchRows.length > 0 ? (
+            <ul className="divide-border/60 divide-y rounded-md border border-border/60">
+              {jobWatchRows.slice(0, 8).map((row, idx) => (
+                <li
+                  key={String(row.job_id ?? idx)}
+                  className="grid gap-1 px-3 py-2 font-mono text-[11px] tracking-tight sm:grid-cols-[7rem_1fr_6rem]"
+                >
+                  <span className="text-muted-foreground/70">
+                    {String(row.job_type ?? "job")}
+                  </span>
+                  <span className="text-foreground/85 truncate">
+                    {String(row.description ?? row.job_id ?? "—")}
+                  </span>
+                  <span className="text-muted-foreground/70 sm:text-right">
+                    {String(row.status ?? "—")}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground text-sm">
+              No schema-change jobs were visible for this run (DDL may have
+              finished instantly).
+            </p>
+          )}
+        </Section>
+      ) : null}
 
       {execution ? (
         <Section title="Execution Result">
