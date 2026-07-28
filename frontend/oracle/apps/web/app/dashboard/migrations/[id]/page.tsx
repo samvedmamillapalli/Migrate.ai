@@ -38,7 +38,7 @@ import { buttonVariants } from "@workspace/ui/components/button"
 import { cn } from "@workspace/ui/lib/utils"
 
 import { SqlCodePanel } from "../current/sql-panel"
-import { ShadowLivePanel } from "@/components/shadow-live-panel"
+import { ShadowLiveView } from "@/components/shadow-live-view"
 import {
   hasRealSfnArn,
   mapComparisons,
@@ -563,7 +563,7 @@ export default function MigrationRunDetailPage() {
       </Section>
 
       <Section title="Shadow Cluster">
-        <ShadowLivePanel
+        <ShadowLiveView
           run={run}
           extras={{ grade, memory, shadow, execution }}
           comparisons={comparisons}

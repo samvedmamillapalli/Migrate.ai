@@ -2,11 +2,12 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 
 import { Button, buttonVariants } from "@workspace/ui/components/button"
 import { cn } from "@workspace/ui/lib/utils"
 
-import { ShadowLivePanel } from "@/components/shadow-live-panel"
+import { ShadowLiveView } from "@/components/shadow-live-view"
 import { useShadowWatch } from "@/components/shadow-watch-context"
 import {
   ApiError,
@@ -47,9 +48,17 @@ async function safeGet<T>(fn: () => Promise<T>): Promise<T | null> {
  * Floating live shadow visualization — stays open while browsing the dashboard.
  * Driven entirely by real API polling (not simulated).
  */
+// The dedicated shadow page already renders the full live panel; showing the
+// floating window on top of it duplicates the same steps + comparisons twice
+// on screen at once. Suppress the floating surface there — it stays available
+// (and remembers open/minimized state) everywhere else in the dashboard.
+const DEDICATED_SHADOW_PAGE = "/dashboard/migrations/current/shadow"
+
 export function ShadowExecutionWindow() {
   const { runId, open, minimized, closeWatch, toggleMinimized, setMinimized } =
     useShadowWatch()
+  const pathname = usePathname()
+  const onDedicatedPage = pathname === DEDICATED_SHADOW_PAGE
   const [run, setRun] = React.useState<MigrationRun | null>(null)
   const [extras, setExtras] = React.useState<RunExtras>(EMPTY_EXTRAS)
   const [error, setError] = React.useState<string | null>(null)
@@ -124,7 +133,7 @@ export function ShadowExecutionWindow() {
       }
     },
     {
-      enabled: open && !minimized && Boolean(runId) && isLive,
+      enabled: open && !minimized && !onDedicatedPage && Boolean(runId) && isLive,
       intervalMs: 1500,
       backoffAfterMs: 120_000,
       backoffIntervalMs: 4000,
@@ -138,7 +147,7 @@ export function ShadowExecutionWindow() {
     }
   )
 
-  if (!open || !runId) return null
+  if (!open || !runId || onDedicatedPage) return null
 
   const comparisons = run ? mapComparisons(run, extras) : []
 
@@ -255,7 +264,7 @@ export function ShadowExecutionWindow() {
               ) : null}
             </section>
 
-            <ShadowLivePanel
+            <ShadowLiveView
               run={run}
               extras={extras}
               comparisons={comparisons}

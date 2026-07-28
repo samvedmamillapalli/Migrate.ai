@@ -91,6 +91,9 @@ export type ConfidenceView = {
   raw: number | null
   adjusted: number | null
   percentLabel: string
+  /** Raw model-proposed confidence, formatted the same way — shown alongside
+   * the adjusted headline so the clamp is visible, not just its result. */
+  rawPercentLabel: string
   adjustments: Array<{ reasonCode: string; reason: string; amount: number }>
   wasReduced: boolean
 }
@@ -247,6 +250,59 @@ export function formatStorage(mb: number | null | undefined): string {
 export function formatPercent(score: number | null | undefined): string {
   if (score == null || Number.isNaN(Number(score))) return "—"
   return `${Math.round(Number(score) * 100)}%`
+}
+
+/**
+ * Defensive cleanup for model-written summary prose (risk_explanation,
+ * recommendation rationale). The prompt asks for plain text with no
+ * markdown, but models don't always comply — this strips stray decoration
+ * so a `**bold**` or numbered-list slip never renders literally in the UI.
+ */
+export function stripMarkdownDecoration(text: string): string {
+  return text
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^[-*]\s+/gm, "")
+    .replace(/^\d+\.\s+/gm, "")
+    .replace(/\n{2,}/g, " ")
+    .replace(/\n/g, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim()
+}
+
+function splitSentences(text: string): string[] {
+  const matches = text.match(/[^.!?]+[.!?]+(\s+|$)/g)
+  if (!matches) return text ? [text] : []
+  return matches.map((s) => s.trim()).filter(Boolean)
+}
+
+export type ClampedProse = {
+  visible: string
+  /** Sentences past the cap, or null if nothing was cut. */
+  overflow: string | null
+}
+
+/**
+ * Caps model-written summary prose to a handful of plain sentences for the
+ * always-visible headline, with anything past that available separately
+ * (the caller decides where — e.g. under "Show details") instead of ever
+ * dumping an unbounded essay into the main assessment card.
+ */
+export function clampProse(
+  raw: string | null | undefined,
+  maxSentences = 4
+): ClampedProse {
+  if (!raw) return { visible: "", overflow: null }
+  const cleaned = stripMarkdownDecoration(raw)
+  const sentences = splitSentences(cleaned)
+  if (sentences.length <= maxSentences) {
+    return { visible: cleaned, overflow: null }
+  }
+  return {
+    visible: sentences.slice(0, maxSentences).join(" "),
+    overflow: sentences.slice(maxSentences).join(" "),
+  }
 }
 
 export function formatRelativeTime(iso: string | null | undefined): string {
@@ -420,6 +476,7 @@ function mapConfidence(
     raw,
     adjusted,
     percentLabel: formatPercent(adjusted),
+    rawPercentLabel: formatPercent(raw),
     adjustments,
     wasReduced: adjustments.length > 0,
   }
@@ -664,147 +721,388 @@ function timingValue(
   return null
 }
 
-export type ShadowLiveStage = {
-  id: string
+// --- Shadow execution live view (3-band: rail / stage panel / event log) ---
+
+export type LifecycleRailStageId =
+  | "provision"
+  | "seed"
+  | "execute"
+  | "measure"
+  | "teardown"
+
+export type LifecycleRailStage = {
+  id: LifecycleRailStageId
   label: string
   state: ProcessStageState
   durationLabel: string | null
-  detail: string | null
-  /** Short plain-English description of what this step does. */
-  hint: string
+}
+
+const RAIL_ORDER: LifecycleRailStageId[] = [
+  "provision",
+  "seed",
+  "execute",
+  "measure",
+  "teardown",
+]
+const RAIL_LABELS: Record<LifecycleRailStageId, string> = {
+  provision: "Provision",
+  seed: "Seed",
+  execute: "Execute",
+  measure: "Measure",
+  teardown: "Teardown",
 }
 
 /**
- * Live shadow lifecycle from `shadow_clusters.status` + `stage_timings`.
- * Backend order: provisioning → ready → seeding → migrating → destroying → destroyed.
- * Always returns the full step list so the UI can show the playbook before/during/after.
+ * Five-stage lifecycle rail from `shadow_clusters.status` + `stage_timings`.
+ * "measure" has no backend status of its own (introducing one would touch the
+ * locked shadow state machine) — it's a frontend-only pseudo-stage: current
+ * once ExecuteMigration has recorded `migrate_ms` but the cluster hasn't
+ * started tearing down yet (CollectMetrics/PersistResults are running).
+ * Always returns the full 5-item list so the UI can show the whole playbook
+ * before/during/after, same as the old 6-step mapper did.
  */
-export function mapShadowLiveStages(
+export function mapShadowLifecycleRail(
   shadow: ShadowCluster | null,
-  opts?: {
-    workflowRunning?: boolean
-    hasExecution?: boolean
-    /** Approved but SFN not started yet — show steps idle, first as next. */
-    awaitingStart?: boolean
-  }
-): ShadowLiveStage[] {
-  const status = (shadow?.status || "").toLowerCase()
-  const timings = asRecord(shadow?.stage_timings)
-  const order = [
-    "provisioning",
-    "ready",
-    "seeding",
-    "migrating",
-    "destroying",
-    "destroyed",
-  ] as const
-  const labels: Record<(typeof order)[number], string> = {
-    provisioning: "1. Provision cluster",
-    ready: "2. Cluster ready",
-    seeding: "3. Seed schema + data",
-    migrating: "4. Execute your migration",
-    destroying: "5. Tear down cluster",
-    destroyed: "6. Torn down",
-  }
-  const hints: Record<(typeof order)[number], string> = {
-    provisioning: "Create a disposable CockroachDB Cloud cluster tagged for this run.",
-    ready: "Wait until the cluster is online and accepting connections.",
-    seeding: "Load schema (and sample data) so the shadow looks like your DB.",
-    migrating: "Run your exact migration SQL and measure duration + storage.",
-    destroying: "Delete the disposable cluster so nothing is left running.",
-    destroyed: "Cleanup finished. Prediction vs actual is ready to grade.",
-  }
-  const timingKeys: Record<(typeof order)[number], string[]> = {
-    provisioning: ["provision_ms", "provision", "provisioning"],
-    ready: ["ready_ms", "ready"],
-    seeding: ["seed_ms", "load_ms", "seed", "load", "seeding"],
-    migrating: ["migrate_ms", "execute_ms", "migrate", "execute", "execution"],
-    destroying: ["teardown_ms", "cleanup_ms", "teardown", "cleanup"],
-    destroyed: ["teardown_ms", "cleanup_ms", "teardown", "cleanup"],
-  }
-
-  const idlePreview = Boolean(opts?.awaitingStart) && !shadow && !opts?.workflowRunning
-
-  if (!shadow && (opts?.workflowRunning || idlePreview)) {
-    return order.map((id, idx) => ({
-      id,
-      label: labels[id],
-      state: idlePreview
-        ? idx === 0
-          ? "current"
-          : "pending"
-        : idx === 0
-          ? "current"
-          : "pending",
-      durationLabel: null,
-      detail: idlePreview
-        ? idx === 0
-          ? "Click Start shadow test to begin"
-          : null
-        : idx === 0
-          ? "Waiting for shadow_cluster row…"
-          : null,
-      hint: hints[id],
-    }))
-  }
-
+  opts?: { workflowRunning?: boolean; awaitingStart?: boolean }
+): LifecycleRailStage[] {
   if (!shadow) {
-    return order.map((id) => ({
+    const showFirstCurrent = Boolean(opts?.workflowRunning || opts?.awaitingStart)
+    return RAIL_ORDER.map((id, idx) => ({
       id,
-      label: labels[id],
-      state: "pending" as const,
+      label: RAIL_LABELS[id],
+      state: idx === 0 && showFirstCurrent ? "current" : "pending",
       durationLabel: null,
-      detail: null,
-      hint: hints[id],
     }))
   }
 
-  const statusIdx = order.indexOf(status as (typeof order)[number])
-  let lastTimedIdx = -1
-  for (let i = 0; i < order.length; i++) {
-    const stageId = order[i]
-    if (stageId && timingValue(timings, timingKeys[stageId])) lastTimedIdx = i
+  const status = (shadow.status || "").toLowerCase()
+  const timings = asRecord(shadow.stage_timings)
+  const provisionMs = timingValue(timings, ["provision_ms", "ready_ms"])
+  const seedMs = timingValue(timings, ["seed_ms", "load_ms"])
+  const migrateMs = timingValue(timings, ["migrate_ms", "execute_ms"])
+  const teardownMs = timingValue(timings, ["teardown_ms", "cleanup_ms"])
+
+  let cursor: number
+  if (status === "destroyed") {
+    cursor = RAIL_ORDER.length - 1
+  } else if (status === "failed") {
+    if (teardownMs) cursor = 4
+    else if (migrateMs) cursor = 3
+    else if (seedMs) cursor = 2
+    else if (provisionMs) cursor = 1
+    else cursor = 0
+  } else if (status === "seeding") {
+    cursor = 1
+  } else if (status === "migrating") {
+    cursor = migrateMs ? 3 : 2
+  } else if (status === "destroying") {
+    cursor = 4
+  } else {
+    cursor = 0 // provisioning | ready
   }
-  const cursor =
-    status === "destroyed"
-      ? order.length - 1
-      : status === "failed"
-        ? Math.max(statusIdx, lastTimedIdx, 0)
-        : statusIdx >= 0
-          ? statusIdx
-          : Math.min(lastTimedIdx + 1, order.length - 1)
 
-  return order.map((id, idx) => {
-    const durationLabel = timingValue(timings, timingKeys[id])
+  const durationLabels: Record<LifecycleRailStageId, string | null> = {
+    provision: provisionMs,
+    seed: seedMs,
+    execute: migrateMs,
+    measure: null,
+    teardown: teardownMs,
+  }
+
+  return RAIL_ORDER.map((id, idx) => {
     let state: ProcessStageState
-    if (status === "destroyed") {
-      state = "complete"
-    } else if (status === "failed") {
+    if (status === "destroyed") state = "complete"
+    else if (status === "failed") {
       state = idx < cursor ? "complete" : idx === cursor ? "failed" : "pending"
-    } else if (idx < cursor) {
-      state = "complete"
-    } else if (idx === cursor) {
-      state = "current"
-    } else {
-      state = "pending"
-    }
+    } else if (idx < cursor) state = "complete"
+    else if (idx === cursor) state = "current"
+    else state = "pending"
+    return { id, label: RAIL_LABELS[id], state, durationLabel: durationLabels[id] }
+  })
+}
 
-    let detail: string | null = null
-    if (id === "provisioning") {
-      detail = shadow.cluster_name || shadow.cluster_id || null
-    } else if (id === "migrating" && opts?.hasExecution) {
-      detail = "Measured"
-    } else if (shadow.error_message && state === "failed") {
-      detail = shadow.error_message
-    }
+export type ExecutePanelView = {
+  jobId: string | null
+  description: string | null
+  runningStatus: string | null
+  fractionCompleted: number | null
+  jobStatus: string | null
+  /** True once at least one live notice-driven observation was captured —
+   * distinguishes a real animated bar from the post-hoc fallback snapshot. */
+  observedLive: boolean
+  fallbackJobs: Array<{
+    jobId: string | null
+    jobType: string | null
+    status: string | null
+    description: string | null
+  }>
+}
 
+/** The execute stage's job panel — CockroachDB narrating its own work. */
+export function mapExecutePanel(shadow: ShadowCluster | null): ExecutePanelView {
+  const timings = asRecord(shadow?.stage_timings)
+  const observations = Array.isArray(timings?.job_progress)
+    ? (timings!.job_progress as unknown[])
+    : []
+  const latest =
+    observations.length > 0 ? asRecord(observations[observations.length - 1]) : null
+  const jobWatch = Array.isArray(timings?.job_watch)
+    ? (timings!.job_watch as unknown[])
+    : []
+  return {
+    jobId: latest ? String(latest.job_id ?? "") || null : null,
+    description: latest ? ((latest.description as string) ?? null) : null,
+    runningStatus: latest ? ((latest.running_status as string) ?? null) : null,
+    fractionCompleted:
+      latest && latest.fraction_completed != null
+        ? Number(latest.fraction_completed)
+        : null,
+    jobStatus: latest ? ((latest.status as string) ?? null) : null,
+    observedLive: observations.length > 0,
+    fallbackJobs: jobWatch.map((j) => {
+      const r = asRecord(j) || {}
+      return {
+        jobId: (r.job_id as string) ?? null,
+        jobType: (r.job_type as string) ?? null,
+        status: (r.status as string) ?? null,
+        description: (r.description as string) ?? null,
+      }
+    }),
+  }
+}
+
+export type SchemaDiffColumnView = {
+  name: string
+  kind: "added" | "removed" | "changed" | "unchanged"
+  beforeType?: string | null
+  afterType?: string | null
+  type?: string | null
+}
+
+export type SchemaDiffTableView = {
+  name: string
+  kind: "added" | "removed" | "changed" | "unchanged"
+  columns: SchemaDiffColumnView[]
+  indexesAdded: string[]
+  indexesRemoved: string[]
+  constraintsAdded: string[]
+  constraintsRemoved: string[]
+}
+
+/**
+ * Structural before/after diff, colored by change type — never by quality
+ * (a migration usually doesn't "improve" anything, so nothing here reads as
+ * better/worse). None while snapshots haven't been captured yet.
+ */
+export function mapSchemaDiff(shadow: ShadowCluster | null): SchemaDiffTableView[] {
+  const diff = asRecord(shadow?.schema_diff)
+  const tables = Array.isArray(diff?.tables) ? (diff!.tables as unknown[]) : []
+  return tables.map((t) => {
+    const r = asRecord(t) || {}
+    const cols = Array.isArray(r.columns) ? (r.columns as unknown[]) : []
     return {
-      id,
-      label: labels[id],
-      state,
-      durationLabel,
-      detail,
-      hint: hints[id],
+      name: String(r.name ?? ""),
+      kind: (r.kind as SchemaDiffTableView["kind"]) || "unchanged",
+      columns: cols.map((c) => {
+        const cr = asRecord(c) || {}
+        return {
+          name: String(cr.name ?? ""),
+          kind: (cr.kind as SchemaDiffColumnView["kind"]) || "unchanged",
+          beforeType: (cr.before_type as string) ?? null,
+          afterType: (cr.after_type as string) ?? null,
+          type: (cr.type as string) ?? null,
+        }
+      }),
+      indexesAdded: Array.isArray(r.indexes_added)
+        ? (r.indexes_added as unknown[]).map(String)
+        : [],
+      indexesRemoved: Array.isArray(r.indexes_removed)
+        ? (r.indexes_removed as unknown[]).map(String)
+        : [],
+      constraintsAdded: Array.isArray(r.constraints_added)
+        ? (r.constraints_added as unknown[]).map(String)
+        : [],
+      constraintsRemoved: Array.isArray(r.constraints_removed)
+        ? (r.constraints_removed as unknown[]).map(String)
+        : [],
+    }
+  })
+}
+
+export type RowSampleColumnView = {
+  name: string
+  type: string | null
+  nullable: boolean | null
+  default: string | null
+  /** Reuses the schema-diff table's column classification, matched by name —
+   * same color language, never recomputed separately. */
+  diffKind: "added" | "removed" | "changed" | "unchanged"
+}
+
+export type RowSampleTableView = {
+  /** Table name as referenced in the migration SQL (the request key). */
+  requestedName: string
+  /** Resolved schema.table name, or null if the table couldn't be found. */
+  tableName: string | null
+  columns: RowSampleColumnView[]
+  rows: Array<Record<string, unknown>>
+  sampledCount: number
+  totalRowCount: number | null
+  matchedByPk: boolean
+  note: string | null
+  error: string | null
+}
+
+export type RowSamplePanelStatus = "waiting" | "unavailable" | "ready"
+
+export type RowSamplePanelView = {
+  status: RowSamplePanelStatus
+  message: string | null
+  scaleTier: string | null
+  before: RowSampleTableView[]
+  after: RowSampleTableView[]
+}
+
+function mapRowSampleTables(
+  rowSample: unknown,
+  diffTables: SchemaDiffTableView[]
+): RowSampleTableView[] {
+  const parsed = asRecord(rowSample)
+  const tables = asRecord(parsed?.tables)
+  if (!tables) return []
+  return Object.entries(tables).map(([requestedName, raw]) => {
+    const t = asRecord(raw) || {}
+    const tableName = t.table != null ? String(t.table) : null
+    const diffTable = diffTables.find((d) => d.name === tableName)
+    const diffByName = new Map(diffTable?.columns.map((c) => [c.name, c.kind]) ?? [])
+    const columns = Array.isArray(t.columns) ? (t.columns as unknown[]) : []
+    const rows = Array.isArray(t.rows) ? (t.rows as unknown[]) : []
+    return {
+      requestedName,
+      tableName,
+      columns: columns.map((c) => {
+        const cr = asRecord(c) || {}
+        const name = String(cr.name ?? "")
+        return {
+          name,
+          type: (cr.data_type as string) ?? null,
+          nullable:
+            typeof cr.is_nullable === "boolean" ? (cr.is_nullable as boolean) : null,
+          default: cr.column_default != null ? String(cr.column_default) : null,
+          diffKind: diffByName.get(name) ?? "unchanged",
+        }
+      }),
+      rows: rows.map((r) => (asRecord(r) as Record<string, unknown>) ?? {}),
+      sampledCount: Number(t.sampled_count ?? rows.length),
+      totalRowCount: t.total_row_count != null ? Number(t.total_row_count) : null,
+      matchedByPk: Boolean(t.matched_by_pk),
+      note: t.note != null ? String(t.note) : null,
+      error: t.error != null ? String(t.error) : null,
+    }
+  })
+}
+
+/**
+ * Real before/after row sample panel — shadow-tier synthetic data, never the
+ * customer's rows. Column color-coding reuses `mapSchemaDiff`'s
+ * classification for the same tables rather than a second diff pass.
+ */
+export function mapRowSamplePanel(shadow: ShadowCluster | null): RowSamplePanelView {
+  if (!shadow) {
+    return {
+      status: "waiting",
+      message: "Waiting for the shadow cluster to be created…",
+      scaleTier: null,
+      before: [],
+      after: [],
+    }
+  }
+
+  const status = (shadow.status || "").toLowerCase()
+  const preMigrate = ["provisioning", "ready", "seeding"].includes(status)
+  if (preMigrate && !shadow.row_sample_before) {
+    return {
+      status: "waiting",
+      message:
+        "Waiting for the migration to run — row samples are captured right before and right after execution.",
+      scaleTier: shadow.scale_tier ?? null,
+      before: [],
+      after: [],
+    }
+  }
+
+  if (!shadow.row_sample_before && !shadow.row_sample_after) {
+    return {
+      status: "unavailable",
+      message:
+        "Row sample capture was unavailable for this run (connection issue, timeout, or the migration didn't reference a known table). This doesn't affect the migration result.",
+      scaleTier: shadow.scale_tier ?? null,
+      before: [],
+      after: [],
+    }
+  }
+
+  const diffTables = mapSchemaDiff(shadow)
+  return {
+    status: "ready",
+    message: null,
+    scaleTier: shadow.scale_tier ?? null,
+    before: mapRowSampleTables(shadow.row_sample_before, diffTables),
+    after: mapRowSampleTables(shadow.row_sample_after, diffTables),
+  }
+}
+
+export type CostStripView = {
+  durationLabel: string
+  storageLabel: string
+  jobsRun: number
+  success: boolean | null
+  timedOut: boolean
+}
+
+/** The measured cost strip — the blast-radius definition made visible. */
+export function mapCostStrip(extras: RunExtras): CostStripView | null {
+  const exec = extras.execution
+  if (!exec) return null
+  const timings = asRecord(extras.shadow?.stage_timings)
+  const jobWatch = Array.isArray(timings?.job_watch)
+    ? (timings!.job_watch as unknown[])
+    : []
+  return {
+    durationLabel: formatDuration(exec.actual_duration_seconds),
+    storageLabel: formatStorage(exec.actual_storage_mb),
+    jobsRun: jobWatch.length,
+    success: exec.success,
+    timedOut: exec.timed_out,
+  }
+}
+
+export type ShadowEventLogLine = { at: string; text: string }
+
+/**
+ * Append-only event log from `shadow_clusters.event_log` — real persisted
+ * observations, not a simulated ticker. Never stops producing output as long
+ * as new events keep landing, which is what keeps a stage from feeling frozen.
+ */
+export function mapShadowEventLog(shadow: ShadowCluster | null): ShadowEventLogLine[] {
+  const entries = Array.isArray(shadow?.event_log)
+    ? (shadow!.event_log as unknown[])
+    : []
+  return entries.map((e) => {
+    const r = asRecord(e) || {}
+    const at = String(r.at ?? "")
+    const status = String(r.status ?? "")
+    const st = asRecord(r.stage_timings) || {}
+    const keys = Object.keys(st).filter(
+      (k) => k !== "job_progress" && k !== "job_watch"
+    )
+    const parts = keys.slice(0, 4).map((k) => {
+      const v = st[k]
+      return `${k}=${typeof v === "object" ? JSON.stringify(v).slice(0, 40) : v}`
+    })
+    return {
+      at,
+      text: `status → ${status}${parts.length ? " · " + parts.join(", ") : ""}`,
     }
   })
 }
@@ -1041,8 +1339,9 @@ export function mapComparisons(
           ? `±${formatStorage(grade.storage_abs_error_mb)}`
           : undefined,
       withinBand,
-      bandNote:
-        withinBand === true
+      bandNote: grade?.storage_unverifiable
+        ? "Unverifiable — both predicted and actual are below the measurement floor for approximate disk stats"
+        : withinBand === true
           ? actualMb === 0
             ? "OK — small DDL often shows ~0 MB on approximate disk stats"
             : "OK — within the accepted accuracy band"

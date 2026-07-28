@@ -625,7 +625,9 @@ export interface components {
             /** Storage Pct Error */
             storage_pct_error?: number | null;
             /** Storage Within Band */
-            storage_within_band: boolean;
+            storage_within_band?: boolean | null;
+            /** Storage Unverifiable */
+            storage_unverifiable?: boolean;
             /** Rollback Predicted */
             rollback_predicted: string;
             /** Rollback Actual Class */
@@ -1048,6 +1050,18 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+            /** Event Log */
+            event_log?: Array<{ [key: string]: unknown }> | null;
+            /** Schema Snapshot Before */
+            schema_snapshot_before?: { [key: string]: unknown } | null;
+            /** Schema Snapshot After */
+            schema_snapshot_after?: { [key: string]: unknown } | null;
+            /** Schema Diff */
+            schema_diff?: { [key: string]: unknown } | null;
+            /** Row Sample Before */
+            row_sample_before?: { [key: string]: unknown } | null;
+            /** Row Sample After */
+            row_sample_after?: { [key: string]: unknown } | null;
         };
         /** StartWorkflowRequest */
         StartWorkflowRequest: {

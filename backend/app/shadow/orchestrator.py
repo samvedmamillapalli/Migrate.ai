@@ -13,6 +13,7 @@ from app.schema_analysis.connection import normalize_target_database_url
 from app.schema_analysis.models import DatabaseMetadata
 from app.services.shadow_cluster_service import ShadowClusterService
 from app.shadow.concurrency import acquire_slot
+from app.shadow.job_progress import run_with_job_progress
 from app.shadow.models import (
     LifecycleReport,
     ProvisionSpec,
@@ -23,6 +24,11 @@ from app.shadow.models import (
 )
 from app.shadow.provider import ShadowClusterProvider
 from app.shadow.schema_loader import ShadowSchemaLoader
+from app.shadow.schema_snapshot import (
+    build_row_ids_for_matching,
+    capture_shadow_snapshot,
+    extract_referenced_tables,
+)
 
 logger = get_logger(__name__)
 
@@ -202,21 +208,46 @@ class ShadowClusterOrchestrator:
         normalized = normalize_target_database_url(
             provisioned.connection_url, force_cockroach=True
         )
-        engine = create_async_engine(normalized, pool_pre_ping=True)
+        referenced_tables = extract_referenced_tables(migration_sql)
+        before_snapshot = await capture_shadow_snapshot(
+            normalized, sample_tables=referenced_tables
+        )
+        schema_before = before_snapshot.schema if before_snapshot else None
+        row_sample_before = before_snapshot.row_samples if before_snapshot else None
+        match_row_ids = build_row_ids_for_matching(row_sample_before)
         started = perf_counter()
+        progress = None
         try:
-            async with engine.begin() as conn:
-                await conn.execute(
-                    text(
-                        "SET statement_timeout = "
-                        f"{self._settings.shadow_migrate_timeout_seconds * 1000}"
-                    )
-                )
-                for statement in _split_sql(migration_sql):
-                    await conn.execute(text(statement))
+            progress = await run_with_job_progress(
+                normalized,
+                _split_sql(migration_sql),
+                statement_timeout_ms=self._settings.shadow_migrate_timeout_seconds
+                * 1000,
+            )
+            if not progress.succeeded:
+                raise progress.error or RuntimeError("Migration failed")
         finally:
-            await engine.dispose()
             timings.migrate_ms = _ms_since(started)
+            after_snapshot = await capture_shadow_snapshot(
+                normalized,
+                sample_tables=referenced_tables,
+                match_row_ids=match_row_ids,
+            )
+            schema_after = after_snapshot.schema if after_snapshot else None
+            row_sample_after = after_snapshot.row_samples if after_snapshot else None
+            await self._service.set_schema_snapshot(
+                shadow.id,
+                before=schema_before,
+                after=schema_after,
+                row_sample_before=row_sample_before,
+                row_sample_after=row_sample_after,
+            )
+            if progress is not None and (progress.job_ids or progress.observations):
+                await self._service.merge_timings(
+                    shadow.id,
+                    job_ids=progress.job_ids,
+                    job_progress=progress.observations,
+                )
         return round(perf_counter() - started, 4)
 
     async def _teardown(

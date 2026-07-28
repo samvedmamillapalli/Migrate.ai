@@ -59,6 +59,13 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
         if header.lower().startswith("bearer "):
             token = header[7:].strip()
 
+        # Browser EventSource cannot set custom headers, so the one SSE route
+        # accepts the same bearer token via a query param instead. Scoped
+        # narrowly to this path only — every other route still requires the
+        # Authorization header.
+        if not token and path.endswith("/shadow-cluster/stream"):
+            token = (request.query_params.get("token") or "").strip()
+
         if not token:
             if is_public:
                 return await call_next(request)

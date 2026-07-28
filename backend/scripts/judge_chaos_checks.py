@@ -103,7 +103,11 @@ def list_ccloud() -> list[dict[str, Any]]:
 
 def prepare_approved(migration_sql: str, ro: str, label: str) -> str | None:
     """Create → discover → predict → approve(proceed). Returns run_id or None on fail-fast."""
-    code, run = api("POST", "/runs", {"migration_sql": migration_sql, "owner_identity": OWNER})
+    code, run = api(
+        "POST",
+        "/runs",
+        {"migration_sql": migration_sql, "owner_identity": OWNER, "run_kind": "chaos"},
+    )
     if code not in (200, 201) or not isinstance(run, dict):
         case(label, False, {"stage": "create", "code": code, "body": run})
         return None
@@ -146,6 +150,7 @@ def main() -> int:
         {
             "migration_sql": "ALTER TABLE definitely_missing_xyz ADD COLUMN a INT;",
             "owner_identity": OWNER,
+            "run_kind": "chaos",
         },
     )
     rid = run["id"] if isinstance(run, dict) else None

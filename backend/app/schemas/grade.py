@@ -22,7 +22,8 @@ class GradeResponse(BaseModel):
     duration_unverifiable: bool
     storage_abs_error_mb: float
     storage_pct_error: float | None = None
-    storage_within_band: bool
+    storage_within_band: bool | None = None
+    storage_unverifiable: bool = False
     rollback_predicted: str
     rollback_actual_class: str
     rollback_consistent: bool

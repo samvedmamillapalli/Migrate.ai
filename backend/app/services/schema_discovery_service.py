@@ -16,6 +16,7 @@ from app.schema_analysis.database_connection import DatabaseConnection
 from app.schema_analysis.discovery import discover_database_metadata
 from app.schema_analysis.errors import safe_log_target
 from app.schema_analysis.models import DatabaseMetadata
+from app.services.pipeline_progress import clear_progress, set_progress
 
 logger = get_logger(__name__)
 
@@ -52,14 +53,25 @@ class SchemaDiscoveryService:
 
         logger.info("Starting schema discovery", extra=log_fields)
 
+        def _on_stage(stage: str, message: str, percent: int) -> None:
+            set_progress(run_id, stage=stage, message=message, percent=percent)
+
+        set_progress(run_id, stage="starting", message="Starting discovery…", percent=1)
         try:
             metadata = await discover_database_metadata(
                 connection,
                 connect_timeout=self._settings.schema_connection_timeout_seconds,
                 discovery_timeout=self._settings.schema_discovery_timeout_seconds,
+                on_stage=_on_stage,
             )
         except ReadWriteCredentialsError:
             duration_ms = (perf_counter() - started) * 1000
+            set_progress(
+                run_id,
+                stage="failed",
+                message="Connected, but credentials allow writes — rejected.",
+                percent=100,
+            )
             await self._persist_failure(
                 run,
                 status=SchemaDiscoveryStatus.REJECTED,
@@ -70,8 +82,14 @@ class SchemaDiscoveryService:
                 extra={**log_fields, "duration_ms": round(duration_ms, 2)},
             )
             raise
-        except Exception:
+        except Exception as exc:
             duration_ms = (perf_counter() - started) * 1000
+            set_progress(
+                run_id,
+                stage="failed",
+                message=f"Discovery failed: {type(exc).__name__}",
+                percent=100,
+            )
             await self._persist_failure(
                 run,
                 status=SchemaDiscoveryStatus.FAILED,
@@ -84,12 +102,14 @@ class SchemaDiscoveryService:
             raise
 
         duration_ms = (perf_counter() - started) * 1000
+        set_progress(run_id, stage="done", message="Schema discovered.", percent=100)
         updated = await self._persist_success(
             run,
             metadata=metadata,
             duration_ms=duration_ms,
             connection_secret_arn=connection_secret_arn,
         )
+        clear_progress(run_id)
         logger.info(
             "Schema discovery succeeded",
             extra={

@@ -54,7 +54,13 @@ class Grade(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
     storage_abs_error_mb: Mapped[float] = mapped_column(Float, nullable=False)
     storage_pct_error: Mapped[float | None] = mapped_column(Float, nullable=True)
-    storage_within_band: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    storage_within_band: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    storage_unverifiable: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default=text("false"),
+    )
 
     rollback_predicted: Mapped[str] = mapped_column(String(16), nullable=False)
     rollback_actual_class: Mapped[str] = mapped_column(String(16), nullable=False)

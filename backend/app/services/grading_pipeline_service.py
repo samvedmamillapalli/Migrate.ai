@@ -150,6 +150,7 @@ class GradingPipelineService:
                 storage_abs_error_mb=numeric.storage_abs_error_mb,
                 storage_pct_error=numeric.storage_pct_error,
                 storage_within_band=numeric.storage_within_band,
+                storage_unverifiable=numeric.storage_unverifiable,
                 rollback_predicted=numeric.rollback_predicted,
                 rollback_actual_class=numeric.rollback_actual_class,
                 rollback_consistent=numeric.rollback_consistent,

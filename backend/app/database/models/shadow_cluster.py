@@ -127,6 +127,34 @@ class ShadowCluster(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    # Append-only observation log: one entry per status transition or timing
+    # merge, each `{"at": iso timestamp, "status": ..., "stage_timings": {...}}`.
+    # Lets a finished run be replayed step by step instead of only showing the
+    # final overwritten state (status/stage_timings above remain last-write-wins
+    # for cheap reads; this is the durable history behind them).
+    event_log: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+    # Structural DatabaseMetadata (see app.schema_analysis.models) captured on
+    # the shadow cluster immediately before and after the migration runs, for
+    # the before/after schema diff. Never captured on the customer's database.
+    schema_snapshot_before: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    schema_snapshot_after: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    # Small real row sample (columns + up to 20 rows + total count) for the
+    # tables the migration references, captured in the same connection as the
+    # schema snapshot above. Shadow-tier synthetic data, never the customer's
+    # real rows. `after` re-fetches the same primary keys as `before` where
+    # possible so the panel compares the same conceptual rows, not an
+    # arbitrary new sample. None when capture wasn't attempted or failed
+    # outright; per-table `error` inside the JSON when only one table failed.
+    row_sample_before: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    row_sample_after: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
 
     migration_run: Mapped[MigrationRun] = relationship(
         "MigrationRun",

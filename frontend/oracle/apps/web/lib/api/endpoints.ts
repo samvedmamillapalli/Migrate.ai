@@ -82,11 +82,16 @@ export function listRuns(params?: {
   limit?: number
   offset?: number
   owner_identity?: string
+  run_kind?: string
+  /** Comma-separated run_kind values to exclude, e.g. "chaos,debug". */
+  exclude_kinds?: string
 }) {
   const q = new URLSearchParams()
   if (params?.limit != null) q.set("limit", String(params.limit))
   if (params?.offset != null) q.set("offset", String(params.offset))
   if (params?.owner_identity) q.set("owner_identity", params.owner_identity)
+  if (params?.run_kind) q.set("run_kind", params.run_kind)
+  if (params?.exclude_kinds) q.set("exclude_kinds", params.exclude_kinds)
   const qs = q.toString()
   return api<MigrationRunList>(`/runs${qs ? `?${qs}` : ""}`)
 }
@@ -196,8 +201,11 @@ export function getModelTraces(runId: string) {
   return api<ModelTracesResponse>(`/runs/${runId}/model-traces`)
 }
 
-export function getAccuracyMetrics() {
-  return api<AccuracyMetrics>("/runs/metrics/accuracy")
+export function getAccuracyMetrics(params?: { owner_identity?: string }) {
+  const q = new URLSearchParams()
+  if (params?.owner_identity) q.set("owner_identity", params.owner_identity)
+  const qs = q.toString()
+  return api<AccuracyMetrics>(`/runs/metrics/accuracy${qs ? `?${qs}` : ""}`)
 }
 
 export function listMemories(params?: {

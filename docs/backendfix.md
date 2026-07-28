@@ -41,8 +41,13 @@ above all else. Anything that weakens it is the wrong tradeoff.
   memory → second predict. Prefer matching `NEXT_PUBLIC_API_BASE_URL` to the
   live API port (8001/8002). CORS must include both `localhost:3000` and
   `127.0.0.1:3000`; set `CORS_ORIGINS` when a public frontend URL exists.
-- Shadow UI: `ShadowLivePanel` shows real-time cluster lifecycle + prediction
-  vs measured actuals (no mock verify fallback; fake-migration debug gated).
+- Shadow UI: `ShadowLiveView` (2026-07-28 rebuild) — SSE-driven 3-band live
+  view (lifecycle rail / stage panel / event log) + schema diff + cost strip;
+  doubles as the replay view for finished runs (no mock verify fallback;
+  fake-migration debug still gated, demo-database button is not). Full
+  Shadow Execution page also has a real before/after row-sample panel
+  (2026-07-29) — up to 20 real synthetic rows per referenced table, matched
+  by primary key across before/after.
 - Ops: `docs/DEMO_OPS.md` (Windows start, demo timing ~5–7 min, cost note,
   abort). Chaos driver: `backend/scripts/judge_chaos_checks.py` (fail-fast
   predict ceilings; `JUDGE_SKIP_DUAL=1` to avoid dual-cloud spend).
@@ -79,8 +84,12 @@ Recommendation engine
   AI generated SQL is never executed. This is a hard safety line.
 
 Identity and auth
-- No real authentication. No Clerk. owner_identity is a plain string passed
-  through, matching the approver_identity pattern.
+- CORRECTED 2026-07-28 (was stale): Clerk auth is real and live
+  (`SessionAuthMiddleware`, `app/api/middleware_auth.py` — Bearer token
+  required on non-public routes whenever `AUTH_ENABLED` or Clerk keys are
+  configured; frontend wires `@clerk/nextjs`). owner_identity is still a plain
+  string end to end (set from the verified Clerk JWT, or passed through
+  directly when auth is off), matching the approver_identity pattern.
 - Retrieval scopes to the requesting owner plus the reserved corpus identity
   __migration_oracle_corpus__. That constant must exist in exactly one place in
   the codebase and be imported everywhere else.
@@ -166,7 +175,8 @@ GET /runs/{id}/grade
 GET /runs/{id}/memory
 GET /runs/{id}/execution-result
 GET /runs/{id}/shadow-cluster
-GET /runs/metrics/accuracy
+GET /runs/{id}/shadow-cluster/stream (SSE; ?token= for EventSource auth)
+GET /runs/metrics/accuracy (?owner_identity=)
 GET /memories
 GET /memories/health
 
@@ -245,6 +255,351 @@ matches on vocabulary instead of meaning and this beat falls flat.
 - Prefer fixing the root cause over adding a workaround.
 
 ## Change Log
+
+### 2026-07-29 — Prediction/recommendation summaries still too long + a Turbopack/OneDrive gotcha
+
+Follow-up to the 2026-07-28 "plain language" prompt change: a user-provided
+screenshot showed the model still writing a multi-paragraph, markdown-formatted
+essay into `risk_explanation`/`rationale` despite the v2 prompt asking for
+1-2 short sentences — models don't reliably obey length instructions alone.
+
+What changed
+- Prompts bumped to v3 (`prediction_v3.txt`, `recommendation_v3.txt`): much
+  more explicit — exactly 3-4 sentences (not "1-2", per direct user
+  instruction), plain text only with markdown explicitly forbidden
+  (`**bold**`, headings, numbered/bulleted lists all called out by name), and
+  an explicit instruction to put any extra reasoning into `key_assumptions`/
+  `uncertainty_notes`/`rollout_steps`/`monitoring_checklist` instead, since
+  those already render under "Show details."
+- **Added a frontend safety net that doesn't depend on the model complying**:
+  `clampProse()` + `stripMarkdownDecoration()` in `map-run.ts` — strips stray
+  markdown decoration and hard-caps `risk_explanation`/`rationale` to 4
+  sentences for the always-visible summary, moving anything past that into
+  the existing "Show details" section instead of ever rendering an unbounded
+  essay inline. This means the display is now correct by construction even
+  if a future prompt version or model swap doesn't fully comply again.
+
+Environment finding (unrelated to source code, worth knowing)
+- This project's frontend lives inside a live OneDrive-synced folder. Next.js
+  16 (Turbopack) dev mode writes `.next/dev/types/routes.d.ts` frequently as
+  routes are visited, and this collided with OneDrive's sync layer, twice
+  producing a **corrupted file** (correctly-closed content followed by a
+  stray duplicate tail fragment) that broke `npm run typecheck` with
+  confusing syntax errors unrelated to any real source change. Separately,
+  Turbopack's dev-mode typed-routes manifest only registers a page **after
+  it's been visited at least once** — `npm run typecheck` will report a
+  route literal like `/dashboard/migrations/current/shadow` as invalid until
+  something actually requests that URL once against the running dev server.
+  If `npm run typecheck` ever fails with errors inside `.next/dev/types/*`
+  that don't correspond to anything in `app/`/`components/`/`lib/`: it's
+  this, not real source breakage. Fix: `rm -rf .next`, restart `npm run dev`,
+  curl/visit every route once, then re-run typecheck. Also found (and
+  cleaned up) two orphaned `node.exe` dev-server processes left listening on
+  ports 3000/3001 from earlier stop attempts in this session — Windows
+  doesn't always kill detached child processes when the wrapping shell task
+  is stopped; check `netstat -ano | grep :3000` and `taskkill //F //PID` if
+  a "port already in use" surprise shows up.
+
+What was verified
+- `npm run typecheck`: 0 errors (after clearing the corrupted cache and
+  visiting all routes once).
+- `npm run lint`: 0 errors, 19 pre-existing-pattern warnings.
+- `python -m pytest tests/unit`: 33/33 pass. `python -c "import app.main"`: clean.
+- One dev server left running cleanly on port 3000 (the orphaned duplicates
+  were killed).
+
+### 2026-07-29 — Real before/after row samples on the Shadow Execution page
+
+Task: capture a small real row sample from the shadow cluster before and
+after the migration runs, and show it in a new panel above the lifecycle
+timeline on the full Shadow Execution page.
+
+Investigation findings (see docs/ai_audit.md task write-up for the full
+report)
+- A before/after capture point already existed — `capture_shadow_schema_snapshot()`
+  in `app/shadow/schema_snapshot.py`, called from `migration_runner.py`
+  around the migration statement. This task extends that exact point rather
+  than adding a new one.
+- That function opened its own connection separate from the one running the
+  DDL. Reworked it to open one connection and do structure introspection +
+  row sampling together (`SchemaAnalyzer.analyze_open_connection`), so this
+  task adds zero new connections to the pipeline.
+- Table names come from parsing `migration_sql` with `sqlglot` (Postgres
+  dialect, `find_all(exp.Table)`), mirroring the exact convention already
+  used in `app.policy.engine` rather than inventing a second one.
+- Deliberately **not** attached to `ExecutionResult`: that model is scalar-only
+  (no JSONB) and is written by `PersistResults`, a *different* Lambda later
+  in the pipeline with no shadow-cluster connection — getting row data there
+  would mean threading potentially-large JSON through Step Functions state,
+  risking the 256KB per-transition payload limit. Attached to `ShadowCluster`
+  instead, same place as `schema_snapshot_before/after`, same Lambda, no new
+  endpoint (served by the existing `GET /shadow-cluster` + SSE stream).
+- Confirmed the real (`ccloud_api`) production seed step
+  (`load_schema.py` → `ShadowSeeder().seed_rows_only()`) does insert
+  synthetic rows by scale tier, so "before" samples have real data there.
+  The local/dev orchestrator fallback path only recreates structure
+  (`ShadowSchemaLoader`, no rows) — wired the same capture into that path
+  too for consistency, but it will honestly show 0 rows; not fixed, since
+  changing that path's seed behavior is a separate, bigger decision.
+
+What changed
+- `app/shadow/schema_snapshot.py`: added `extract_referenced_tables()`,
+  `capture_shadow_snapshot()` (structure + optional row sample, one
+  connection — `capture_shadow_schema_snapshot()` kept as a thin
+  structure-only wrapper for back-compat), `build_row_ids_for_matching()`.
+  Row fetch is by primary key: "before" takes an ordered `LIMIT 20`; "after"
+  re-fetches those exact primary-key values (`WHERE pk IN (...)`, composite
+  PK via tuple `IN`) so the same conceptual rows are compared, not an
+  arbitrary new sample — falls back to a fresh ordered sample (flagged
+  `matched_by_pk=false` with a note) if the before sample had no usable PK
+  values. Per-table capture failure is recorded on that table's `error`
+  field and never raises — capture is enrichment, never blocks the run.
+- `shadow_clusters` gained `row_sample_before` / `row_sample_after` (JSONB) —
+  migration `l7g3d0e6f485`.
+- `migration_runner.py` (real Lambda path) and `orchestrator.py._migrate()`
+  (local path) both call the new capture function with `sample_tables` from
+  `extract_referenced_tables(migration_sql)`, threading the before sample's
+  PK values into the after call.
+- `ShadowClusterService.set_schema_snapshot()` takes two new optional
+  params (`row_sample_before`/`row_sample_after`); `execute_migration.py`
+  passes them through.
+- `ShadowClusterResponse` (`app/schemas/observability.py`) exposes both
+  fields — automatically available on the existing GET + SSE stream routes,
+  no new endpoint.
+- Frontend: `mapRowSamplePanel()` in `map-run.ts` (waiting / unavailable /
+  ready states; reuses `mapSchemaDiff()`'s per-table column classification
+  for color-coding rather than a second diff pass) + new
+  `components/shadow-row-samples-panel.tsx`, mounted on
+  `shadow/page.tsx` directly above the `<Section title="Live">` block —
+  compact-card `ShadowLiveView` (used elsewhere) is untouched. Integrity
+  label ("Sample rows from the disposable shadow cluster. Synthetic data at
+  the [tier] scale tier, not your production data.") is a visible
+  medium-weight line at the panel top, not a footnote.
+
+What was verified
+- `python -m pytest tests/unit`: 33/33 pass.
+- `python -c "import app.main"`: clean import.
+- `npm run typecheck` / `npm run lint`: 0 errors (1 pre-existing unrelated
+  warning).
+- **Live-tested the actual row-sampling SQL against the real dev CockroachDB
+  database** (not a mock): captured a real 3-row sample from `migration_runs`
+  (real PK detection, real total-row-count via `SELECT count(*)`), then
+  re-fetched the same rows by primary key for the "after" pass
+  (`matched_by_pk=True`, 0 rows lost since nothing changed between calls),
+  then confirmed the full payload round-trips through `json.dumps`/`json.loads`
+  cleanly (UUIDs, timestamps, nested JSONB columns all coerce correctly via
+  `_json_safe`). This is real proof the query generation, quoting, and
+  PK-matching logic are correct against genuine CockroachDB — not proof of
+  the full shadow-cluster-provisioning pipeline end to end (still blocked by
+  the local Windows/Python 3.13 boot issue logged below).
+- New `shadow_clusters` columns confirmed present via `information_schema`
+  after the migration ran.
+
+Known issue carried forward (not new, not fixed here)
+- Local backend HTTP boot is still broken on this Windows Python 3.13
+  install (ProactorEventLoop vs psycopg async — see the 2026-07-28 entry
+  below for the full description). Everything in this task was verified via
+  direct script execution with the correct event loop
+  (`loop_factory=asyncio.SelectorEventLoop`), not via a running API server.
+  A real shadow run through the deployed Lambda/SFN pipeline is still the
+  one thing that needs a working environment to confirm end to end.
+
+What the next task needs to know
+- The row-sample panel only appears on the full Shadow Execution page by
+  design (task requirement) — it is intentionally not part of the compact
+  `ShadowLiveView` used in the floating window, the current-migration inline
+  card, or the run-detail page.
+- `capture_shadow_schema_snapshot()` (structure-only) still exists for any
+  caller that doesn't want row sampling; prefer `capture_shadow_snapshot()`
+  for anything new.
+
+### 2026-07-28 — UI audit fixes (Parts A/B) + shadow live view rebuild (Part C)
+
+Full scope: `docs/ai_audit.md` Parts A–C, combined with the earlier
+`docs/SHADOW_LIVE_REPRESENTATION_PLAN.md` research pass. Decisions taken
+per user answers: SSE transport (not polling), floating panel auto-hides on
+the dedicated shadow page, chaos runs get a real `run_kind` field, accuracy
+"Succeeded" redefined to % of graded runs that passed, storage-unverifiable
+floor = 1 MB, demo database generalized (not judge-specific cluster — that's
+still a followup task), "measure" stays a frontend-only pseudo-stage (no new
+backend enum value).
+
+What changed — blockers (A1)
+- Floating shadow window (`components/shadow-execution-window.tsx`)
+  auto-suppresses via `usePathname()` while on
+  `/dashboard/migrations/current/shadow`, so the dedicated page's own live
+  view is never duplicated on screen.
+- Sidebar identity (`components/owner-identity-field.tsx`) now shows the
+  Clerk display name/email, raw `user_...` id moved to the `title` tooltip.
+- Clerk dev-mode banner: not a code fix — flagged as an ops task (needs a
+  Clerk Production instance + verified custom domain before demo day).
+- `migration_runs.run_kind` (`standard`/`chaos`/`debug`) added end to end
+  (model, migration, service, repository filter, API `exclude_kinds` param);
+  Overview "Recent" list and `judge_chaos_checks.py` runs now use it so
+  deliberate failure tests stop appearing on the first screen a judge sees.
+
+What changed — correctness (A2)
+- `backend/app/memory/metrics.py`: rewrote the accuracy endpoint. `GRADED`
+  was already correctly scoped; `ACCEPTED`/`SUCCEEDED` were querying a
+  completely different, unrelated population (all runs any owner, via
+  `recommendation_outcome.linked_evidence`, near-permanently 0/0). Replaced
+  with `migration_success_rate` (% of the same graded population that
+  actually passed) and an honest `approval_breakdown` (proceed / accept
+  recommended / cancel / awaiting decision — real counts, not a rate). Also
+  scoped every query to `owner_identity` when known, matching the Recent
+  list's scoping. Found and fixed an unrelated latent bug in the same file:
+  the high-risk-flag precision/recall query filtered on
+  `outcome_class IN ('failure','partial','timeout')`, but those values never
+  existed (`app.grading.engine.classify_outcome` only ever returns
+  `clean_ok`/`warned_ok`/`bad`/`timeout`) — only `timeout` was ever matching,
+  silently undercounting every non-timeout bad outcome.
+- Confidence: raw was already not the headline in current code (that finding
+  didn't reproduce — likely a stale screenshot). Added `rawPercentLabel`
+  shown alongside the adjusted headline, and moved the four-signal
+  adjustment list out of the collapsed "Show details" toggle to sit directly
+  under the confidence number.
+- Storage grading: added a real `storage_unverifiable` floor (1 MB) to
+  `app/grading/engine.py` + `grading.yaml`, mirroring how `duration_unverifiable`
+  already handles timeouts — below the floor, storage is graded unverifiable
+  instead of a trivial "within band" pass. New `grades.storage_unverifiable`
+  column (`storage_within_band` now nullable) via migration `k6f2c9d5e374`.
+- Redundant lifecycle steps (Tear down / Torn down): fixed by the Part C
+  rebuild below (5-stage rail, not fixed twice).
+
+What changed — database attach flow (Part B)
+- `current-migration-workspace.tsx` reordered: connect database first, SQL
+  second, prediction third (previously SQL-first). New shared
+  `ConnectDatabaseFields` component: single primary read-only-URL input with
+  visibly-styled placeholder, ARN moved behind a secondary toggle, copyable
+  GRANT/REVOKE help block sourced from `prepare_judge_demo_db.py`'s existing
+  role pattern.
+- Staged discover progress: extended the same `pipeline_progress` mechanism
+  already used for predict — `app/schema_analysis/discovery.py` now takes an
+  `on_stage` callback (connecting → authenticating → reading schema → done),
+  wired through `SchemaDiscoveryService.discover_and_persist`;
+  `/pipeline-progress` route relaxed to also serve progress while
+  `status == pending` (previously predict-only).
+- Client-side missing-table warning next to the SQL editor
+  (`findUnknownTableReferences`, heuristic regex — not a real parser, the
+  backend's `missing_referenced_table` policy flag is still authoritative).
+- Demo database: un-gated the "Try the demo database" button from
+  `NEXT_PUBLIC_ENABLE_DEBUG_TOOLS` — it's now a first-class, always-visible
+  affordance on the connect step, clearly labeled "not your data." Backend
+  endpoint (`/runs/debug/demo-with-db`) unchanged and was never itself
+  debug-gated — it already reads `DEMO_READONLY_DATABASE_URL` /
+  `.judge_ro_database_url`, so this works with whatever demo DB is configured.
+  **Provisioning an actual standing judge-facing cluster is still open** —
+  user said they'll configure that separately.
+
+What changed — shadow live view (Part C), backend
+- `app/shadow/job_progress.py` (new): captures the CockroachDB background
+  job id via a psycopg3 notice handler on the connection running the DDL
+  (fires before the blocking statement returns), then polls `SHOW JOB <id>`
+  (never bare `SHOW JOBS`) on a second connection running concurrently.
+  Never raises — reports failure via `JobProgressResult.succeeded`/`.error`
+  so partial observations survive a migration failure. **Not live-validated
+  against a real shadow cluster in this session** (would need a real SFN run)
+  — degrades honestly to the existing post-hoc `job_watch` snapshot if the
+  notice never arrives, per the "never fabricate progress" rule.
+- `app/shadow/schema_snapshot.py` (new): before/after structural snapshots
+  of the shadow cluster (write-capable connection, so read-only enforcement
+  is intentionally skipped — that check protects the customer's DB, not this
+  disposable one) + `build_schema_diff()` (added/removed/changed/unchanged
+  per table/column/index/constraint, color-neutral — never implies quality).
+- `shadow_clusters` gained `event_log` (JSONB array, appended on every status
+  transition and timing merge — real replay history, not last-write-wins),
+  `schema_snapshot_before`, `schema_snapshot_after` (migration `k6f2c9d5e374`).
+- Wired into both execution paths: `migration_runner.py` (the real
+  Step-Functions/Lambda path via `execute_migration.py`) and
+  `orchestrator.py._migrate()` (the local/dev fallback path), so both
+  capture job progress and schema snapshots the same way.
+- `GET /runs/{id}/shadow-cluster/stream` (new, `sse-starlette`): SSE
+  endpoint replacing polling for the shadow-cluster row specifically — emits
+  on change plus a heartbeat, stops on terminal status or 30-minute ceiling.
+  `sync-workflow` (SFN status) is intentionally NOT folded into this stream
+  since it's a side-effecting AWS call, not a passive read; frontend keeps a
+  separate slower poll for that. `SessionAuthMiddleware` now accepts the
+  bearer token via a `?token=` query param on this one route only, since
+  browser `EventSource` can't set custom headers.
+
+What changed — shadow live view (Part C), frontend
+- New `components/shadow-live-view.tsx` replaces the retired
+  `shadow-live-panel.tsx` everywhere (dedicated shadow page, floating window,
+  run-detail page, current-migration-workspace inline panel — 4 call sites).
+  Three bands: 5-stage lifecycle rail (provision/seed/execute/measure/
+  teardown — "measure" is a frontend-only pseudo-stage, current once
+  `migrate_ms` is recorded but the cluster hasn't started tearing down),
+  stage-dependent center panel (job id/description/`running_status`/
+  `fraction_completed` bar when live observations exist, honest "no live
+  progress observed" text when they don't — never a fabricated bar), and an
+  append-only event log rendered from `shadow_clusters.event_log`.
+- New `lib/api/shadow-stream.ts` (`useShadowStream`): SSE client via native
+  `EventSource`, auto-reconnects (browser built-in), resolves the Clerk/
+  legacy token for the `?token=` param.
+- Same component doubles as the replay view for finished runs (`isLive=false`
+  falls back to the persisted `shadow` + full event log instead of a live
+  connection) — a judge clicking into a past run now sees the same rich view,
+  not just static final numbers.
+- `mapShadowLiveStages`/`ShadowLiveStage` (6-step mapper) removed, replaced
+  by `mapShadowLifecycleRail` (5-step) + `mapExecutePanel` + `mapSchemaDiff`
+  + `mapCostStrip` + `mapShadowEventLog` in `lib/api/map-run.ts`.
+
+What was verified
+- `npm run typecheck` (tsc --noEmit): 0 errors, both after Workstreams 1-3 and
+  again after the full Part C rebuild.
+- `npm run lint`: 0 errors; 20 warnings, all matching pre-existing
+  `react-hooks/set-state-in-effect` / `react-hooks/purity` patterns already
+  present throughout this codebase (not new rigor gaps).
+- `python -m pytest tests/unit`: 33/33 pass (one test updated for the new
+  `run_kind`/`exclude_kinds` service params).
+- `python -c "import app.main"`: clean import with every change applied.
+- Migration `k6f2c9d5e374` applied for real against the live dev CockroachDB
+  Cloud database (see "known issue" below for how long that took and why).
+  Confirmed via direct `information_schema` queries: `migration_runs.run_kind`
+  + index, `shadow_clusters.event_log`/`schema_snapshot_before`/
+  `schema_snapshot_after`, `grades.storage_unverifiable` +
+  `storage_within_band` now nullable — all present. `alembic current` shows
+  `k6f2c9d5e374 (head)`.
+- Confirmed against the user's own already-running Next dev server (port
+  3000, hot-reloaded): landing page 200, `/dashboard` 307 (expected auth
+  redirect), no client errors from the reload.
+
+Known issues discovered (not caused by this change, flagged for awareness)
+- **CockroachDB schema-change DDL is genuinely slow on this cluster tier** —
+  each `ADD COLUMN`/`ALTER COLUMN`/`CREATE INDEX` ran as its own background
+  job taking 20–90s. A 6-statement migration took ~4 minutes wall clock.
+  `alembic upgrade head` looked "stuck" from the CLI (no per-statement
+  progress output) but was actually working — worth keeping in mind for any
+  future multi-statement migration; consider a progress-logging wrapper or
+  splitting large migrations.
+- **Local backend boot is broken on this Windows Python 3.13 install**:
+  `psycopg` async mode requires a `SelectorEventLoop`, but neither plain
+  `uvicorn app.main:app` nor the project's own documented fix
+  (`backend/_run_api.py`'s `asyncio.set_event_loop_policy
+  (asyncio.WindowsSelectorEventLoopPolicy())`) actually prevents uvicorn from
+  using `ProactorEventLoop` on this specific interpreter — `/health` reports
+  `"database":"unhealthy"` with a `ProactorEventLoop` `InterfaceError` even
+  through the documented launcher. Direct `psycopg` calls work fine when the
+  event loop is set correctly by hand
+  (`asyncio.run(..., loop_factory=asyncio.SelectorEventLoop)`), and `alembic`
+  (sync driver) is unaffected — this is specifically a Python 3.13 + uvicorn +
+  async-psycopg interaction, pre-existing and unrelated to this change. Not
+  fixed here (out of scope); next session on this machine should investigate
+  whether `_run_api.py`/`_run_api_reload.py` need a `loop="asyncio"` +
+  explicit `loop_factory` passed into `uvicorn.run()` rather than relying on
+  `set_event_loop_policy` alone, since that mechanism appears insufficient on
+  this Python version. Because of this, the SSE endpoint and the full
+  Part C job-progress/schema-diff pipeline could **not** be live-exercised
+  end to end in this session — verified by code review, type/lint/unit-test
+  checks, and direct DB introspection only.
+
+What the next task needs to know
+- Provisioning a real standing demo CockroachDB cluster (Part B's remaining
+  item) and getting a live shadow run through the new job-progress/schema-diff
+  pipeline are the two biggest open verification gaps — both need a working
+  local boot (see known issue above) or a deployed environment.
+- `docs/ai_audit.md` has the full verification trace (REAL/ALREADY
+  FIXED/PARTIALLY RIGHT/WRONG per finding) this change log summarizes.
 
 ### 2026-07-25 — Live shadow box + no mock verify in UI
 

@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aws.observability import CloudWatchObservability
 from app.core.logging import get_logger
+from app.memory.constants import CORPUS_OWNER_IDENTITY
 
 logger = get_logger(__name__)
 
@@ -18,12 +19,20 @@ METRIC_RECOMMENDATION_SUCCESS = "RecommendationSuccessRate"
 METRIC_RETRIEVAL_STRENGTH = "RetrievalUsefulCount"
 
 
-async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
+async def fetch_accuracy_metrics(
+    session: AsyncSession,
+    *,
+    owner_identity: str | None = None,
+) -> dict[str, Any]:
     """Plain SQL aggregates over grades / memories for Phase 11 charts.
 
     Excludes open-source documented incidents and synthetic seed rows — those
     are not predicted-then-measured grades and must not inflate accuracy.
+    When ``owner_identity`` is given, every run-scoped query below is filtered
+    to that owner so this card and the Overview "Recent" list always describe
+    the same population instead of silently comparing per-owner to global.
     """
+    params: dict[str, Any] = {"owner_identity": owner_identity}
     # Shared predicate: only genuine graded outcomes count toward accuracy.
     _GRADE_OK = """
         COALESCE(g.prose_status, '') NOT IN ('open_source', 'seed')
@@ -46,6 +55,7 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
               'open_source_documented_incident',
               'synthetic_seed'
             )
+        AND (:owner_identity IS NULL OR mr.owner_identity = :owner_identity)
     """
 
     scalar_trend = (
@@ -64,7 +74,8 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
                 WHERE {_GRADE_OK}
                 ORDER BY g.created_at ASC
                 """
-            )
+            ),
+            params,
         )
     ).mappings().all()
 
@@ -85,44 +96,61 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
                     AVG(scalar_accuracy_score) AS mean_scalar,
                     COUNT(*) AS n
                 FROM grades g
+                JOIN migration_runs mr ON mr.id = g.migration_run_id
                 WHERE {_GRADE_OK}
                 GROUP BY 1
                 ORDER BY 1
                 """
-            )
+            ),
+            params,
         )
     ).mappings().all()
 
-    recommendation = (
+    # Graded-population success rate: "percent of graded runs that passed",
+    # same denominator as GRADED above (not a different, unrelated query).
+    # A grade's outcome_class is one of clean_ok / warned_ok / bad / timeout
+    # (app.grading.engine.classify_outcome) — "passed" means the migration
+    # actually executed successfully, clean or with risk flags noted.
+    migration_success = (
+        await session.execute(
+            text(
+                f"""
+                SELECT
+                    COUNT(*) AS graded,
+                    COUNT(*) FILTER (
+                        WHERE g.outcome_class IN ('clean_ok', 'warned_ok')
+                    ) AS passed
+                FROM grades g
+                JOIN migration_runs mr ON mr.id = g.migration_run_id
+                WHERE {_GRADE_OK}
+                """
+            ),
+            params,
+        )
+    ).mappings().one()
+
+    # Honest approval-decision breakdown — real counts, called what they are,
+    # not folded into an "accuracy" rate. Scoped to the same owner, excludes
+    # the reserved corpus identity and deliberate chaos/debug test runs so a
+    # judge's "Recent" list and this breakdown describe the same runs.
+    approval_breakdown = (
         await session.execute(
             text(
                 """
                 SELECT
-                    COUNT(*) FILTER (
-                        WHERE recommendation ->> 'recommended_strategy' IS NOT NULL
-                    ) AS recommendations_issued,
-                    COUNT(*) FILTER (
-                        WHERE approval_decision = 'accept_recommended'
-                    ) AS accepted,
-                    COUNT(*) FILTER (
-                        WHERE recommendation_outcome -> 'linked_evidence'
-                            ->> 'status' = 'success'
-                    ) AS linked_successes,
-                    COUNT(*) FILTER (
-                        WHERE recommendation_outcome -> 'linked_evidence' IS NOT NULL
-                    ) AS linked_pairs
-                FROM (
-                    SELECT
-                        mr.recommendation,
-                        mr.recommendation_outcome,
-                        a.decision AS approval_decision
-                    FROM migration_runs mr
-                    LEFT JOIN approvals a ON a.migration_run_id = mr.id
-                ) t
+                    COALESCE(a.decision, 'awaiting_decision') AS decision,
+                    COUNT(*) AS n
+                FROM migration_runs mr
+                LEFT JOIN approvals a ON a.migration_run_id = mr.id
+                WHERE mr.owner_identity != :corpus_owner
+                  AND mr.run_kind NOT IN ('chaos', 'debug')
+                  AND (:owner_identity IS NULL OR mr.owner_identity = :owner_identity)
+                GROUP BY 1
                 """
-            )
+            ),
+            {**params, "corpus_owner": CORPUS_OWNER_IDENTITY},
         )
-    ).mappings().one()
+    ).mappings().all()
 
     by_tier = (
         await session.execute(
@@ -132,11 +160,13 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
                        AVG(scalar_accuracy_score) AS mean_scalar,
                        COUNT(*) AS n
                 FROM grades g
+                JOIN migration_runs mr ON mr.id = g.migration_run_id
                 WHERE {_GRADE_OK}
                 GROUP BY scale_tier
                 ORDER BY scale_tier
                 """
-            )
+            ),
+            params,
         )
     ).mappings().all()
 
@@ -163,6 +193,11 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
         )
     ).mappings().one()
 
+    # outcome_class is one of clean_ok / warned_ok / bad / timeout
+    # (app.grading.engine.classify_outcome) — 'failure'/'partial' were never
+    # real values here, so this precision/recall table previously only ever
+    # matched on 'timeout' and silently under-counted every non-timeout bad
+    # outcome. Fixed to the actual "went badly" set: bad + timeout.
     high_risk = (
         await session.execute(
             text(
@@ -170,24 +205,26 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
                 SELECT
                     COUNT(*) FILTER (
                         WHERE high_risk_flags_present
-                          AND outcome_class IN ('failure', 'partial', 'timeout')
+                          AND outcome_class IN ('bad', 'timeout')
                     ) AS true_positive,
                     COUNT(*) FILTER (
                         WHERE high_risk_flags_present
-                          AND outcome_class NOT IN ('failure', 'partial', 'timeout')
+                          AND outcome_class NOT IN ('bad', 'timeout')
                     ) AS false_positive,
                     COUNT(*) FILTER (
                         WHERE NOT high_risk_flags_present
-                          AND outcome_class IN ('failure', 'partial', 'timeout')
+                          AND outcome_class IN ('bad', 'timeout')
                     ) AS false_negative,
                     COUNT(*) FILTER (
                         WHERE NOT high_risk_flags_present
-                          AND outcome_class NOT IN ('failure', 'partial', 'timeout')
+                          AND outcome_class NOT IN ('bad', 'timeout')
                     ) AS true_negative
                 FROM grades g
+                JOIN migration_runs mr ON mr.id = g.migration_run_id
                 WHERE {_GRADE_OK}
                 """
-            )
+            ),
+            params,
         )
     ).mappings().one()
 
@@ -214,14 +251,18 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
                 JOIN migration_runs mr ON mr.id = g.migration_run_id
                 WHERE {_GRADE_OK}
                 """
-            )
+            ),
+            params,
         )
     ).mappings().one()
 
-    issued = int(recommendation["recommendations_issued"] or 0)
-    accepted = int(recommendation["accepted"] or 0)
-    linked = int(recommendation["linked_pairs"] or 0)
-    linked_ok = int(recommendation["linked_successes"] or 0)
+    graded_n = int(migration_success["graded"] or 0)
+    passed_n = int(migration_success["passed"] or 0)
+
+    approval_counts = {
+        str(row["decision"]): int(row["n"] or 0) for row in approval_breakdown
+    }
+    approval_total = sum(approval_counts.values())
 
     tp = int(high_risk["true_positive"] or 0)
     fp = int(high_risk["false_positive"] or 0)
@@ -233,18 +274,26 @@ async def fetch_accuracy_metrics(session: AsyncSession) -> dict[str, Any]:
     return {
         "scalar_accuracy_trend": [dict(row) for row in scalar_trend],
         "confidence_calibration": [dict(row) for row in calibration],
-        "recommendation_rates": {
-            "acceptance": {
-                "numerator": accepted,
-                "denominator": issued,
-                "rate": (accepted / issued) if issued else None,
-            },
-            "success": {
-                "numerator": linked_ok,
-                "denominator": linked,
-                "rate": (linked_ok / linked) if linked else None,
-                "note": "Success only counted from linked revised-run evidence",
-            },
+        "migration_success_rate": {
+            "numerator": passed_n,
+            "denominator": graded_n,
+            "rate": (passed_n / graded_n) if graded_n else None,
+            "note": (
+                "Percent of graded runs whose shadow execution actually "
+                "succeeded (clean_ok or warned_ok), out of the same graded "
+                "population as 'Graded' above."
+            ),
+        },
+        "approval_breakdown": {
+            "proceed": approval_counts.get("proceed", 0),
+            "accept_recommended": approval_counts.get("accept_recommended", 0),
+            "cancel": approval_counts.get("cancel", 0),
+            "awaiting_decision": approval_counts.get("awaiting_decision", 0),
+            "total": approval_total,
+            "note": (
+                "Real approval-decision counts, not an accuracy rate. "
+                "Excludes the reserved corpus identity and chaos/debug runs."
+            ),
         },
         "learning_by_scale_tier": [dict(row) for row in by_tier],
         "memory_corpus": dict(retrieval),
@@ -280,19 +329,20 @@ async def publish_metrics_to_cloudwatch(
                 unit="None",
                 dimensions={"ScaleTier": str(latest.get("scale_tier") or "unknown")},
             )
-        rates = metrics.get("recommendation_rates") or {}
-        acc = rates.get("acceptance") or {}
-        if acc.get("rate") is not None:
-            await observability.put_metric(
-                METRIC_RECOMMENDATION_ACCEPTANCE,
-                float(acc["rate"]),
-                unit="None",
-            )
-        suc = rates.get("success") or {}
-        if suc.get("rate") is not None:
+        success_rate = metrics.get("migration_success_rate") or {}
+        if success_rate.get("rate") is not None:
             await observability.put_metric(
                 METRIC_RECOMMENDATION_SUCCESS,
-                float(suc["rate"]),
+                float(success_rate["rate"]),
+                unit="None",
+            )
+        approvals = metrics.get("approval_breakdown") or {}
+        total = int(approvals.get("total") or 0)
+        proceed = int(approvals.get("proceed") or 0)
+        if total:
+            await observability.put_metric(
+                METRIC_RECOMMENDATION_ACCEPTANCE,
+                proceed / total,
                 unit="None",
             )
         corpus = metrics.get("memory_corpus") or {}

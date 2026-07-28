@@ -74,10 +74,25 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
             shadow.id,
             migrate_ms=round(migrate_ms, 1),
             job_watch=outcome.job_watch or [],
+            job_ids=outcome.job_ids or [],
+            job_progress=outcome.job_progress or [],
             cockroachdb_tools=(
                 "Distributed Vector Indexing + Managed MCP / SQL job watch"
             ),
         )
+        if (
+            outcome.schema_snapshot_before is not None
+            or outcome.schema_snapshot_after is not None
+            or outcome.row_sample_before is not None
+            or outcome.row_sample_after is not None
+        ):
+            await shadow_service.set_schema_snapshot(
+                shadow.id,
+                before=outcome.schema_snapshot_before,
+                after=outcome.schema_snapshot_after,
+                row_sample_before=outcome.row_sample_before,
+                row_sample_after=outcome.row_sample_after,
+            )
         return {
             "run_id": str(run_id),
             "shadow_id": str(shadow.id),

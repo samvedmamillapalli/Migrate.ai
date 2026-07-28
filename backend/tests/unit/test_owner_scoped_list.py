@@ -54,6 +54,8 @@ async def test_count_migration_runs_passes_owner_identity(
     repository.count.assert_awaited_once_with(
         status=None,
         owner_identity="bob",
+        run_kind=None,
+        exclude_kinds=None,
     )
 
 

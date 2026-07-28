@@ -1546,8 +1546,20 @@
             "title": "Storage Pct Error"
           },
           "storage_within_band": {
-            "type": "boolean",
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Storage Within Band"
+          },
+          "storage_unverifiable": {
+            "type": "boolean",
+            "title": "Storage Unverifiable",
+            "default": false
           },
           "rollback_predicted": {
             "type": "string",
@@ -1635,7 +1647,6 @@
           "timed_out",
           "duration_unverifiable",
           "storage_abs_error_mb",
-          "storage_within_band",
           "rollback_predicted",
           "rollback_actual_class",
           "rollback_consistent",
@@ -2760,6 +2771,51 @@
             "type": "string",
             "format": "date-time",
             "title": "Updated At"
+          },
+          "event_log": {
+            "anyOf": [
+              {
+                "type": "array",
+                "items": { "additionalProperties": true, "type": "object" }
+              },
+              { "type": "null" }
+            ],
+            "title": "Event Log"
+          },
+          "schema_snapshot_before": {
+            "anyOf": [
+              { "additionalProperties": true, "type": "object" },
+              { "type": "null" }
+            ],
+            "title": "Schema Snapshot Before"
+          },
+          "schema_snapshot_after": {
+            "anyOf": [
+              { "additionalProperties": true, "type": "object" },
+              { "type": "null" }
+            ],
+            "title": "Schema Snapshot After"
+          },
+          "schema_diff": {
+            "anyOf": [
+              { "additionalProperties": true, "type": "object" },
+              { "type": "null" }
+            ],
+            "title": "Schema Diff"
+          },
+          "row_sample_before": {
+            "anyOf": [
+              { "additionalProperties": true, "type": "object" },
+              { "type": "null" }
+            ],
+            "title": "Row Sample Before"
+          },
+          "row_sample_after": {
+            "anyOf": [
+              { "additionalProperties": true, "type": "object" },
+              { "type": "null" }
+            ],
+            "title": "Row Sample After"
           }
         },
         "type": "object",

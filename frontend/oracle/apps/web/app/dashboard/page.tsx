@@ -100,9 +100,10 @@ export default function DashboardPage() {
         getHealth(),
         listRuns({
           limit: 5,
+          exclude_kinds: "chaos,debug",
           ...(owner ? { owner_identity: owner } : {}),
         }),
-        getAccuracyMetrics(),
+        getAccuracyMetrics({ owner_identity: owner || undefined }),
       ])
       if (cancelled) return
       if (healthRes.status === "fulfilled") {
@@ -149,9 +150,8 @@ export default function DashboardPage() {
   const trend = Array.isArray(metrics?.scalar_accuracy_trend)
     ? (metrics!.scalar_accuracy_trend as unknown[])
     : []
-  const recRates = asRecord(metrics?.recommendation_rates)
-  const acceptance = asRecord(recRates?.acceptance)
-  const success = asRecord(recRates?.success)
+  const successRate = asRecord(metrics?.migration_success_rate)
+  const approvals = asRecord(metrics?.approval_breakdown)
   const memoryCorpus = asRecord(metrics?.memory_corpus)
 
   const integrations = health?.integrations
@@ -341,42 +341,58 @@ export default function DashboardPage() {
             No graded runs yet.
           </p>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="space-y-0.5">
-              <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
-                Graded
-              </p>
-              <p className="text-foreground font-mono text-lg tracking-tight">
-                {trend.length}
-              </p>
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-0.5">
+                <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
+                  Graded
+                </p>
+                <p className="text-foreground font-mono text-lg tracking-tight">
+                  {trend.length}
+                </p>
+              </div>
+              <div className="space-y-0.5">
+                <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
+                  Migration success rate
+                </p>
+                <p className="text-foreground font-mono text-lg tracking-tight">
+                  {formatRate(
+                    successRate as {
+                      numerator?: unknown
+                      denominator?: unknown
+                      rate?: unknown
+                    } | null
+                  )}
+                </p>
+                <p className="text-muted-foreground/60 text-[10px] leading-snug">
+                  % of graded runs whose shadow execution actually succeeded.
+                </p>
+              </div>
             </div>
-            <div className="space-y-0.5">
+
+            <div className="space-y-1.5 border-t border-border/60 pt-3">
               <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
-                Accepted
+                Approval decisions
               </p>
-              <p className="text-foreground font-mono text-lg tracking-tight">
-                {formatRate(
-                  acceptance as {
-                    numerator?: unknown
-                    denominator?: unknown
-                    rate?: unknown
-                  } | null
-                )}
-              </p>
-            </div>
-            <div className="space-y-0.5">
-              <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
-                Succeeded
-              </p>
-              <p className="text-foreground font-mono text-lg tracking-tight">
-                {formatRate(
-                  success as {
-                    numerator?: unknown
-                    denominator?: unknown
-                    rate?: unknown
-                  } | null
-                )}
-              </p>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {(
+                  [
+                    ["proceed", "Proceeded"],
+                    ["accept_recommended", "Accepted plan"],
+                    ["cancel", "Cancelled"],
+                    ["awaiting_decision", "Awaiting decision"],
+                  ] as const
+                ).map(([key, label]) => (
+                  <div key={key} className="space-y-0.5">
+                    <p className="text-muted-foreground/50 font-mono text-[9px] tracking-[0.08em] uppercase">
+                      {label}
+                    </p>
+                    <p className="text-foreground font-mono text-sm tracking-tight">
+                      {Number(approvals?.[key] ?? 0)}
+                    </p>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         )}

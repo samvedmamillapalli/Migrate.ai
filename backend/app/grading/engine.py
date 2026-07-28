@@ -113,12 +113,24 @@ def compute_numeric_grade(
         actual_storage,
         min_actual=cfg.pct_error_min_actual.storage_mb,
     )
-    storage_within = _within_band(
-        abs_error=storage_abs,
-        pct_error=storage_pct,
-        max_abs=float(bands.storage.max_abs_mb or 0.0),
-        max_pct=bands.storage.max_pct,
+    # Below the floor, approximate disk-stat storage can't reliably resolve a
+    # real delta from measurement noise — grading it "within band" anyway
+    # (trivially true for a near-zero abs_error) would be generous, not
+    # honest. Treated like a timed-out duration: unverifiable, not a pass.
+    storage_unverifiable = (
+        predicted_storage < cfg.storage_unverifiable_floor_mb
+        and actual_storage < cfg.storage_unverifiable_floor_mb
     )
+    storage_within: bool | None
+    if storage_unverifiable:
+        storage_within = None
+    else:
+        storage_within = _within_band(
+            abs_error=storage_abs,
+            pct_error=storage_pct,
+            max_abs=float(bands.storage.max_abs_mb or 0.0),
+            max_pct=bands.storage.max_pct,
+        )
 
     rollback_predicted = (
         prediction.rollback_risk.value
@@ -145,13 +157,17 @@ def compute_numeric_grade(
     )
 
     # Scalar accuracy: mean of within-band dimensions that are verifiable.
-    # Timeout makes duration contribute 0. Formula is frozen once corpus runs begin.
+    # Timeout makes duration contribute 0; the storage floor makes storage
+    # contribute 0 the same way. Formula is frozen once corpus runs begin.
     scores: list[float] = []
     if duration_unverifiable:
         scores.append(0.0)
     elif duration_within is not None:
         scores.append(1.0 if duration_within else 0.0)
-    scores.append(1.0 if storage_within else 0.0)
+    if storage_unverifiable:
+        scores.append(0.0)
+    else:
+        scores.append(1.0 if storage_within else 0.0)
     scores.append(1.0 if rollback_within else 0.0)
     scalar = round(sum(scores) / len(scores), 6)
 
@@ -160,7 +176,7 @@ def compute_numeric_grade(
         any_miss = True
     elif duration_within is False:
         any_miss = True
-    if not storage_within or not rollback_within:
+    if storage_unverifiable or not storage_within or not rollback_within:
         any_miss = True
 
     details: dict[str, Any] = {
@@ -178,6 +194,7 @@ def compute_numeric_grade(
             "abs_error": storage_abs,
             "pct_error": storage_pct,
             "within_band": storage_within,
+            "unverifiable": storage_unverifiable,
         },
         "rollback": {
             "predicted": rollback_predicted,
@@ -187,7 +204,8 @@ def compute_numeric_grade(
         },
         "scalar_formula": (
             "mean of within-band scores for duration, storage, and rollback; "
-            "timeout sets duration score to 0"
+            "timeout sets duration score to 0, and storage below the "
+            "measurement floor sets storage score to 0 the same way"
         ),
     }
 
@@ -200,6 +218,7 @@ def compute_numeric_grade(
         duration_unverifiable=duration_unverifiable,
         storage_abs_error_mb=storage_abs,
         storage_pct_error=storage_pct,
+        storage_unverifiable=storage_unverifiable,
         storage_within_band=storage_within,
         rollback_predicted=rollback_predicted,
         rollback_actual_class=rollback_actual,

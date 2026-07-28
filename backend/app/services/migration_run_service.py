@@ -66,6 +66,7 @@ class MigrationRunService:
         *,
         owner_identity: str = "anonymous",
         revises_run_id: uuid.UUID | None = None,
+        run_kind: str = "standard",
     ) -> MigrationRun:
         normalized_sql = migration_sql.strip()
         if not normalized_sql:
@@ -73,6 +74,9 @@ class MigrationRunService:
         identity = (owner_identity or "anonymous").strip() or "anonymous"
         if len(identity) > 256:
             raise ValidationError("owner_identity must be at most 256 characters")
+        kind = (run_kind or "standard").strip().lower() or "standard"
+        if kind not in {"standard", "chaos", "debug"}:
+            raise ValidationError("run_kind must be one of: standard, chaos, debug")
 
         if revises_run_id is not None:
             # Ensure the referenced run exists (soft link; no cascade).
@@ -85,6 +89,7 @@ class MigrationRunService:
                 schema_discovery_status=SchemaDiscoveryStatus.PENDING,
                 owner_identity=identity,
                 revises_run_id=revises_run_id,
+                run_kind=kind,
             )
             created = await self._repository.create(run)
             await self._session.commit()
@@ -125,6 +130,7 @@ class MigrationRunService:
                 migration_sql=picked["migration_sql"],
                 status=MigrationRunStatus.PENDING,
                 owner_identity=identity,
+                run_kind="debug",
                 schema_snapshot=snapshot,
                 schema_discovery_status=SchemaDiscoveryStatus.SUCCEEDED,
                 schema_discovered_at=datetime.now(timezone.utc),
@@ -185,6 +191,8 @@ class MigrationRunService:
         limit: int = 50,
         status: MigrationRunStatus | None = None,
         owner_identity: str | None = None,
+        run_kind: str | None = None,
+        exclude_kinds: list[str] | None = None,
     ) -> list[MigrationRun]:
         if offset < 0:
             raise ValidationError("offset must be >= 0")
@@ -196,6 +204,8 @@ class MigrationRunService:
             limit=limit,
             status=status,
             owner_identity=owner_identity,
+            run_kind=run_kind,
+            exclude_kinds=exclude_kinds,
         )
 
     async def count_migration_runs(
@@ -203,10 +213,14 @@ class MigrationRunService:
         *,
         status: MigrationRunStatus | None = None,
         owner_identity: str | None = None,
+        run_kind: str | None = None,
+        exclude_kinds: list[str] | None = None,
     ) -> int:
         return await self._repository.count(
             status=status,
             owner_identity=owner_identity,
+            run_kind=run_kind,
+            exclude_kinds=exclude_kinds,
         )
 
     async def update_status(

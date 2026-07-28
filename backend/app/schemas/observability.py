@@ -9,6 +9,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.grade import integrity_fields
+from app.shadow.schema_snapshot import build_schema_diff
 
 
 class MemoryListItem(BaseModel):
@@ -90,6 +91,18 @@ class ShadowClusterResponse(BaseModel):
     destroyed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    # Append-only replay log — see app.database.models.shadow_cluster.event_log.
+    event_log: list[dict[str, Any]] | None = None
+    schema_snapshot_before: dict[str, Any] | None = None
+    schema_snapshot_after: dict[str, Any] | None = None
+    # Computed from the two snapshots above, not stored — see
+    # app.shadow.schema_snapshot.build_schema_diff.
+    schema_diff: dict[str, Any] | None = None
+    # Real row sample (columns + up to 20 rows + total count) for the tables
+    # the migration references. Shadow-tier synthetic data, never the
+    # customer's rows — see app.shadow.schema_snapshot._capture_row_samples.
+    row_sample_before: dict[str, Any] | None = None
+    row_sample_after: dict[str, Any] | None = None
 
     @classmethod
     def from_orm(cls, row: Any) -> ShadowClusterResponse:
@@ -109,6 +122,14 @@ class ShadowClusterResponse(BaseModel):
             destroyed_at=row.destroyed_at,
             created_at=row.created_at,
             updated_at=row.updated_at,
+            event_log=row.event_log,
+            schema_snapshot_before=row.schema_snapshot_before,
+            schema_snapshot_after=row.schema_snapshot_after,
+            schema_diff=build_schema_diff(
+                row.schema_snapshot_before, row.schema_snapshot_after
+            ),
+            row_sample_before=row.row_sample_before,
+            row_sample_after=row.row_sample_after,
         )
 
 

@@ -38,6 +38,29 @@ ALLOWED_TRANSITIONS: dict[ShadowClusterStatus, frozenset[ShadowClusterStatus]] =
 }
 
 
+# Event log is capped so a stuck/looping run can't grow the JSONB column
+# unboundedly; enough to replay a full lifecycle (provision..destroyed) with
+# room for retries.
+_EVENT_LOG_MAX_ENTRIES = 200
+
+
+def _append_event(
+    existing: list[dict[str, Any]] | None,
+    *,
+    status: str,
+    stage_timings: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    log = list(existing or [])
+    log.append(
+        {
+            "at": datetime.now(UTC).isoformat(),
+            "status": status,
+            "stage_timings": dict(stage_timings or {}),
+        }
+    )
+    return log[-_EVENT_LOG_MAX_ENTRIES:]
+
+
 class ShadowClusterService:
     """Business logic + persistence for ShadowCluster lifecycle state.
 
@@ -139,6 +162,9 @@ class ShadowClusterService:
             entity.status = new_status
             if new_status == ShadowClusterStatus.DESTROYED:
                 entity.destroyed_at = datetime.now(UTC)
+            entity.event_log = _append_event(
+                entity.event_log, status=new_status.value, stage_timings=entity.stage_timings
+            )
             updated = await self._repository.update(entity)
             await self._session.commit()
             await self._session.refresh(updated)
@@ -166,6 +192,9 @@ class ShadowClusterService:
         async def _commit() -> ShadowCluster:
             entity = await self._repository.get_by_id_or_raise(shadow_id)
             entity.stage_timings = timings
+            entity.event_log = _append_event(
+                entity.event_log, status=entity.status.value, stage_timings=timings
+            )
             updated = await self._repository.update(entity)
             await self._session.commit()
             await self._session.refresh(updated)
@@ -185,6 +214,37 @@ class ShadowClusterService:
             if value is not None:
                 merged[key] = value
         return await self.record_timings(shadow_id, merged)
+
+    async def set_schema_snapshot(
+        self,
+        shadow_id: uuid.UUID,
+        *,
+        before: dict[str, Any] | None = None,
+        after: dict[str, Any] | None = None,
+        row_sample_before: dict[str, Any] | None = None,
+        row_sample_after: dict[str, Any] | None = None,
+    ) -> ShadowCluster:
+        """Best-effort structural snapshot + real row sample for the before/after
+        panels. Each field is only written when provided, so a caller that only
+        has the schema (no row samples this run) doesn't clobber a value it
+        doesn't have."""
+
+        async def _commit() -> ShadowCluster:
+            entity = await self._repository.get_by_id_or_raise(shadow_id)
+            if before is not None:
+                entity.schema_snapshot_before = before
+            if after is not None:
+                entity.schema_snapshot_after = after
+            if row_sample_before is not None:
+                entity.row_sample_before = row_sample_before
+            if row_sample_after is not None:
+                entity.row_sample_after = row_sample_after
+            updated = await self._repository.update(entity)
+            await self._session.commit()
+            await self._session.refresh(updated)
+            return updated
+
+        return await with_txn_retry(_commit, on_retry=self._session.rollback)
 
     async def set_error(
         self,

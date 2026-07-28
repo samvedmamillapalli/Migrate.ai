@@ -6,7 +6,8 @@ import Link from "next/link"
 import { Button, buttonVariants } from "@workspace/ui/components/button"
 import { cn } from "@workspace/ui/lib/utils"
 
-import { ShadowLivePanel } from "@/components/shadow-live-panel"
+import { ShadowLiveView } from "@/components/shadow-live-view"
+import { ShadowRowSamplesPanel } from "@/components/shadow-row-samples-panel"
 import { useShadowWatch } from "@/components/shadow-watch-context"
 import {
   ApiError,
@@ -406,14 +407,6 @@ export default function ShadowExecutionPage() {
                 >
                   {starting ? "Starting…" : "Start shadow test"}
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => openWatch(run.id)}
-                >
-                  Watch live
-                </Button>
                 {!isSfnReady(health) ? (
                   <p className="basis-full text-sm text-[var(--oracle-risk)]">
                     Shadow not ready — check Settings / health.
@@ -438,14 +431,6 @@ export default function ShadowExecutionPage() {
                 >
                   {aborting ? "Aborting…" : "Abort"}
                 </Button>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  onClick={() => openWatch(run.id)}
-                >
-                  Watch live
-                </Button>
               </div>
             ) : null}
 
@@ -463,8 +448,10 @@ export default function ShadowExecutionPage() {
             ) : null}
           </Section>
 
+          <ShadowRowSamplesPanel shadow={extras.shadow} />
+
           <Section title="Live">
-            <ShadowLivePanel
+            <ShadowLiveView
               run={run}
               extras={extras}
               comparisons={comparisons}

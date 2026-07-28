@@ -81,15 +81,25 @@ class MigrationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         ),
         Index("ix_migration_runs_owner_identity", "owner_identity"),
         Index("ix_migration_runs_revises_run_id", "revises_run_id"),
+        Index("ix_migration_runs_run_kind", "run_kind"),
     )
 
     migration_sql: Mapped[str] = mapped_column(Text, nullable=False)
-    # Soft identity (no real auth yet); mirrors Approval.approver_identity.
+    # Soft identity (mirrors Approval.approver_identity).
     owner_identity: Mapped[str] = mapped_column(
         String(256),
         nullable=False,
         default="anonymous",
         server_default="anonymous",
+    )
+    # "standard" | "chaos" | "debug". Lets the UI (and accuracy queries) tell a
+    # real user migration apart from a deliberate chaos/failure test or a
+    # developer debug-tools run, without guessing from SQL text or naming.
+    run_kind: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="standard",
+        server_default="standard",
     )
     # Optional link: this run revises an earlier recommendation-driven change.
     revises_run_id: Mapped[uuid.UUID | None] = mapped_column(

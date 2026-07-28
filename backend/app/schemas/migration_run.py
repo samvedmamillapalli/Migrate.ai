@@ -27,6 +27,22 @@ class MigrationRunCreateRequest(BaseModel):
         default=None,
         description="Optional link to an earlier run this migration revises",
     )
+    run_kind: str = Field(
+        default="standard",
+        description=(
+            "standard (default) | chaos (deliberate failure test) | "
+            "debug (developer/demo tooling). Keeps chaos/debug runs out of "
+            "the default Recent list and future accuracy queries."
+        ),
+    )
+
+    @field_validator("run_kind")
+    @classmethod
+    def validate_run_kind(cls, value: str) -> str:
+        normalized = (value or "standard").strip().lower() or "standard"
+        if normalized not in {"standard", "chaos", "debug"}:
+            raise ValueError("run_kind must be one of: standard, chaos, debug")
+        return normalized
 
     @field_validator("migration_sql")
     @classmethod
@@ -58,6 +74,7 @@ class MigrationRunResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     owner_identity: str = "anonymous"
+    run_kind: str = "standard"
     revises_run_id: uuid.UUID | None = None
     schema_snapshot: dict[str, Any] | None = None
     schema_discovered_at: datetime | None = None
@@ -95,6 +112,7 @@ class MigrationRunSummaryResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     owner_identity: str = "anonymous"
+    run_kind: str = "standard"
     revises_run_id: uuid.UUID | None = None
     schema_discovered_at: datetime | None = None
     schema_discovery_duration_ms: float | None = None

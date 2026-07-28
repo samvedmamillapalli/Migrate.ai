@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import contextlib
+import json
+import time
 import uuid
 from typing import Any
 from urllib.parse import urlparse
@@ -60,6 +64,7 @@ async def create_run(
         payload.migration_sql,
         owner_identity=owner,
         revises_run_id=payload.revises_run_id,
+        run_kind=payload.run_kind,
     )
     return MigrationRunResponse.model_validate(run)
 
@@ -70,6 +75,11 @@ async def list_runs(
     service: MigrationRunSvc,
     status_filter: MigrationRunStatus | None = Query(default=None, alias="status"),
     owner_identity: str | None = Query(default=None, min_length=1, max_length=256),
+    run_kind: str | None = Query(default=None, min_length=1, max_length=32),
+    exclude_kinds: str | None = Query(
+        default=None,
+        description="Comma-separated run_kind values to exclude, e.g. chaos,debug",
+    ),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> MigrationRunListResponse:
@@ -79,15 +89,24 @@ async def list_runs(
 
     if auth_enforced():
         owner_identity = scoped
+    excluded = (
+        [kind.strip() for kind in exclude_kinds.split(",") if kind.strip()]
+        if exclude_kinds
+        else None
+    )
     runs = await service.list_migration_runs(
         offset=offset,
         limit=limit,
         status=status_filter,
         owner_identity=owner_identity,
+        run_kind=run_kind,
+        exclude_kinds=excluded,
     )
     total = await service.count_migration_runs(
         status=status_filter,
         owner_identity=owner_identity,
+        run_kind=run_kind,
+        exclude_kinds=excluded,
     )
     return MigrationRunListResponse(
         items=[MigrationRunSummaryResponse.model_validate(run) for run in runs],
@@ -99,10 +118,22 @@ async def list_runs(
 
 @router.get("/metrics/accuracy")
 async def get_accuracy_metrics(
+    request: Request,
     session: AsyncSession = Depends(get_db_session),
+    owner_identity: str | None = Query(default=None, min_length=1, max_length=256),
 ) -> dict[str, Any]:
-    """Plain SQL accuracy / learning metrics (Phase 11 chart source)."""
-    return await fetch_accuracy_metrics(session)
+    """Plain SQL accuracy / learning metrics (Phase 11 chart source).
+
+    Scoped to the same owner as the Recent-runs list when one is known (auth
+    session, or an explicit query param), so this card and "Recent" never show
+    two different populations side by side without saying so.
+    """
+    from app.auth.tenancy import auth_enforced, session_owner
+
+    scoped = session_owner(request) if request else None
+    if auth_enforced():
+        owner_identity = scoped
+    return await fetch_accuracy_metrics(session, owner_identity=owner_identity)
 
 
 @router.post(
@@ -143,6 +174,7 @@ async def create_debug_demo_with_db(
     run = await service.create_migration_run(
         "ALTER TABLE customers ADD COLUMN demo_flag STRING NOT NULL DEFAULT 'ok';",
         owner_identity=owner_identity,
+        run_kind="debug",
     )
     secret_arn = await _store_connection_url(request, run.id, url)
     connection = await _load_connection(request, secret_arn)
@@ -248,15 +280,18 @@ async def get_pipeline_progress(
     run_id: uuid.UUID,
     run_service: MigrationRunSvc,
 ) -> dict[str, Any]:
-    """Live stage progress for a long-running predict / local-verify (in-process).
+    """Live stage progress for a long-running predict / discover / local-verify
+    (in-process, single-uvicorn-worker).
 
-    Predict progress is cleared once the run leaves ``predicting`` so a shadow
-    workflow never shows a stale "prediction complete" bar.
+    Predict progress is cleared once the run leaves ``predicting``; discover
+    progress is only meaningful while the run is still ``pending`` (discovery
+    never changes run status itself). Either way, a stale bar from a previous
+    stage never survives a status change it doesn't belong to.
     """
     from app.services.pipeline_progress import clear_progress, get_progress
 
     run = await run_service.get_migration_run(run_id)
-    if run.status != MigrationRunStatus.PREDICTING:
+    if run.status not in (MigrationRunStatus.PREDICTING, MigrationRunStatus.PENDING):
         clear_progress(run_id)
         return {
             "run_id": str(run_id),
@@ -463,6 +498,79 @@ async def get_shadow_cluster(
     if run.shadow_cluster is None:
         raise NotFoundError(f"No shadow cluster recorded for MigrationRun {run_id}")
     return ShadowClusterResponse.from_orm(run.shadow_cluster)
+
+
+@router.get("/{run_id}/shadow-cluster/stream")
+async def stream_shadow_cluster(run_id: uuid.UUID, request: Request):
+    """Push-based shadow-cluster updates (SSE) — replaces polling GET /shadow-cluster.
+
+    One JSON `ShadowClusterResponse` payload per `event: shadow` message,
+    sent only when it actually changed (plus a periodic heartbeat so proxies
+    don't time out an idle connection). Falls back gracefully: a client that
+    can't use EventSource can keep polling the plain GET route, which is
+    unaffected by this endpoint's existence.
+    """
+    from sse_starlette.sse import EventSourceResponse
+
+    from app.database.session import DatabaseSessionManager
+    from app.repositories.migration_run_repository import MigrationRunRepository
+
+    async def _event_source():
+        database: DatabaseSessionManager = request.app.state.database
+        last_payload: str | None = None
+        started = time.monotonic()
+        # Adaptive-ish: check often early (matches the "execute" stage moving
+        # fast), back off once a run has been live a while, hard ceiling
+        # mirrors the frontend's existing 30-minute polling ceiling.
+        interval = 1.0
+        while True:
+            if await request.is_disconnected():
+                return
+            elapsed = time.monotonic() - started
+            if elapsed > 1800:
+                yield {"event": "timeout", "data": "{}"}
+                return
+            interval = 1.0 if elapsed < 120 else 3.0
+
+            try:
+                # aclosing (not a bare `async for ... break`) so the session
+                # is deterministically closed/returned to the pool on every
+                # tick instead of waiting on GC to finalize the generator.
+                async with contextlib.aclosing(database.session()) as gen:
+                    session = await gen.__anext__()
+                    run_repo = MigrationRunRepository(session)
+                    run = await run_repo.get_by_id_or_raise(
+                        run_id, load_children=True
+                    )
+                    if run.shadow_cluster is None:
+                        payload = {"waiting": True}
+                    else:
+                        payload = ShadowClusterResponse.from_orm(
+                            run.shadow_cluster
+                        ).model_dump(mode="json")
+            except Exception as exc:  # noqa: BLE001 - stream must not crash on a blip
+                logger.warning(
+                    "shadow-cluster stream tick failed",
+                    extra={"run_id": str(run_id), "error": str(exc)},
+                )
+                await asyncio.sleep(interval)
+                continue
+
+            serialized = json.dumps(payload, sort_keys=True)
+            if serialized != last_payload:
+                last_payload = serialized
+                yield {"event": "shadow", "data": serialized}
+            else:
+                yield {"event": "heartbeat", "data": "{}"}
+
+            if isinstance(payload, dict) and payload.get("status") in (
+                "destroyed",
+                "failed",
+            ):
+                return
+            await asyncio.sleep(interval)
+
+    return EventSourceResponse(_event_source())
 
 
 @router.get("/{run_id}/execution-result", response_model=ExecutionResultResponse)

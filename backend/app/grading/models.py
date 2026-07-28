@@ -74,6 +74,7 @@ class GradingFile(BaseModel):
 
     version: int = Field(ge=1)
     pct_error_min_actual: PctErrorMinActual
+    storage_unverifiable_floor_mb: float = Field(gt=0.0)
     error_bands: dict[str, TierBands]
     rollback: RollbackConfig
     retrieval: RetrievalConfig
@@ -116,7 +117,8 @@ class NumericGradeResult(BaseModel):
     duration_unverifiable: bool
     storage_abs_error_mb: float
     storage_pct_error: float | None
-    storage_within_band: bool
+    storage_within_band: bool | None
+    storage_unverifiable: bool
     rollback_predicted: str
     rollback_actual_class: str
     rollback_consistent: bool

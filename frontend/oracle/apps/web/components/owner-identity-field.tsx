@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useAuth } from "@clerk/nextjs"
+import { useAuth, useUser } from "@clerk/nextjs"
 
 import {
   getOwnerIdentity,
@@ -18,14 +18,23 @@ export function OwnerIdentityField({
   className?: string
 }) {
   const { isLoaded, isSignedIn, userId } = useAuth()
+  const { user } = useUser()
   const [value, setValue] = React.useState("")
   const [ready, setReady] = React.useState(false)
 
   const clerkLocked = isLoaded && isSignedIn && Boolean(userId)
+  // owner_identity sent to the backend is always the raw Clerk user id — this
+  // only changes what's *displayed*. A raw "user_..." id means nothing to a
+  // viewer; the real id stays available via the title tooltip for debugging.
+  const displayName =
+    user?.fullName ||
+    user?.primaryEmailAddress?.emailAddress ||
+    user?.username ||
+    userId ||
+    ""
 
   React.useEffect(() => {
     if (clerkLocked && userId) {
-      setValue(userId)
       setOwnerIdentity(userId)
       setReady(true)
       return
@@ -41,9 +50,10 @@ export function OwnerIdentityField({
       </Label>
       <Input
         id={id}
-        value={value}
+        value={clerkLocked ? displayName : value}
         readOnly={clerkLocked}
         disabled={!ready}
+        title={clerkLocked ? userId ?? undefined : undefined}
         onChange={(e) => {
           if (clerkLocked) return
           setValue(e.target.value)
@@ -55,7 +65,7 @@ export function OwnerIdentityField({
       />
       <p className="text-muted-foreground/70 mt-1.5 text-[10px] leading-snug">
         {clerkLocked
-          ? "Scoped to your signed-in account (Clerk user id)."
+          ? "Scoped to your signed-in account. Hover to see the raw id."
           : "Scopes runs and memories. Set manually when auth is off."}
       </p>
     </div>

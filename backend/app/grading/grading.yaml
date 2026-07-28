@@ -11,6 +11,12 @@ pct_error_min_actual:
   duration_seconds: 1.0
   storage_mb: 1.0
 
+# Below this, approximate disk-stat storage measurement can't reliably
+# distinguish a real delta from measurement noise. When BOTH predicted and
+# actual storage are under this floor, storage is graded unverifiable
+# instead of within-band — same honesty treatment as a timed-out duration.
+storage_unverifiable_floor_mb: 1.0
+
 # Acceptable absolute / relative error bands per scale tier.
 # A dimension is within band when abs_error <= max_abs OR
 # (pct_error is defined AND pct_error <= max_pct).

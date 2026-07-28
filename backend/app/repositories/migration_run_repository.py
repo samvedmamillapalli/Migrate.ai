@@ -89,6 +89,8 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         limit: int = 50,
         status: MigrationRunStatus | None = None,
         owner_identity: str | None = None,
+        run_kind: str | None = None,
+        exclude_kinds: list[str] | None = None,
         load_children: bool = False,
     ) -> list[MigrationRun]:
         query = self._base_query(
@@ -99,6 +101,10 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
             query = query.where(MigrationRun.status == status)
         if owner_identity is not None:
             query = query.where(MigrationRun.owner_identity == owner_identity)
+        if run_kind is not None:
+            query = query.where(MigrationRun.run_kind == run_kind)
+        if exclude_kinds:
+            query = query.where(MigrationRun.run_kind.notin_(exclude_kinds))
         return await super().list(offset=offset, limit=limit, statement=query)
 
     async def count(
@@ -106,12 +112,18 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         *,
         status: MigrationRunStatus | None = None,
         owner_identity: str | None = None,
+        run_kind: str | None = None,
+        exclude_kinds: list[str] | None = None,
     ) -> int:
         query = select(MigrationRun)
         if status is not None:
             query = query.where(MigrationRun.status == status)
         if owner_identity is not None:
             query = query.where(MigrationRun.owner_identity == owner_identity)
+        if run_kind is not None:
+            query = query.where(MigrationRun.run_kind == run_kind)
+        if exclude_kinds:
+            query = query.where(MigrationRun.run_kind.notin_(exclude_kinds))
         return await super().count(query)
 
     async def update(self, entity: MigrationRun) -> MigrationRun:
