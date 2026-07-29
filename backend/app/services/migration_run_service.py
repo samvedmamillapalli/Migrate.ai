@@ -179,10 +179,19 @@ class MigrationRunService:
         *,
         load_children: bool = False,
     ) -> MigrationRun:
-        return await self._repository.get_by_id_or_raise(
-            run_id,
-            load_children=load_children,
-        )
+        # A plain read can still land inside another transaction's
+        # uncertainty window under CockroachDB serializable isolation
+        # (ReadWithinUncertaintyIntervalError) when it races a concurrent
+        # write to the same run — e.g. a dashboard poll landing right as
+        # grading/persist commits. Retry like every write path already does
+        # rather than surfacing a 500 for a transient, retryable conflict.
+        async def _read() -> MigrationRun:
+            return await self._repository.get_by_id_or_raise(
+                run_id,
+                load_children=load_children,
+            )
+
+        return await with_txn_retry(_read, on_retry=self._session.rollback)
 
     async def list_migration_runs(
         self,

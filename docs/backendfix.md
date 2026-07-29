@@ -256,6 +256,202 @@ matches on vocabulary instead of meaning and this beat falls flat.
 
 ## Change Log
 
+### 2026-07-29c — Not a code bug: pasting SQL 404'd because the dev frontend was pointed at the wrong Clerk instance
+
+User reported that pasting a migration SQL and submitting produced Next.js's
+own 404 page plus a Clerk "You've created your first user!" banner. Root
+cause was environmental, not a code defect — recorded here so it isn't
+mis-investigated as a routing/auth bug again.
+
+There are two live Clerk applications in play for this repo:
+- `improved-panda-78.clerk.accounts.dev` — real keys, live in the repo-root
+  `.env` (`NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` / `CLERK_SECRET_KEY`).
+  Next.js only auto-loads `.env*` from the app's own directory
+  (`frontend/oracle/apps/web/`), never the repo root, so these vars are
+  invisible to `next dev` unless copied in.
+- `engaging-akita-5.clerk.accounts.dev` — Clerk's zero-config **keyless**
+  mode, auto-provisioned and persisted at
+  `frontend/oracle/apps/web/.clerk/.tmp/keyless.json` whenever no publishable
+  key is present. This is the **correct, intentional** instance for local
+  dev — the `docs/TEST_ACCOUNT.md` test user was created inside it.
+
+`apps/web/.env.local` only ever had `NEXT_PUBLIC_API_BASE_URL` — never Clerk
+keys — so local dev has always run on the keyless `engaging-akita-5`
+instance. When re-verifying this session, I mistakenly copied the
+`improved-panda-78` keys from root `.env` into `apps/web/.env.local` to "fix"
+what looked like a broken auth state, restarted the dev server, and made it
+worse: sign-in then failed outright ("Couldn't find your account.") because
+the documented test user doesn't exist in that instance. Reverted
+`.env.local` back to API-base-URL-only and restarted again.
+
+With the correct keyless instance restored, live-verified via Playwright
+(signed in as the `docs/TEST_ACCOUNT.md` user, pasted
+`ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active'`, clicked
+Run Migration Analysis): navigates cleanly to
+`/dashboard/migrations/current`, run created (`status=pending`), no 404, no
+console errors beyond an expected transient `GET /runs/{id}/approval` 404
+(no approval decision exists yet for a pending run — polled and handled
+silently by the UI, not user-visible).
+
+What the next session needs to know: never add Clerk keys to
+`apps/web/.env.local` for local dev — the keyless `engaging-akita-5` instance
+plus `docs/TEST_ACCOUNT.md` is the working setup. The `improved-panda-78`
+keys in root `.env` are presumably meant for a deployed frontend origin, not
+local dev; if that assumption is wrong, whoever knows the real deployment
+plan should say so explicitly before those keys get wired into local dev
+again.
+
+### 2026-07-29b — Real end-to-end UI click-through (Playwright MCP): found and fixed 4 real backend bugs, implemented predict-stop, fixed Set-as-current
+
+User asked me to actually click through the live UI (not just audit code) and
+verify abort-shadow, stop-predicting, and set-as-current genuinely work. No
+browser tool was available at first; user installed the Playwright MCP server
+(`.mcp.json`, `@playwright/mcp`) so this could be done for real against the
+running dev stack. Created a throwaway Clerk test account
+(`docs/TEST_ACCOUNT.md`) using Clerk's built-in `+clerk_test@` email
+convention (fixed OTP `424242`, no real inbox needed) so future sessions can
+sign in non-interactively.
+
+Getting the stack running at all surfaced the first real bug — everything
+below was found by literally clicking buttons and reading the actual
+resulting network/console/backend-log state, not by reading code.
+
+**Bug 1 — the Windows uvicorn event-loop fix in `_run_api.py` never worked.**
+`uvicorn>=0.36`'s `Server.run()` calls `asyncio.run(coro, loop_factory=...)`
+with an explicit factory from `uvicorn.loops.asyncio.asyncio_loop_factory`,
+which unconditionally returns `asyncio.ProactorEventLoop` on `win32`. An
+explicit `loop_factory` passed to `asyncio.run()` overrides any event loop
+*policy* set beforehand, so `_run_api.py`'s
+`asyncio.set_event_loop_policy(WindowsSelectorEventLoopPolicy())` before
+`import uvicorn` has been dead code under this uvicorn version — psycopg's
+async driver was still getting a ProactorEventLoop and `/health` genuinely
+reported `"database": "unhealthy"` on every local boot. Fixed by bypassing
+`Server.run()` entirely: build `uvicorn.Config`/`uvicorn.Server` manually and
+call `asyncio.run(server.serve(), loop_factory=lambda: asyncio.SelectorEventLoop())`
+ourselves. Verified: `/health` now reports `"database": "healthy"` with a
+real CockroachDB version string, no more corpus-seed-skipped warning at
+startup. `_run_api_reload.py` (dev reload mode) was left alone — reload uses
+multiprocessing subprocess spawning on Windows, which genuinely needs
+Proactor, so it's a different tradeoff not addressed here.
+
+**Bug 2 — `GET /runs` and `GET /runs/metrics/accuracy` 500'd on every call.**
+`app/api/routes/runs.py`: both `list_runs` and `get_accuracy_metrics` had
+`scoped = session_owner(request) if request else None` followed by a
+redundant local `from app.auth.tenancy import auth_enforced, session_owner`
+a line or two later. In `list_runs` the local import came *after* the first
+use of `session_owner`, so Python treated `session_owner` as a local variable
+for the whole function scope and raised `UnboundLocalError` on every single
+call — meaning the Overview and History pages were completely broken (500)
+the whole time, not something a code read would have caught since the import
+statement itself is syntactically valid. Fixed by adding `auth_enforced` to
+the existing top-level `from app.auth.tenancy import (...)` and deleting both
+redundant local re-imports.
+
+**Bug 3 — `GET /runs/metrics/accuracy` still 500'd after fixing bug 2.**
+`app/memory/metrics.py`: the shared `_GRADE_OK` predicate and the approval
+breakdown query both used `(:owner_identity IS NULL OR mr.owner_identity = :owner_identity)`.
+CockroachDB couldn't infer the SQL type of the `:owner_identity` placeholder
+from that shape (`psycopg.errors.IndeterminateDatatype: could not determine
+data type of placeholder $1`), regardless of whether the value passed was
+`None` or a real string. Fixed with explicit `CAST(:owner_identity AS STRING)`
+on both occurrences (first attempted `::STRING` inline-cast syntax, but
+SQLAlchemy's `text()` bind-parameter parser doesn't play well with `::`
+immediately following a `:param` — `CAST(...)` avoids the ambiguity).
+Verified with real curl calls both with and without `owner_identity`.
+
+**Bug 4 — the live shadow SSE stream was completely broken; `sse-starlette`
+was never actually a declared dependency.** `GET /runs/{id}/shadow-cluster/stream`
+raised `ModuleNotFoundError: No module named 'sse_starlette'` on every call —
+confirmed via backend log, not guessed. Because CORSMiddleware never got to
+add headers to an unhandled-exception response, the browser reported this as
+a CORS failure ("No 'Access-Control-Allow-Origin' header"), not a 500 — the
+same masked-exception pattern as bug 2/3, worth remembering next time
+something *looks* like a CORS bug. `sse-starlette` was added to this project
+in an earlier session but never added to `backend/pyproject.toml`'s
+`dependencies`, so it was only ever present in whatever venv it was
+originally `pip install`'d into by hand. Fixed: added
+`"sse-starlette>=2.1.0"` to `pyproject.toml` and installed it into
+`backend/.venv`. This means the live shadow visualization (the floating
+panel / full shadow page's real-time updates) has likely been silently
+broken since it was built, in any fresh clone or venv — worth calling out
+prominently since it's a core demo feature.
+
+**Abort (shadow execution) — confirmed already fully implemented and
+working correctly**, once bug 4 was fixed. `handleAbortShadow` (frontend) /
+`WorkflowOrchestrationService.abort_for_run` (backend, Step Functions
+`StopExecution` + explicit cleanup handler invocation since `StopExecution`
+skips the ASL Cleanup state) both already existed and work end-to-end:
+clicked Abort on a real running shadow, backend correctly transitioned the
+run to `status=failed`/`workflow_status=aborted`, tore down the shadow
+cluster, and the UI (after the SSE fix) correctly showed "Cluster destroyed
+— no longer exists" with a real event log
+(`destroying → destroyed → destroyed·teardown_ms=1692`). The button is
+correctly gated behind `hasRealSfnArn(run)` (Abort only makes sense for a
+real Step Functions execution — there's nothing to `StopExecution` for the
+local/mock verify path). No code changes needed here beyond the SSE fix.
+
+**Stop predicting — genuinely did not exist before; implemented.**
+Clicking "Run prediction" gave no way to cancel — the button just went
+`disabled` for the full duration with no escape hatch, confirmed by direct
+observation. Implemented client-side cancellation via `AbortController`:
+`predictRun(runId, { signal })` in `lib/api/endpoints.ts` now threads an
+optional `AbortSignal` through to `fetch` (the shared `api()` client in
+`client.ts` already passed `signal` through via its `...rest` spread — no
+change needed there). `current-migration-workspace.tsx` holds the active
+controller in a ref (`predictAbortRef`), a new "Stop" button (visible only
+while `predicting`) calls `.abort()`, and `handlePredict`'s catch block
+checks `controller.signal.aborted` to show a clean "Prediction stopped."
+message instead of a raw fetch error. No backend endpoint needed — the
+Bedrock call it aborts is a plain synchronous request/response with no
+persisted side effect until the pipeline fully completes, so worst case the
+backend keeps computing for a few more seconds after the user gives up
+watching and the result is just never read; nothing is left inconsistent.
+Verified live: clicked Stop mid-prediction, button state fully recovered to
+a clickable "Run prediction" with no reload needed, and the backend log
+confirmed the client disconnect didn't raise or crash anything.
+
+**Separately observed, not fully root-caused: prediction can silently freeze
+in the UI even without clicking Stop.** Once, after clicking "Run
+prediction" normally (no cancel), the button stayed disabled indefinitely —
+network log showed the `POST /predict` request completing with `200`, but
+the app never visibly proceeded past it, and a direct curl to the backend
+confirmed the run had actually reached `awaiting_approval` with a full
+prediction *minutes* earlier. A page reload immediately showed the correct,
+complete state (assessment, recommendation, approval buttons). Root cause
+unconfirmed — a plausible theory is the browser's per-origin HTTP/1.1
+connection cap combined with a long-lived SSE connection from an earlier
+navigation, but this was not proven. The new Stop button and a manual reload
+both work as a recovery path; flagging this as a known intermittent issue
+for a future session to actually instrument and root-cause rather than
+claiming it's fixed.
+
+**Set as current — was silently inert on the Overview page.**
+`app/dashboard/page.tsx`'s "Set as current" was a plain `<button
+onClick={() => setCurrentRunId(latest.id)}>` — it wrote to localStorage and
+did nothing else, no navigation, no visual feedback, so clicking it looked
+like it did nothing. (The equivalent button on the run-detail page,
+`migrations/[id]/page.tsx`, was already a correct `<Link
+href="/dashboard/migrations/current" onClick={...}>` — only the Overview
+one was broken.) Fixed by converting it to the same `<Link>` pattern.
+Verified live: click now navigates to `/dashboard/migrations/current` and
+the correct run loads there.
+
+Also fixed as a drive-by while getting the dev servers running for this
+testing session (Windows-only, unrelated to the bugs above): added
+`frontend/oracle/scripts/free-port.js`, wired into
+`apps/web/package.json`'s `dev` script (`node ../../scripts/free-port.js
+3000 && next dev`) so `npm run dev` always force-kills whatever's already on
+port 3000 instead of falling back to 3001 or refusing to start — a detached
+`node.exe` surviving a stopped terminal was a recurring annoyance across
+sessions on this machine.
+
+What to verify at the start of a future session, since none of this was
+covered by unit tests: re-run `python -m pytest tests/unit` (untouched by
+this session, should still be 33/33 but wasn't re-run this session — all
+verification here was live HTTP/browser, not pytest) and re-run
+`npm run typecheck` (confirmed clean after these changes) before assuming
+anything above still holds.
+
 ### 2026-07-29 — Prediction/recommendation summaries still too long + a Turbopack/OneDrive gotcha
 
 Follow-up to the 2026-07-28 "plain language" prompt change: a user-provided

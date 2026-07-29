@@ -277,13 +277,13 @@ export default function DashboardPage() {
               </div>
             </div>
             <div className="flex flex-wrap gap-2 border-t border-border/60 pt-3">
-              <button
-                type="button"
+              <Link
+                href="/dashboard/migrations/current"
                 onClick={() => setCurrentRunId(latest.id)}
                 className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
               >
                 Set as current
-              </button>
+              </Link>
               <Link
                 href={`/dashboard/migrations/${latest.id}`}
                 className={cn(buttonVariants({ variant: "ghost", size: "sm" }))}

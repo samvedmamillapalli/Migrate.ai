@@ -1,0 +1,88 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - link "← Migration Oracle" [ref=e4] [cursor=pointer]:
+      - /url: /
+    - generic [ref=e7]:
+      - generic [ref=e9]:
+        - generic [ref=e27]:
+          - generic [ref=e28]:
+            - generic [ref=e30]:
+              - heading "Sign in to migrate ai" [level=1] [ref=e31]
+              - paragraph [ref=e32]: Welcome back! Please sign in to continue
+            - generic [ref=e33]:
+              - generic [ref=e35]:
+                - button "Sign in with GitHub GitHub" [ref=e36] [cursor=pointer]:
+                  - generic [ref=e37]:
+                    - img "Sign in with GitHub" [ref=e39]
+                    - generic [ref=e40]: GitHub
+                - button "Sign in with Google Google" [ref=e41] [cursor=pointer]:
+                  - generic [ref=e42]:
+                    - img "Sign in with Google" [ref=e44]
+                    - generic [ref=e45]: Google
+              - paragraph [ref=e48]: or
+              - generic [ref=e50]:
+                - generic [ref=e51]:
+                  - generic [ref=e53]:
+                    - generic [ref=e54]:
+                      - generic [ref=e55]: Email address
+                      - textbox "Email address" [invalid] [ref=e57]:
+                        - /placeholder: Enter your email address
+                        - text: claude-agent+clerk_test@migration-oracle.dev
+                    - generic [ref=e58]: Couldn't find your account.
+                    - paragraph [ref=e132]: Couldn't find your account.
+                  - generic [ref=e61]:
+                    - generic [ref=e62]: Password
+                    - generic [ref=e64]:
+                      - textbox "Password" [ref=e65]:
+                        - /placeholder: Enter your password
+                        - text: ClaudeTestPass!2026x
+                      - button "Show password" [ref=e66] [cursor=pointer]
+                - button [ref=e72] [cursor=pointer]
+          - generic [ref=e76]:
+            - generic [ref=e77]:
+              - generic [ref=e78]: Don’t have an account?
+              - link "Sign up" [ref=e79] [cursor=pointer]:
+                - /url: http://localhost:3000/get-started
+            - generic [ref=e81]:
+              - generic [ref=e83]:
+                - paragraph [ref=e84]: Secured by
+                - link "Clerk logo" [ref=e85] [cursor=pointer]:
+                  - /url: https://go.clerk.com/components
+              - paragraph [ref=e91]: Development mode
+        - generic [ref=e13]:
+          - generic [ref=e14]:
+            - generic [ref=e19]: shadow-execution.log
+            - generic [ref=e20]: Shadow Ready
+          - generic [ref=e23]:
+            - paragraph [ref=e92]:
+              - generic [ref=e93]: 09:42:11.241
+              - generic [ref=e94]: "> loading migration.sql"
+            - paragraph [ref=e95]:
+              - generic [ref=e96]: 09:42:11.698
+              - generic [ref=e97]: ✓ schema analyzed
+            - paragraph [ref=e98]:
+              - generic [ref=e99]: 09:42:12.044
+              - generic [ref=e100]: "✓ estimated runtime: 3.8s"
+            - paragraph [ref=e101]:
+              - generic [ref=e102]: 09:42:12.971
+              - generic [ref=e103]: "✓ rollback risk: low"
+            - paragraph [ref=e104]:
+              - generic [ref=e105]: 09:42:13.418
+              - generic [ref=e106]: ✓ provisioning shadow cluster
+            - paragraph [ref=e107]:
+              - generic [ref=e108]: 09:42:16.882
+              - generic [ref=e109]: ✓ shadow execution completed
+            - paragraph [ref=e110]:
+              - generic [ref=e111]: 09:42:17.156
+              - generic [ref=e112]: "✓ prediction accuracy: 98%"
+            - paragraph [ref=e113]:
+              - generic [ref=e114]: 09:42:17.603
+              - generic [ref=e115]: ✓ learned outcome stored
+            - paragraph [ref=e138]:
+              - generic [ref=e139]: 09:42:39.104
+              - generic [ref=e140]: "> waiting for next migration..."
+            - paragraph [ref=e141]:
+              - generic [ref=e143]: ▌
+      - paragraph [ref=e24]: By continuing, you agree to our Terms of Service and Privacy Policy.
+  - button "Open Next.js Dev Tools" [ref=e127] [cursor=pointer]
+  - alert [ref=e25]

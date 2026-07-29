@@ -1,0 +1,78 @@
+- generic [active] [ref=f18e1]:
+  - generic [ref=f18e2]:
+    - generic [ref=f18e5]:
+      - list [ref=f18e7]:
+        - listitem [ref=f18e8]:
+          - button "Migration Oracle Workspace" [ref=f18e9]:
+            - generic [ref=f18e13]:
+              - generic [ref=f18e14]: Migration Oracle
+              - generic [ref=f18e15]: Workspace
+      - generic [ref=f18e19]:
+        - list [ref=f18e21]:
+          - listitem [ref=f18e22]:
+            - link "Overview" [ref=f18e23] [cursor=pointer]:
+              - /url: /dashboard
+        - generic [ref=f18e30]:
+          - generic [ref=f18e31]: Migrations
+          - list [ref=f18e32]:
+            - listitem [ref=f18e33]:
+              - link "Current Migration" [ref=f18e34] [cursor=pointer]:
+                - /url: /dashboard/migrations/current
+            - listitem [ref=f18e40]:
+              - link "Past Migrations" [ref=f18e41] [cursor=pointer]:
+                - /url: /dashboard/migrations/history
+        - generic [ref=f18e47]:
+          - generic [ref=f18e48]: Intelligence
+          - list [ref=f18e49]:
+            - listitem [ref=f18e50]:
+              - link "Agent Memory" [ref=f18e51] [cursor=pointer]:
+                - /url: /dashboard/memory
+      - generic [ref=f18e61]:
+        - generic [ref=f18e63]:
+          - generic [ref=f18e64]: Owner identity
+          - textbox "Owner identity" [disabled]:
+            - /placeholder: Loading…
+          - paragraph [ref=f18e65]: Scopes runs and memories. Set manually when auth is off.
+        - list [ref=f18e67]:
+          - listitem [ref=f18e68]:
+            - button "O Operator" [ref=f18e69]:
+              - generic [ref=f18e70]: O
+              - generic [ref=f18e72]: Operator
+        - list [ref=f18e78]:
+          - listitem [ref=f18e79]:
+            - button "Settings" [ref=f18e80]
+      - button "Toggle Sidebar" [ref=f18e85]
+    - main [ref=f18e86]:
+      - generic [ref=f18e87]:
+        - generic [ref=f18e88]:
+          - button "Toggle Sidebar" [ref=f18e89]
+          - separator [ref=f18e91]
+        - button "Sign out" [ref=f18e93]
+      - generic [ref=f18e94]:
+        - generic [ref=f18e95]:
+          - generic [ref=f18e96]:
+            - heading "Overview" [level=1] [ref=f18e97]
+            - paragraph [ref=f18e98]: Your migration environment.
+          - button "New Migration" [ref=f18e99]
+        - region "System Health" [ref=f18e100]:
+          - paragraph [ref=f18e102]: System Health
+          - generic [ref=f18e103]:
+            - generic [ref=f18e104]:
+              - generic [ref=f18e106]: API
+              - generic [ref=f18e107]: …
+            - generic [ref=f18e108]:
+              - generic [ref=f18e110]: Shadow
+              - generic [ref=f18e111]: unknown
+            - generic [ref=f18e112]:
+              - generic [ref=f18e114]: Predictions
+              - generic [ref=f18e115]: unknown
+        - region "Latest Migration" [ref=f18e116]:
+          - paragraph [ref=f18e118]: Latest Migration
+          - paragraph [ref=f18e119]: Loading…
+        - region "Accuracy" [ref=f18e120]:
+          - generic [ref=f18e121]:
+            - paragraph [ref=f18e122]: Accuracy
+            - link "Memory →" [ref=f18e123] [cursor=pointer]:
+              - /url: /dashboard/memory
+          - paragraph [ref=f18e124]: No graded runs yet.
+  - button "Open Next.js Dev Tools" [ref=f18e130] [cursor=pointer]

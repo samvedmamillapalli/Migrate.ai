@@ -11,7 +11,12 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.tenancy import assert_run_access, resolve_owner_identity, session_owner
+from app.auth.tenancy import (
+    assert_run_access,
+    auth_enforced,
+    resolve_owner_identity,
+    session_owner,
+)
 from app.core.exceptions import NotFoundError, ValidationError
 from app.core.logging import get_logger
 from app.database.models import MigrationRunStatus
@@ -85,8 +90,6 @@ async def list_runs(
 ) -> MigrationRunListResponse:
     # Auth mode always scopes to the session owner (ignore client filter).
     scoped = session_owner(request) if request else None
-    from app.auth.tenancy import auth_enforced, session_owner
-
     if auth_enforced():
         owner_identity = scoped
     excluded = (
@@ -128,8 +131,6 @@ async def get_accuracy_metrics(
     session, or an explicit query param), so this card and "Recent" never show
     two different populations side by side without saying so.
     """
-    from app.auth.tenancy import auth_enforced, session_owner
-
     scoped = session_owner(request) if request else None
     if auth_enforced():
         owner_identity = scoped

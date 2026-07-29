@@ -990,6 +990,7 @@ export function CurrentMigrationWorkspace() {
   const [creating, setCreating] = React.useState(false)
   const [discovering, setDiscovering] = React.useState(false)
   const [predicting, setPredicting] = React.useState(false)
+  const predictAbortRef = React.useRef<AbortController | null>(null)
   const [approving, setApproving] = React.useState<ApprovalDecision | null>(null)
   const [startingShadow, setStartingShadow] = React.useState(false)
   const [abortingShadow, setAbortingShadow] = React.useState(false)
@@ -1283,6 +1284,8 @@ export function CurrentMigrationWorkspace() {
     setProgress(null)
     setStatusMessage("Running prediction pipeline…")
     let timer: ReturnType<typeof setInterval> | null = null
+    const controller = new AbortController()
+    predictAbortRef.current = controller
     try {
       const tick = async () => {
         try {
@@ -1295,19 +1298,28 @@ export function CurrentMigrationWorkspace() {
       }
       await tick()
       timer = setInterval(() => void tick(), 400)
-      const updated = await predictRun(run.id)
+      const updated = await predictRun(run.id, { signal: controller.signal })
       await tick()
       setRun(updated)
       await refreshExtras(updated)
       setStatusMessage("Prediction ready — review the assessment, then approve.")
     } catch (err) {
-      const msg = errorMessage(err)
-      setError(msg)
-      setStatusMessage(msg)
+      if (controller.signal.aborted) {
+        setStatusMessage("Prediction stopped.")
+      } else {
+        const msg = errorMessage(err)
+        setError(msg)
+        setStatusMessage(msg)
+      }
     } finally {
       if (timer) clearInterval(timer)
+      predictAbortRef.current = null
       setPredicting(false)
     }
+  }
+
+  function handleStopPredicting() {
+    predictAbortRef.current?.abort()
   }
 
   async function handleApprove(decision: ApprovalDecision) {
@@ -1782,6 +1794,15 @@ export function CurrentMigrationWorkspace() {
                       ? "Predicting…"
                       : "Run prediction"}
                   </Button>
+                  {predicting ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleStopPredicting}
+                    >
+                      Stop
+                    </Button>
+                  ) : null}
                   <p className="text-muted-foreground text-sm">
                     Estimates duration, storage, and risk.
                   </p>

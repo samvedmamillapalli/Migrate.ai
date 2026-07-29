@@ -55,7 +55,7 @@ async def fetch_accuracy_metrics(
               'open_source_documented_incident',
               'synthetic_seed'
             )
-        AND (:owner_identity IS NULL OR mr.owner_identity = :owner_identity)
+        AND (CAST(:owner_identity AS STRING) IS NULL OR mr.owner_identity = CAST(:owner_identity AS STRING))
     """
 
     scalar_trend = (
@@ -144,7 +144,7 @@ async def fetch_accuracy_metrics(
                 LEFT JOIN approvals a ON a.migration_run_id = mr.id
                 WHERE mr.owner_identity != :corpus_owner
                   AND mr.run_kind NOT IN ('chaos', 'debug')
-                  AND (:owner_identity IS NULL OR mr.owner_identity = :owner_identity)
+                  AND (CAST(:owner_identity AS STRING) IS NULL OR mr.owner_identity = CAST(:owner_identity AS STRING))
                 GROUP BY 1
                 """
             ),

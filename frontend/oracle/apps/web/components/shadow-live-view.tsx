@@ -9,6 +9,7 @@ import {
   formatRelativeTime,
   mapCostStrip,
   mapExecutePanel,
+  mapRowSamplePanel,
   mapSchemaDiff,
   mapShadowEventLog,
   mapShadowLifecycleRail,
@@ -16,6 +17,7 @@ import {
   type ComparisonRow,
   type LifecycleRailStage,
   type MigrationRun,
+  type RowSampleTableView,
   type RunExtras,
 } from "@/lib/api"
 
@@ -360,6 +362,127 @@ function SchemaDiffPanel({ shadow }: { shadow: RunExtras["shadow"] }) {
   )
 }
 
+/** Reuses the row-sample tables (real column list + real row counts) but
+ * never touches `.rows` — this panel exists specifically to show table shape
+ * without exposing any value, sampled or otherwise. */
+function tableShapesFromShadow(shadow: RunExtras["shadow"]): RowSampleTableView[] {
+  const panel = mapRowSamplePanel(shadow)
+  const byName = new Map<string, RowSampleTableView>()
+  for (const t of panel.before) byName.set(t.requestedName, t)
+  for (const t of panel.after) byName.set(t.requestedName, t) // after wins once ready
+  return Array.from(byName.values())
+}
+
+const SHAPE_ROWS_SHOWN = 6
+
+/** One table, rendered as a column header row + a row-number column with
+ * every interior cell masked — real shape, no values, forming the visible
+ * "header row + row-index column" outline of the table. */
+function TableShapeCard({ table }: { table: RowSampleTableView }) {
+  const label = table.tableName ?? table.requestedName
+  const total = table.totalRowCount ?? table.sampledCount
+  const shown = Math.min(SHAPE_ROWS_SHOWN, Math.max(total, 0))
+  const hasMore = total > shown
+
+  return (
+    <div className="border-border/50 rounded-md border p-3">
+      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
+        <p className="font-mono text-xs text-foreground/90">{label}</p>
+        <span className="text-muted-foreground/60 font-mono text-[10px] tabular-nums">
+          {total} row{total === 1 ? "" : "s"} × {table.columns.length} column
+          {table.columns.length === 1 ? "" : "s"}
+        </span>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-max border-collapse font-mono text-[10.5px]">
+          <thead>
+            <tr>
+              <th className="border-border/40 text-muted-foreground/50 border-b px-2 py-1 text-left align-bottom font-normal">
+                #
+              </th>
+              {table.columns.map((c) => (
+                <th
+                  key={c.name}
+                  className="border-border/40 text-foreground/85 border-b px-2 py-1 text-left align-bottom whitespace-nowrap"
+                >
+                  {c.name}
+                  <span className="text-muted-foreground/45 block font-normal">
+                    {c.type || "?"}
+                    {c.nullable === false ? " · not null" : ""}
+                  </span>
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {shown === 0 ? (
+              <tr>
+                <td
+                  colSpan={table.columns.length + 1}
+                  className="text-muted-foreground/60 px-2 py-2"
+                >
+                  No rows.
+                </td>
+              </tr>
+            ) : (
+              Array.from({ length: shown }, (_, idx) => (
+                <tr key={idx} className="border-border/20 border-b last:border-b-0">
+                  <td className="text-muted-foreground/50 px-2 py-1 tabular-nums">
+                    {idx + 1}
+                  </td>
+                  {table.columns.map((c) => (
+                    <td key={c.name} className="text-muted-foreground/25 px-2 py-1">
+                      ·
+                    </td>
+                  ))}
+                </tr>
+              ))
+            )}
+            {hasMore ? (
+              <tr>
+                <td className="text-muted-foreground/40 px-2 py-1">…</td>
+                {table.columns.map((c) => (
+                  <td key={c.name} className="text-muted-foreground/25 px-2 py-1">
+                    ·
+                  </td>
+                ))}
+              </tr>
+            ) : null}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+/** Table shape — real column names and real row counts, never a real value.
+ * Distinct from the full row-samples panel (which shows real shadow-tier
+ * values with its own disclaimer): this is a quick "what does this table
+ * actually look like" glance that shows no data at all, not even synthetic. */
+function TableShapePanel({ shadow }: { shadow: RunExtras["shadow"] }) {
+  const tables = tableShapesFromShadow(shadow).filter(
+    (t) => !t.error && t.columns.length > 0
+  )
+  if (tables.length === 0) {
+    return (
+      <p className="text-muted-foreground/60 font-mono text-[11px] tracking-tight">
+        Table shape appears once a schema snapshot is captured.
+      </p>
+    )
+  }
+  return (
+    <div className="space-y-3">
+      {tables.map((t) => (
+        <TableShapeCard key={t.requestedName} table={t} />
+      ))}
+      <p className="text-muted-foreground/55 text-[10px] leading-relaxed">
+        Real column names and real row counts from the shadow cluster. Cell
+        values are never shown here.
+      </p>
+    </div>
+  )
+}
+
 export type ShadowLiveViewProps = {
   run: MigrationRun
   extras: RunExtras
@@ -486,6 +609,13 @@ export function ShadowLiveView({
           Schema diff
         </p>
         <SchemaDiffPanel shadow={shadow} />
+      </div>
+
+      <div className="space-y-2 border-t border-border/60 pt-4">
+        <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
+          Table shape
+        </p>
+        <TableShapePanel shadow={shadow} />
       </div>
 
       <div className="space-y-2 border-t border-border/60 pt-4">

@@ -1,0 +1,162 @@
+- generic [active] [ref=f4e1]:
+  - generic [ref=f4e2]:
+    - generic [ref=f4e5]:
+      - list [ref=f4e7]:
+        - listitem [ref=f4e8]:
+          - button "Migration Oracle Workspace" [ref=f4e9]:
+            - generic [ref=f4e13]:
+              - generic [ref=f4e14]: Migration Oracle
+              - generic [ref=f4e15]: Workspace
+      - generic [ref=f4e19]:
+        - list [ref=f4e21]:
+          - listitem [ref=f4e22]:
+            - link "Overview" [ref=f4e23] [cursor=pointer]:
+              - /url: /dashboard
+        - generic [ref=f4e30]:
+          - generic [ref=f4e31]: Migrations
+          - list [ref=f4e32]:
+            - listitem [ref=f4e33]:
+              - link "Current Migration" [ref=f4e34] [cursor=pointer]:
+                - /url: /dashboard/migrations/current
+            - listitem [ref=f4e40]:
+              - link "Past Migrations" [ref=f4e41] [cursor=pointer]:
+                - /url: /dashboard/migrations/history
+        - generic [ref=f4e47]:
+          - generic [ref=f4e48]: Intelligence
+          - list [ref=f4e49]:
+            - listitem [ref=f4e50]:
+              - link "Agent Memory" [ref=f4e51] [cursor=pointer]:
+                - /url: /dashboard/memory
+      - generic [ref=f4e61]:
+        - generic [ref=f4e63]:
+          - generic [ref=f4e64]: Owner identity
+          - textbox "Owner identity" [ref=f4e65]:
+            - /placeholder: e.g. samved
+            - text: claude-agent+clerk_test@migration-oracle.dev
+          - paragraph [ref=f4e66]: Scoped to your signed-in account. Hover to see the raw id.
+        - list [ref=f4e68]:
+          - listitem [ref=f4e69]:
+            - button "Operator Operator claude-agent+clerk_test@migration-oracle.dev" [ref=f4e116]:
+              - img "Operator" [ref=f4e117]
+              - generic [ref=f4e73]:
+                - generic [ref=f4e74]: Operator
+                - generic [ref=f4e118]: claude-agent+clerk_test@migration-oracle.dev
+        - list [ref=f4e79]:
+          - listitem [ref=f4e80]:
+            - button "Settings" [ref=f4e81]
+      - button "Toggle Sidebar" [ref=f4e86]
+    - main [ref=f4e87]:
+      - generic [ref=f4e88]:
+        - generic [ref=f4e89]:
+          - button "Toggle Sidebar" [ref=f4e90]
+          - separator [ref=f4e92]
+        - button "Sign out" [ref=f4e94]
+      - generic [ref=f4e95]:
+        - generic [ref=f4e96]:
+          - navigation "Breadcrumb" [ref=f4e97]:
+            - link "Current Migration" [ref=f4e98] [cursor=pointer]:
+              - /url: /dashboard/migrations/current
+            - generic [ref=f4e99]: /
+            - generic [ref=f4e100]: Shadow Execution
+          - generic [ref=f4e101]:
+            - generic [ref=f4e102]:
+              - heading "Shadow Execution" [level=1] [ref=f4e103]
+              - paragraph [ref=f4e119]: run 9d4b6482·created 3m ago
+              - paragraph [ref=f4e212]: "Shadow status: destroyed"
+            - generic [ref=f4e120]: Completed
+        - region "Controls" [ref=f4e123]:
+          - heading "Controls" [level=2] [ref=f4e124]
+          - paragraph [ref=f4e217]: Finished.
+        - region "Row samples" [ref=f4e127]:
+          - heading "Row samples" [level=2] [ref=f4e129]
+          - paragraph [ref=f4e130]: Sample rows from the disposable shadow cluster. Synthetic data at the large scale tier — not your production data.
+          - paragraph [ref=f4e131]: Row sample capture was unavailable for this run (connection issue, timeout, or the migration didn't reference a known table). This doesn't affect the migration result.
+        - region "Live" [ref=f4e132]:
+          - heading "Live" [level=2] [ref=f4e133]
+          - generic [ref=f4e134]:
+            - generic [ref=f4e135]:
+              - paragraph [ref=f4e136]: Replay of a real recorded run
+              - paragraph [ref=f4e137]: 5/5
+            - list [ref=f4e138]:
+              - listitem [ref=f4e139]:
+                - generic [ref=f4e143]:
+                  - paragraph [ref=f4e144]: Provision
+                  - paragraph [ref=f4e145]: 4.1s
+              - listitem [ref=f4e146]:
+                - generic [ref=f4e150]:
+                  - paragraph [ref=f4e151]: Seed
+                  - paragraph [ref=f4e152]: 6.3s
+              - listitem [ref=f4e153]:
+                - generic [ref=f4e157]:
+                  - paragraph [ref=f4e158]: Execute
+                  - paragraph [ref=f4e159]: 4.7s
+              - listitem [ref=f4e160]:
+                - generic [ref=f4e164]:
+                  - paragraph [ref=f4e165]: Measure
+                  - paragraph
+              - listitem [ref=f4e167]:
+                - generic [ref=f4e170]:
+                  - paragraph [ref=f4e171]: Teardown
+                  - paragraph [ref=f4e172]: 3.2s
+            - generic [ref=f4e213]:
+              - paragraph [ref=f4e216]: Cluster destroyed — mo-9d4b648235d04b4b no longer exists.
+              - paragraph [ref=f4e218]: torn down 13s ago — no ongoing cost.
+            - generic [ref=f4e219]:
+              - generic [ref=f4e220]: Measured
+              - generic [ref=f4e221]: 4.7s
+              - generic [ref=f4e222]: 0.0 MB
+              - generic [ref=f4e223]: 0 jobs
+              - generic [ref=f4e224]: succeeded
+            - generic [ref=f4e175]:
+              - paragraph [ref=f4e176]: Pred → actual
+              - generic [ref=f4e177]:
+                - generic [ref=f4e178]:
+                  - term [ref=f4e179]: Duration
+                  - definition [ref=f4e180]: pred 16s→actual 4.7s
+                  - generic [ref=f4e225]: within band
+                - generic [ref=f4e181]:
+                  - term [ref=f4e182]: Storage
+                  - definition [ref=f4e183]: pred 7.0 MB→actual 0.0 MB
+                  - generic [ref=f4e226]: within band
+                - generic [ref=f4e184]:
+                  - term [ref=f4e185]: Rollback
+                  - definition [ref=f4e186]: pred low→actual low
+                  - generic [ref=f4e227]: within band
+            - generic [ref=f4e187]:
+              - paragraph [ref=f4e188]: Schema diff
+              - paragraph [ref=f4e189]: Schema diff appears once before/after snapshots are captured (measure stage).
+            - generic [ref=f4e190]:
+              - paragraph [ref=f4e191]: Table shape
+              - paragraph [ref=f4e192]: Table shape appears once a schema snapshot is captured.
+            - generic [ref=f4e193]:
+              - paragraph [ref=f4e194]: Event log
+              - paragraph [ref=f4e195]: No events recorded yet.
+        - region "Result" [ref=f4e228]:
+          - heading "Result" [level=2] [ref=f4e229]
+          - generic [ref=f4e230]:
+            - generic [ref=f4e231]:
+              - term [ref=f4e232]: Duration
+              - definition [ref=f4e233]: 4.7s
+            - generic [ref=f4e234]:
+              - term [ref=f4e235]: Storage
+              - definition [ref=f4e236]: 0.0 MB
+            - generic [ref=f4e237]:
+              - term [ref=f4e238]: Success
+              - definition [ref=f4e239]: "yes"
+            - generic [ref=f4e240]:
+              - term [ref=f4e241]: Grade
+              - definition [ref=f4e242]: "1.000"
+            - generic [ref=f4e243]:
+              - term [ref=f4e244]: Class
+              - definition [ref=f4e245]: clean_ok
+        - link "← Current Migration" [ref=f4e197] [cursor=pointer]:
+          - /url: /dashboard/migrations/current
+  - button "Open Next.js Dev Tools" [ref=f4e111] [cursor=pointer]
+  - alert [ref=f4e115]
+  - generic [ref=f4e198]:
+    - button "Keyless prompt" [expanded] [ref=f4e199] [cursor=pointer]:
+      - generic [ref=f4e204]: You've created your first user!
+    - generic [ref=f4e208]:
+      - paragraph [ref=f4e210]: Head to the dashboard to customize authentication settings, view user info, and explore more features.
+      - link "Configure your application" [ref=f4e211] [cursor=pointer]:
+        - /url: https://dashboard.clerk.com/apps/claim?token=n69pjw7g6bubd89h7auh2epg8lqco4oqtvb5kxqd&return_url=http%3A%2F%2Flocalhost%3A3000%2Fdashboard%2Fmigrations%2Fcurrent%2Fshadow

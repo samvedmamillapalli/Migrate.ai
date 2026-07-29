@@ -1,0 +1,289 @@
+- generic [active] [ref=f21e1]:
+  - generic [ref=f21e2]:
+    - generic [ref=f21e5]:
+      - list [ref=f21e7]:
+        - listitem [ref=f21e8]:
+          - button "Migration Oracle Workspace" [ref=f21e9]:
+            - generic [ref=f21e13]:
+              - generic [ref=f21e14]: Migration Oracle
+              - generic [ref=f21e15]: Workspace
+      - generic [ref=f21e19]:
+        - list [ref=f21e21]:
+          - listitem [ref=f21e22]:
+            - link "Overview" [ref=f21e23] [cursor=pointer]:
+              - /url: /dashboard
+        - generic [ref=f21e30]:
+          - generic [ref=f21e31]: Migrations
+          - list [ref=f21e32]:
+            - listitem [ref=f21e33]:
+              - link "Current Migration" [ref=f21e34] [cursor=pointer]:
+                - /url: /dashboard/migrations/current
+            - listitem [ref=f21e40]:
+              - link "Past Migrations" [ref=f21e41] [cursor=pointer]:
+                - /url: /dashboard/migrations/history
+        - generic [ref=f21e47]:
+          - generic [ref=f21e48]: Intelligence
+          - list [ref=f21e49]:
+            - listitem [ref=f21e50]:
+              - link "Agent Memory" [ref=f21e51] [cursor=pointer]:
+                - /url: /dashboard/memory
+      - generic [ref=f21e61]:
+        - generic [ref=f21e63]:
+          - generic [ref=f21e64]: Owner identity
+          - textbox "Owner identity" [ref=f21e114]:
+            - /placeholder: e.g. samved
+            - text: claude-agent+clerk_test@migration-oracle.dev
+          - paragraph [ref=f21e65]: Scoped to your signed-in account. Hover to see the raw id.
+        - list [ref=f21e67]:
+          - listitem [ref=f21e68]:
+            - button "Operator Operator claude-agent+clerk_test@migration-oracle.dev" [ref=f21e115]:
+              - img "Operator" [ref=f21e116]
+              - generic [ref=f21e72]:
+                - generic [ref=f21e73]: Operator
+                - generic [ref=f21e117]: claude-agent+clerk_test@migration-oracle.dev
+        - list [ref=f21e78]:
+          - listitem [ref=f21e79]:
+            - button "Settings" [ref=f21e80]
+      - button "Toggle Sidebar" [ref=f21e85]
+    - main [ref=f21e86]:
+      - generic [ref=f21e87]:
+        - generic [ref=f21e88]:
+          - button "Toggle Sidebar" [ref=f21e89]
+          - separator [ref=f21e91]
+        - button "Sign out" [ref=f21e93]
+      - generic [ref=f21e94]:
+        - generic [ref=f21e95]:
+          - link "← Back to Overview" [ref=f21e96] [cursor=pointer]:
+            - /url: /dashboard
+          - link "Past Migrations →" [ref=f21e97] [cursor=pointer]:
+            - /url: /dashboard/migrations/history
+        - generic [ref=f21e98]:
+          - generic [ref=f21e99]:
+            - generic [ref=f21e100]:
+              - heading "Current Migration" [level=1] [ref=f21e101]
+              - paragraph [ref=f21e102]: Waiting for a migration…
+            - generic [ref=f21e118]:
+              - generic [ref=f21e119]: Failed
+              - paragraph [ref=f21e122]: 7m ago
+          - generic [ref=f21e123]:
+            - list [ref=f21e124]:
+              - listitem [ref=f21e125]:
+                - generic [ref=f21e126]: Create
+              - listitem [ref=f21e127]:
+                - generic [ref=f21e128]: →
+                - generic [ref=f21e129]: Predict
+              - listitem [ref=f21e130]:
+                - generic [ref=f21e131]: →
+                - generic [ref=f21e132]: Approve
+              - listitem [ref=f21e133]:
+                - generic [ref=f21e134]: →
+                - generic [ref=f21e135]: Shadow
+              - listitem [ref=f21e136]:
+                - generic [ref=f21e137]: →
+                - generic [ref=f21e138]: Grade
+              - listitem [ref=f21e139]:
+                - generic [ref=f21e140]: →
+                - generic [ref=f21e141]: Remember
+            - generic [ref=f21e142]:
+              - link "Full detail & model traces" [ref=f21e143] [cursor=pointer]:
+                - /url: /dashboard/migrations/a47a7aa1-9fbe-4c34-bb9d-b8fa4d2679bc
+              - link "Shadow execution" [ref=f21e144] [cursor=pointer]:
+                - /url: /dashboard/migrations/current/shadow
+        - region "1. Attach your database" [ref=f21e235]:
+          - heading "1. Attach your database" [level=2] [ref=f21e237]
+          - generic [ref=f21e238]:
+            - generic [ref=f21e239]: Connected — schema succeeded
+            - button "Schema details (2 tables)" [ref=f21e242]:
+              - generic [ref=f21e243]: ▸
+              - text: Schema details (2 tables)
+        - region "2. Migration" [ref=f21e244]:
+          - heading "2. Migration" [level=2] [ref=f21e246]
+          - button "View migration SQL (migration_a47a7aa1.sql)" [ref=f21e249]:
+            - generic [ref=f21e250]: ▸
+            - text: View migration SQL (migration_a47a7aa1.sql)
+        - region "Assessment" [ref=f21e251]:
+          - heading "Assessment" [level=2] [ref=f21e253]
+          - generic [ref=f21e254]:
+            - generic [ref=f21e255]:
+              - generic [ref=f21e256]:
+                - paragraph [ref=f21e257]: Policy
+                - paragraph [ref=f21e258]: Allow
+              - generic [ref=f21e259]:
+                - paragraph [ref=f21e260]: Risk
+                - paragraph [ref=f21e261]: low
+              - generic [ref=f21e262]:
+                - paragraph [ref=f21e263]: Confidence
+                - paragraph [ref=f21e264]: 72%
+            - generic [ref=f21e265]:
+              - generic [ref=f21e266]:
+                - term [ref=f21e267]: Duration
+                - definition [ref=f21e268]: 16s
+              - generic [ref=f21e269]:
+                - term [ref=f21e270]: Storage
+                - definition [ref=f21e271]: 7.5 MB
+              - generic [ref=f21e272]:
+                - term [ref=f21e273]: Rollback
+                - definition [ref=f21e274]: low
+            - paragraph [ref=f21e275]: This change is safe to run and is expected to complete quickly on the shadow cluster. It works by scanning every existing row in the users table to build a new searchable structure for the username column, which takes a short but non-zero amount of time proportional to the 100,000 rows present. The uniqueness requirement means the build will fail if any two rows share the same username value, so duplicate data is the one thing that could cause this to error out rather than succeed. A closely matched past synthetic run on the same scale tier measured about 14.5 seconds, which gives reasonable confidence in the estimate here.
+            - generic [ref=f21e276]:
+              - paragraph [ref=f21e277]: Recommendation
+              - paragraph [ref=f21e278]: Apply the unique index directly during a low-traffic window, monitoring the backfill job as it runs.
+              - paragraph [ref=f21e279]: This migration is straightforward and policy allows it, but the uniqueness constraint is the one thing that can cause a hard failure rather than a slow one. If any two users share a username today, the entire index build will be rejected instantly and no index will be created. The backfill itself is fast and CockroachDB handles it online, so the main preparation work is a duplicate-data audit before you run anything. Running off-peak is still worthwhile because the backfill competes for I/O, and actively watching the job status prevents you from assuming success when the build may have silently failed and left an invalid index behind.
+            - button "Show details" [ref=f21e281]
+        - region "Learning" [ref=f21e282]:
+          - heading "Learning" [level=2] [ref=f21e284]
+          - generic [ref=f21e286]:
+            - paragraph [ref=f21e288]: Learning from 5 similar runs
+            - button "View" [ref=f21e289]
+        - region "Approval" [ref=f21e290]:
+          - heading "Approval" [level=2] [ref=f21e292]
+          - generic [ref=f21e293]:
+            - paragraph [ref=f21e294]: This run was cancelled or failed. Approval is closed.
+            - generic [ref=f21e295]:
+              - paragraph [ref=f21e296]: Recorded decision
+              - paragraph [ref=f21e297]: proceed·user_3H96IPMRcG0I2hX7AfeR1Htxq7L
+        - region "Shadow" [ref=f21e298]:
+          - heading "Shadow" [level=2] [ref=f21e300]
+          - generic [ref=f21e301]:
+            - generic [ref=f21e302]:
+              - paragraph [ref=f21e303]: Replay of a real recorded run
+              - paragraph [ref=f21e304]: 5/5
+            - list [ref=f21e305]:
+              - listitem [ref=f21e306]:
+                - generic [ref=f21e310]:
+                  - paragraph [ref=f21e311]: Provision
+                  - paragraph [ref=f21e312]: 5.2s
+              - listitem [ref=f21e313]:
+                - generic [ref=f21e317]:
+                  - paragraph [ref=f21e318]: Seed
+                  - paragraph
+              - listitem [ref=f21e319]:
+                - generic [ref=f21e323]:
+                  - paragraph [ref=f21e324]: Execute
+                  - paragraph
+              - listitem [ref=f21e325]:
+                - generic [ref=f21e329]:
+                  - paragraph [ref=f21e330]: Measure
+                  - paragraph
+              - listitem [ref=f21e331]:
+                - generic [ref=f21e334]:
+                  - paragraph [ref=f21e335]: Teardown
+                  - paragraph
+            - generic [ref=f21e337]:
+              - paragraph [ref=f21e338]: Cluster destroyed — mo-a47a7aa19fbe4c34 no longer exists.
+              - paragraph [ref=f21e339]: torn down 2m ago — no ongoing cost.
+            - generic [ref=f21e340]:
+              - paragraph [ref=f21e341]: Pred → actual
+              - generic [ref=f21e342]:
+                - generic [ref=f21e343]:
+                  - term [ref=f21e344]: Duration
+                  - definition [ref=f21e345]: pred 16s→actual —
+                - generic [ref=f21e346]:
+                  - term [ref=f21e347]: Storage
+                  - definition [ref=f21e348]: pred 7.5 MB→actual —
+                - generic [ref=f21e349]:
+                  - term [ref=f21e350]: Rollback
+                  - definition [ref=f21e351]: pred low→actual —
+            - generic [ref=f21e352]:
+              - paragraph [ref=f21e353]: Schema diff
+              - paragraph [ref=f21e354]: Schema diff appears once before/after snapshots are captured (measure stage).
+            - generic [ref=f21e355]:
+              - paragraph [ref=f21e356]: Event log
+              - generic [ref=f21e357]:
+                - paragraph [ref=f21e358]: 12:55:29 PM status → destroying
+                - paragraph [ref=f21e359]: 12:55:31 PM status → destroyed
+                - paragraph [ref=f21e360]: 12:55:33 PM status → destroyed · teardown_ms=1692
+            - generic [ref=f21e361]:
+              - button "Watch live" [ref=f21e362]
+              - link "Open full page" [ref=f21e363] [cursor=pointer]:
+                - /url: /dashboard/migrations/current/shadow
+        - region "Outcome" [ref=f21e364]:
+          - heading "Outcome" [level=2] [ref=f21e366]
+          - generic [ref=f21e369]:
+            - generic [ref=f21e370]:
+              - term [ref=f21e371]: Duration
+              - definition [ref=f21e372]:
+                - paragraph [ref=f21e373]: 16s→—
+            - generic [ref=f21e374]:
+              - term [ref=f21e375]: Storage
+              - definition [ref=f21e376]:
+                - paragraph [ref=f21e377]: 7.5 MB→—
+            - generic [ref=f21e378]:
+              - term [ref=f21e379]: Rollback
+              - definition [ref=f21e380]:
+                - paragraph [ref=f21e381]: low→—
+  - button "Open Next.js Dev Tools" [ref=f21e110] [cursor=pointer]
+  - alert [ref=f21e145]
+  - dialog "Shadow cluster visualization" [ref=f21e146]:
+    - banner [ref=f21e147]:
+      - generic [ref=f21e148]:
+        - paragraph [ref=f21e149]: Shadow visualization
+        - paragraph [ref=f21e150]: run a47a7aa1
+      - generic [ref=f21e151]:
+        - button "Min" [ref=f21e152]
+        - button "Close" [ref=f21e153]
+    - generic [ref=f21e154]:
+      - generic [ref=f21e156]:
+        - paragraph [ref=f21e157]: Shadow
+        - button "SQL" [ref=f21e158]
+      - generic [ref=f21e159]:
+        - generic [ref=f21e160]:
+          - paragraph [ref=f21e161]: Replay of a real recorded run
+          - paragraph [ref=f21e162]: 5/5
+        - list [ref=f21e163]:
+          - listitem [ref=f21e164]:
+            - generic [ref=f21e168]:
+              - paragraph [ref=f21e169]: Provision
+              - paragraph [ref=f21e170]: 5.2s
+          - listitem [ref=f21e171]:
+            - generic [ref=f21e175]:
+              - paragraph [ref=f21e176]: Seed
+              - paragraph
+          - listitem [ref=f21e178]:
+            - generic [ref=f21e182]:
+              - paragraph [ref=f21e183]: Execute
+              - paragraph
+          - listitem [ref=f21e185]:
+            - generic [ref=f21e189]:
+              - paragraph [ref=f21e190]: Measure
+              - paragraph
+          - listitem [ref=f21e192]:
+            - generic [ref=f21e195]:
+              - paragraph [ref=f21e196]: Teardown
+              - paragraph
+        - generic [ref=f21e382]:
+          - paragraph [ref=f21e383]: Cluster destroyed — mo-a47a7aa19fbe4c34 no longer exists.
+          - paragraph [ref=f21e384]: torn down 2m ago — no ongoing cost.
+        - generic [ref=f21e200]:
+          - paragraph [ref=f21e201]: Pred → actual
+          - generic [ref=f21e202]:
+            - generic [ref=f21e203]:
+              - term [ref=f21e204]: Duration
+              - definition [ref=f21e205]: pred 16s→actual —
+            - generic [ref=f21e206]:
+              - term [ref=f21e207]: Storage
+              - definition [ref=f21e208]: pred 7.5 MB→actual —
+            - generic [ref=f21e209]:
+              - term [ref=f21e210]: Rollback
+              - definition [ref=f21e211]: pred low→actual —
+        - generic [ref=f21e212]:
+          - paragraph [ref=f21e213]: Schema diff
+          - paragraph [ref=f21e214]: Schema diff appears once before/after snapshots are captured (measure stage).
+        - generic [ref=f21e215]:
+          - paragraph [ref=f21e216]: Event log
+          - generic [ref=f21e385]:
+            - paragraph [ref=f21e386]: 12:55:29 PM status → destroying
+            - paragraph [ref=f21e387]: 12:55:31 PM status → destroyed
+            - paragraph [ref=f21e388]: 12:55:33 PM status → destroyed · teardown_ms=1692
+    - contentinfo [ref=f21e218]:
+      - link "Full shadow page" [ref=f21e219] [cursor=pointer]:
+        - /url: /dashboard/migrations/current/shadow
+      - link "Current migration" [ref=f21e220] [cursor=pointer]:
+        - /url: /dashboard/migrations/current
+  - generic [ref=f21e221]:
+    - button "Keyless prompt" [expanded] [ref=f21e222] [cursor=pointer]:
+      - generic [ref=f21e227]: You've created your first user!
+    - generic [ref=f21e231]:
+      - paragraph [ref=f21e233]: Head to the dashboard to customize authentication settings, view user info, and explore more features.
+      - link "Configure your application" [ref=f21e234] [cursor=pointer]:
+        - /url: https://dashboard.clerk.com/apps/claim?token=n69pjw7g6bubd89h7auh2epg8lqco4oqtvb5kxqd&return_url=http%3A%2F%2Flocalhost%3A3000%2Fdashboard%2Fmigrations%2Fcurrent

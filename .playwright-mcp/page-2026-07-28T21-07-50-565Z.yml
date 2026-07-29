@@ -1,0 +1,15 @@
+- generic [active] [ref=f3e1]:
+  - main [ref=f3e2]:
+    - link "← Migration Oracle" [ref=f3e4] [cursor=pointer]:
+      - /url: /
+    - generic [ref=f3e7]:
+      - generic [ref=f3e13]:
+        - generic [ref=f3e14]:
+          - generic [ref=f3e19]: shadow-execution.log
+          - generic [ref=f3e20]: Shadow Ready
+        - paragraph [ref=f3e24]:
+          - generic [ref=f3e25]: 09:42:11.241
+          - generic [ref=f3e26]: "> loading migration.sql"
+      - paragraph [ref=f3e27]: By continuing, you agree to our Terms of Service and Privacy Policy.
+  - button "Open Next.js Dev Tools" [ref=f3e33] [cursor=pointer]
+  - alert [ref=f3e37]

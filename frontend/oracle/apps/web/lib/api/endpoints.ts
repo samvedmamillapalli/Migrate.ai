@@ -130,8 +130,11 @@ export function discoverSchema(runId: string, body: DiscoverSchemaRequest) {
   })
 }
 
-export function predictRun(runId: string) {
-  return api<MigrationRun>(`/runs/${runId}/predict`, { method: "POST" })
+export function predictRun(runId: string, opts?: { signal?: AbortSignal }) {
+  return api<MigrationRun>(`/runs/${runId}/predict`, {
+    method: "POST",
+    signal: opts?.signal,
+  })
 }
 
 export function getPipelineProgress(runId: string) {
