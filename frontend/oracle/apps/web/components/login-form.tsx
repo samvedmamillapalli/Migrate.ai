@@ -14,9 +14,9 @@ export function LoginForm({
 }: React.ComponentProps<"div">) {
   return (
     <div className={cn("flex w-full flex-col gap-4", className)} {...props}>
-      <Card className="bg-card overflow-hidden border-border/60 p-0 shadow-sm">
+      <Card className="border-border bg-surface overflow-hidden p-0 shadow-[0_1px_0_0_rgba(0,0,0,0.02)]">
         <CardContent className="grid p-0 md:grid-cols-[minmax(0,1fr)_minmax(0,1.05fr)]">
-          <div className="bg-card text-card-foreground flex flex-col justify-center px-6 py-8 sm:px-8 md:py-10">
+          <div className="bg-surface text-foreground flex flex-col justify-center px-6 py-8 sm:px-8 md:py-10">
             <SignIn
               routing="path"
               path="/login"
@@ -29,14 +29,14 @@ export function LoginForm({
               Don&apos;t have an account?{" "}
               <Link
                 href="/get-started"
-                className="text-foreground underline underline-offset-4"
+                className="text-primary font-medium underline underline-offset-4"
               >
                 Get started
               </Link>
             </p>
           </div>
 
-          <div className="bg-muted/40 border-border/50 relative hidden min-h-[28rem] border-l md:block">
+          <div className="bg-surface-tint border-border relative hidden min-h-[28rem] border-l md:block">
             <AuthTerminalPreview className="absolute inset-0" />
           </div>
         </CardContent>

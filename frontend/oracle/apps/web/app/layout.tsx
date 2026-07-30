@@ -1,4 +1,4 @@
-import { Geist, Geist_Mono } from "next/font/google"
+import { Bodoni_Moda, Geist, Geist_Mono } from "next/font/google"
 import { ClerkProvider } from "@clerk/nextjs"
 
 import "@workspace/ui/globals.css"
@@ -10,6 +10,13 @@ const geist = Geist({ subsets: ['latin'], variable: '--font-sans' })
 const fontMono = Geist_Mono({
   subsets: ["latin"],
   variable: "--font-mono",
+})
+
+const fontDisplay = Bodoni_Moda({
+  subsets: ["latin"],
+  variable: "--font-display",
+  weight: ["400", "500", "600", "700"],
+  style: ["normal", "italic"],
 })
 
 export default function RootLayout({
@@ -30,7 +37,13 @@ export default function RootLayout({
       <html
         lang="en"
         suppressHydrationWarning
-        className={cn("antialiased", fontMono.variable, "font-sans", geist.variable)}
+        className={cn(
+          "antialiased",
+          fontMono.variable,
+          "font-sans",
+          geist.variable,
+          fontDisplay.variable
+        )}
       >
         <body>
           <ThemeProvider>{children}</ThemeProvider>

@@ -4,8 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { Menu } from "lucide-react"
 
-import { ThemeToggle } from "@/components/theme-toggle"
-import { Button, buttonVariants } from "@workspace/ui/components/button"
+import { Button } from "@workspace/ui/components/button"
 import {
   Sheet,
   SheetContent,
@@ -16,12 +15,13 @@ import {
 import { cn } from "@workspace/ui/lib/utils"
 
 const NAV_LINKS = [
-  { href: "#how-it-works", label: "How It Works", anchor: true },
+  { href: "#how-it-works", label: "How it works", anchor: true },
   {
     href: "https://github.com/samvedmamillapalli/migration_oracle",
-    label: "GitHub",
+    label: "Github",
     external: true,
   },
+  { href: "#journey", label: "Our Journey", anchor: true },
 ] as const
 
 function BrandMark({ className }: { className?: string }) {
@@ -29,11 +29,11 @@ function BrandMark({ className }: { className?: string }) {
     <span
       aria-hidden
       className={cn(
-        "bg-foreground flex size-6 shrink-0 items-center justify-center rounded-md",
+        "flex size-6 shrink-0 items-center justify-center rounded-md bg-[#1f1b1a]",
         className
       )}
     >
-      <span className="bg-background size-2 rounded-[2px]" />
+      <span className="size-2 rounded-[2px] bg-[#fffcf9]" />
     </span>
   )
 }
@@ -61,45 +61,32 @@ export function Navbar() {
       className={cn(
         "sticky top-0 z-50 w-full transition-[background-color,border-color,backdrop-filter] duration-200",
         scrolled
-          ? "border-border/60 bg-background/80 border-b backdrop-blur-md"
+          ? "border-[#1f1b1a]/8 bg-[#f8f5f1]/85 border-b backdrop-blur-md"
           : "border-transparent bg-transparent border-b"
       )}
     >
       <nav
         aria-label="Primary"
-        className="mx-auto flex h-[72px] w-full max-w-7xl items-center justify-between px-6 md:px-8"
+        className="mx-auto flex h-[72px] w-full max-w-6xl items-center justify-between px-6 md:px-8"
       >
         <Link
           href="/"
-          className="text-foreground flex items-center gap-2.5 font-medium tracking-tight transition-opacity duration-200 hover:opacity-90"
+          className="flex items-center gap-2.5 font-medium tracking-tight text-[#1f1b1a] transition-opacity duration-200 hover:opacity-90"
         >
           <BrandMark />
           <span className="text-sm md:text-[15px]">Migration Oracle</span>
         </Link>
 
-        <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-3 lg:gap-4 md:flex">
+        <div className="absolute left-1/2 hidden -translate-x-1/2 items-center gap-1 md:flex">
           {NAV_LINKS.map((link) => (
             <NavLink key={link.href} {...link} />
           ))}
         </div>
 
         <div className="hidden items-center gap-2 md:flex">
-          <ThemeToggle />
-          <Link
-            href="/login"
-            className={cn(
-              buttonVariants({ variant: "ghost", size: "sm" }),
-              "rounded-full px-4 transition-colors duration-200"
-            )}
-          >
-            Sign in
-          </Link>
           <Link
             href="/get-started"
-            className={cn(
-              buttonVariants({ variant: "default", size: "sm" }),
-              "rounded-full px-4 transition-colors duration-200"
-            )}
+            className="inline-flex h-9 items-center justify-center rounded-full bg-[#1f1b1a] px-4 text-sm font-medium text-[#fffcf9] transition-opacity hover:opacity-90"
           >
             Get Started
           </Link>
@@ -112,16 +99,19 @@ export function Navbar() {
                 type="button"
                 variant="ghost"
                 size="icon-sm"
-                className="rounded-full md:hidden"
+                className="rounded-full text-[#1f1b1a] md:hidden"
                 aria-label="Open menu"
               />
             }
           >
             <Menu />
           </SheetTrigger>
-          <SheetContent side="right" className="w-full gap-0 sm:max-w-xs">
-            <SheetHeader className="border-border/60 border-b">
-              <SheetTitle className="flex items-center gap-2.5">
+          <SheetContent
+            side="right"
+            className="w-full gap-0 border-[#1f1b1a]/10 bg-[#fffcf9] sm:max-w-xs"
+          >
+            <SheetHeader className="border-b border-[#1f1b1a]/10">
+              <SheetTitle className="flex items-center gap-2.5 text-[#1f1b1a]">
                 <BrandMark />
                 Migration Oracle
               </SheetTitle>
@@ -136,28 +126,11 @@ export function Navbar() {
                 />
               ))}
             </div>
-            <div className="border-border/60 mt-auto flex flex-col gap-2 border-t p-4">
-              <div className="mb-1 flex items-center justify-between px-1">
-                <span className="text-muted-foreground text-sm">Theme</span>
-                <ThemeToggle />
-              </div>
-              <Link
-                href="/login"
-                onClick={() => setMobileOpen(false)}
-                className={cn(
-                  buttonVariants({ variant: "ghost" }),
-                  "rounded-full transition-colors duration-200"
-                )}
-              >
-                Sign in
-              </Link>
+            <div className="mt-auto border-t border-[#1f1b1a]/10 p-4">
               <Link
                 href="/get-started"
                 onClick={() => setMobileOpen(false)}
-                className={cn(
-                  buttonVariants({ variant: "default" }),
-                  "rounded-full transition-colors duration-200"
-                )}
+                className="inline-flex h-11 w-full items-center justify-center rounded-full bg-[#1f1b1a] text-sm font-medium text-[#fffcf9]"
               >
                 Get Started
               </Link>
@@ -185,7 +158,7 @@ function NavLink({
   onNavigate?: () => void
 }) {
   const classes = cn(
-    "text-muted-foreground hover:text-foreground rounded-full px-3.5 py-2 text-sm transition-colors duration-200",
+    "rounded-full px-3.5 py-2 text-sm text-[#716b67] transition-colors duration-200 hover:text-[#1f1b1a]",
     className
   )
 

@@ -1,0 +1,49 @@
+---
+description: Migration Oracle Dream design theme (from framer-to-next-dream-main)
+alwaysApply: true
+---
+
+# Dream design theme
+
+Source of truth: `framer-to-next-dream-main` (ported into `frontend/oracle`).
+
+## Brand / marketing surfaces (light)
+
+Warm parchment + terracotta. Prefer semantic tokens, not raw hex.
+
+| Token | Role | Light value |
+| --- | --- | --- |
+| `background` | Page wash | `oklch(0.968 0.008 85)` |
+| `foreground` | Body ink | `oklch(0.245 0.008 40)` |
+| `primary` / `accent` | Terracotta CTA & accents | `oklch(0.4 0.135 25.8)` |
+| `primary-foreground` | Text on terracotta | `oklch(0.985 0.006 85)` |
+| `muted-foreground` | Secondary copy | `oklch(0.55 0.012 50)` |
+| `ink` | Near-black button fill | `oklch(0.22 0.006 40)` |
+| `ink-foreground` | Text on ink | `oklch(0.985 0.006 85)` |
+| `surface` | Cards / panels | `oklch(0.985 0.005 85)` |
+| `surface-tint` | Soft inset panels | `oklch(0.975 0.012 60)` |
+| `border` | Hairlines | `oklch(0.905 0.012 70)` |
+
+Defined in `frontend/oracle/packages/ui/src/styles/globals.css`.
+
+## Typography
+
+- Display: **Bodoni Moda** via `font-display` (headlines, hero, journal titles)
+- UI / body: existing sans (`--font-sans`)
+- Eyebrows: `eyebrow` utility (11px, 600, 0.14em, uppercase)
+- Italic emphasis in hero: `before` uses `text-primary italic`
+
+## Utilities
+
+- `dotted-rule` — terracotta dashed connectors
+- `animate-text-reveal` — hero mask wipe
+- `animate-rise` — fade/slide up
+- `animate-marquee` — infinite logo row (pause on `.group/marquee:hover`)
+
+## Auth pages exception
+
+`/login` and `/get-started` keep the **existing Clerk auth UI** (current dark shell + appearance). Do **not** restyle them to match the Dream marketing chrome unless explicitly asked.
+
+## Dashboard
+
+Dashboard stays on the **dark** theme tokens (`.dark`). Marketing routes force light via `LandingTheme`.
