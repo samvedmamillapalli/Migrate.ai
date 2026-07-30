@@ -155,6 +155,11 @@ class ModelTraceAttempt(BaseModel):
     latency_ms: float | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    # Populated only for tool-use traces (kind="blast_radius_investigation"):
+    # the real MCP tool calls made during this turn — {name, arguments,
+    # result_text, is_error} — so a claim in the trace can be checked against
+    # what the tool actually returned, not just the model's prose.
+    tool_calls: list[dict[str, Any]] | None = None
 
 
 class ModelTrace(BaseModel):

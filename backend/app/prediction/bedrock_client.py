@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
+from time import perf_counter
 from abc import ABC, abstractmethod
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 from botocore.exceptions import BotoCoreError, ClientError
@@ -14,6 +18,42 @@ from app.aws.exceptions import AwsConfigurationError, AwsError
 from app.core.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+@dataclass
+class ToolUseCall:
+    """One real tool call made during a `converse_with_tools` loop, and its
+    real result — the receipts a ModelTrace needs (see ModelTraceAttempt.tool_calls)."""
+
+    name: str
+    arguments: dict[str, Any]
+    result_text: str
+    is_error: bool
+
+
+@dataclass
+class ToolUseTurn:
+    """One Converse round-trip within a tool-use loop — mirrors one 'attempt'
+    in the existing ModelTrace shape, but a tool-use call is multi-turn, so a
+    full run produces a list of these instead of a single (text, latency) pair."""
+
+    raw_text: str
+    tool_calls: list[ToolUseCall]
+    latency_ms: float
+    input_tokens: int | None
+    output_tokens: int | None
+    stop_reason: str | None
+
+
+@dataclass
+class ToolUseResult:
+    final_text: str
+    turns: list[ToolUseTurn] = field(default_factory=list)
+    hit_call_budget: bool = False
+
+    @property
+    def all_tool_calls(self) -> list[ToolUseCall]:
+        return [call for turn in self.turns for call in turn.tool_calls]
 
 
 class BedrockAccessError(AwsError):
@@ -40,6 +80,31 @@ class BedrockClient(ABC):
         model_id: str | None = None,
     ) -> str:
         """Return model text expected to contain a JSON object."""
+
+    @abstractmethod
+    async def converse_with_tools(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        tools: list[dict[str, Any]],
+        tool_executor: Callable[[str, dict[str, Any]], Awaitable[tuple[str, bool]]],
+        model_id: str | None = None,
+        max_tool_calls: int = 8,
+        max_turns: int = 12,
+    ) -> ToolUseResult:
+        """Run a bounded Bedrock Converse tool-use loop.
+
+        ``tools``: Bedrock Converse ``toolConfig.tools`` shape (a list of
+        ``{"toolSpec": {"name", "description", "inputSchema": {"json": ...}}}``).
+        ``tool_executor(name, arguments) -> (result_text, is_error)``: called
+        for every ``toolUse`` block the model emits; the caller owns what a
+        tool call actually does (e.g. dispatching to a live MCP session).
+        Stops when the model responds with no further tool use, or when
+        ``max_tool_calls`` total calls or ``max_turns`` round-trips is hit —
+        whichever comes first — never loops unbounded against a live
+        resource.
+        """
 
 
 _ACCESS_ERROR_CODES = frozenset(
@@ -236,6 +301,164 @@ class AwsBedrockClient(BedrockClient):
         assert last_error is not None
         raise BedrockInvocationError(str(last_error)) from last_error
 
+    async def converse_with_tools(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        tools: list[dict[str, Any]],
+        tool_executor: Callable[[str, dict[str, Any]], Awaitable[tuple[str, bool]]],
+        model_id: str | None = None,
+        max_tool_calls: int = 8,
+        max_turns: int = 12,
+    ) -> ToolUseResult:
+        requested = model_id or self.model_id
+        candidates = _inference_profile_candidates(
+            requested, self._settings.bedrock_region
+        )
+        messages: list[dict[str, Any]] = [
+            {"role": "user", "content": [{"text": user_prompt}]}
+        ]
+        turns: list[ToolUseTurn] = []
+        total_tool_calls = 0
+        hit_budget = False
+
+        for _ in range(max_turns):
+            kwargs: dict[str, Any] = dict(
+                system=[{"text": system_prompt}],
+                messages=messages,
+                inferenceConfig={"temperature": 0.0, "maxTokens": 4096},
+            )
+            if tools:
+                kwargs["toolConfig"] = {"tools": tools}
+
+            response = None
+            resolved_model_id = candidates[0]
+            last_error: Exception | None = None
+            started = perf_counter()
+            for mid in candidates:
+                try:
+                    # boto3's converse() is a blocking call; run it off the
+                    # event loop so the async tool_executor calls interleaved
+                    # between turns (a live MCP session) don't stall behind it.
+                    response = await asyncio.to_thread(
+                        self._client.converse, modelId=mid, **kwargs
+                    )
+                    resolved_model_id = mid
+                    break
+                except ClientError as exc:
+                    last_error = exc
+                    if _is_inference_profile_required(exc) and mid != candidates[-1]:
+                        continue
+                    if _is_access_error(exc):
+                        raise BedrockAccessError(
+                            _access_error_message(
+                                requested, self._settings.bedrock_region
+                            )
+                        ) from exc
+                    code = (exc.response.get("Error") or {}).get("Code", "ClientError")
+                    message = (exc.response.get("Error") or {}).get("Message", str(exc))
+                    raise BedrockInvocationError(
+                        f"Bedrock invocation failed ({code}): {message}"
+                    ) from exc
+                except BotoCoreError as exc:
+                    raise BedrockInvocationError(
+                        f"Bedrock transport error: {exc}"
+                    ) from exc
+            if response is None:
+                assert last_error is not None
+                raise BedrockInvocationError(str(last_error)) from last_error
+            latency_ms = round((perf_counter() - started) * 1000.0, 2)
+
+            usage = response.get("usage") or {}
+            self.last_usage = {
+                "inputTokens": usage.get("inputTokens"),
+                "outputTokens": usage.get("outputTokens"),
+                "totalTokens": usage.get("totalTokens"),
+                "model_id": resolved_model_id,
+            }
+            output_message = (response.get("output") or {}).get("message") or {}
+            content = output_message.get("content") or []
+            stop_reason = response.get("stopReason")
+
+            text_parts = [
+                c["text"] for c in content if isinstance(c, dict) and "text" in c
+            ]
+            tool_use_blocks = [
+                c["toolUse"] for c in content if isinstance(c, dict) and "toolUse" in c
+            ]
+
+            turn_calls: list[ToolUseCall] = []
+            if tool_use_blocks:
+                messages.append({"role": "assistant", "content": content})
+                tool_result_content: list[dict[str, Any]] = []
+                for block in tool_use_blocks:
+                    name = block.get("name", "")
+                    tool_input = block.get("input") or {}
+                    use_id = block.get("toolUseId")
+                    if total_tool_calls >= max_tool_calls:
+                        hit_budget = True
+                        result_text = (
+                            "Tool-call budget exhausted; no further tools may "
+                            "be called this investigation."
+                        )
+                        is_error = True
+                    else:
+                        total_tool_calls += 1
+                        try:
+                            result_text, is_error = await tool_executor(
+                                name, tool_input
+                            )
+                        except Exception as exc:  # noqa: BLE001 - a failed call is a finding, not a crash
+                            result_text = f"{type(exc).__name__}: {exc}"
+                            is_error = True
+                    turn_calls.append(
+                        ToolUseCall(
+                            name=name,
+                            arguments=tool_input,
+                            result_text=result_text,
+                            is_error=is_error,
+                        )
+                    )
+                    tool_result_content.append(
+                        {
+                            "toolResult": {
+                                "toolUseId": use_id,
+                                "content": [{"text": result_text}],
+                                "status": "error" if is_error else "success",
+                            }
+                        }
+                    )
+                messages.append({"role": "user", "content": tool_result_content})
+
+            turns.append(
+                ToolUseTurn(
+                    raw_text="\n".join(text_parts),
+                    tool_calls=turn_calls,
+                    latency_ms=latency_ms,
+                    input_tokens=usage.get("inputTokens"),
+                    output_tokens=usage.get("outputTokens"),
+                    stop_reason=stop_reason,
+                )
+            )
+
+            if not tool_use_blocks or hit_budget:
+                return ToolUseResult(
+                    final_text="\n".join(text_parts),
+                    turns=turns,
+                    hit_call_budget=hit_budget,
+                )
+
+        logger.warning(
+            "converse_with_tools hit max_turns without a final answer",
+            extra={"max_turns": max_turns, "total_tool_calls": total_tool_calls},
+        )
+        return ToolUseResult(
+            final_text=turns[-1].raw_text if turns else "",
+            turns=turns,
+            hit_call_budget=hit_budget,
+        )
+
 
 class MockBedrockClient(BedrockClient):
     """Deterministic fake for verification scripts and unit tests."""
@@ -365,6 +588,63 @@ class MockBedrockClient(BedrockClient):
             self.recommendation_payload if is_recommendation else self.prediction_payload
         )
         return json.dumps(payload)
+
+    async def converse_with_tools(
+        self,
+        *,
+        system_prompt: str,
+        user_prompt: str,
+        tools: list[dict[str, Any]],
+        tool_executor: Callable[[str, dict[str, Any]], Awaitable[tuple[str, bool]]],
+        model_id: str | None = None,
+        max_tool_calls: int = 8,
+        max_turns: int = 12,
+    ) -> ToolUseResult:
+        """Deterministic fake: calls the first offered tool once for real
+        (so an offline pipeline still exercises the tool_executor plumbing —
+        e.g. against the mock shadow provider), then returns a canned verdict."""
+        self.last_usage = {
+            "inputTokens": 200,
+            "outputTokens": 80,
+            "totalTokens": 280,
+            "model_id": model_id or "mock",
+        }
+        turn_calls: list[ToolUseCall] = []
+        if tools:
+            first_name = tools[0].get("toolSpec", {}).get("name", "")
+            if first_name:
+                result_text, is_error = await tool_executor(first_name, {})
+                turn_calls.append(
+                    ToolUseCall(
+                        name=first_name,
+                        arguments={},
+                        result_text=result_text,
+                        is_error=is_error,
+                    )
+                )
+        final = json.dumps(
+            {
+                "verdict": (
+                    "Mock investigation: no live model call was made, so this "
+                    "is a placeholder, not a real finding. Set a real "
+                    "BEDROCK_PREDICTION_MODEL_ID to get an actual investigation."
+                ),
+                "findings": [
+                    {"check": c.name, "result": c.result_text[:200], "consistent": not c.is_error}
+                    for c in turn_calls
+                ],
+                "anomalies": [],
+            }
+        )
+        turn = ToolUseTurn(
+            raw_text=final,
+            tool_calls=turn_calls,
+            latency_ms=1.0,
+            input_tokens=200,
+            output_tokens=80,
+            stop_reason="end_turn",
+        )
+        return ToolUseResult(final_text=final, turns=[turn], hit_call_budget=False)
 
 
 def _extract_converse_text(response: dict[str, Any]) -> str:

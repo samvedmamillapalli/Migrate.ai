@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     # Max cluster lifetime; the sweeper reaps active app-tagged clusters older
     # than this, catching leaks from processes that died before teardown.
     shadow_max_lifetime_minutes: int = Field(default=30, ge=1, le=1440)
+    # After execute+measure finish, the cluster is HELD (not torn down) for
+    # this long so the row-sample/schema-diff box stays inspectable — the
+    # sweeper reaps it once this window closes; a user can also end the hold
+    # immediately via POST /runs/{id}/shadow-cluster/teardown-now.
+    shadow_hold_minutes: int = Field(default=5, ge=1, le=60)
     # How long a caller will wait for a concurrency slot before giving up.
     shadow_slot_wait_timeout_seconds: int = Field(default=600, ge=1, le=3600)
     shadow_slot_poll_interval_seconds: float = Field(default=2.0, ge=0.1, le=60.0)

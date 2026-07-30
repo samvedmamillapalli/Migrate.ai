@@ -20,7 +20,15 @@ class ShadowClusterStatus(str, enum.Enum):
     """Lifecycle state of a disposable shadow cluster.
 
     The orchestration walks these states in order:
-    PROVISIONING -> READY -> SEEDING -> MIGRATING -> DESTROYING -> DESTROYED.
+    PROVISIONING -> READY -> SEEDING -> MIGRATING -> HOLDING -> DESTROYING ->
+    DESTROYED. HOLDING is a deliberate pause after execution/measurement
+    finishes: the cluster (and the before/after data already captured) stays
+    inspectable for a bounded window (``settings.shadow_hold_minutes``,
+    default 5) instead of being torn down immediately, so the row-sample/
+    schema-diff box has something real to show. Reaped automatically by the
+    existing orphan sweeper once ``expires_at`` passes (no separate mechanism
+    needed — the sweeper already reaps any active status past its expiry), or
+    torn down immediately via ``POST /runs/{id}/shadow-cluster/teardown-now``.
     Any stage may transition to FAILED, after which teardown still runs and the
     row lands in DESTROYED (or FAILED if teardown itself could not complete).
     """
@@ -29,6 +37,7 @@ class ShadowClusterStatus(str, enum.Enum):
     READY = "ready"
     SEEDING = "seeding"
     MIGRATING = "migrating"
+    HOLDING = "holding"
     DESTROYING = "destroying"
     DESTROYED = "destroyed"
     FAILED = "failed"
@@ -42,6 +51,7 @@ ACTIVE_SHADOW_STATUSES: frozenset[ShadowClusterStatus] = frozenset(
         ShadowClusterStatus.READY,
         ShadowClusterStatus.SEEDING,
         ShadowClusterStatus.MIGRATING,
+        ShadowClusterStatus.HOLDING,
         ShadowClusterStatus.DESTROYING,
     }
 )

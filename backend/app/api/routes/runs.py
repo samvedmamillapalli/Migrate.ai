@@ -29,6 +29,7 @@ from app.dependencies import (
     MigrationRunSvc,
     PredictionPipelineSvc,
     SchemaDiscoverySvc,
+    ShadowClusterSvc,
     WorkflowOrchestrationSvc,
     get_db_session,
 )
@@ -499,6 +500,50 @@ async def get_shadow_cluster(
     if run.shadow_cluster is None:
         raise NotFoundError(f"No shadow cluster recorded for MigrationRun {run_id}")
     return ShadowClusterResponse.from_orm(run.shadow_cluster)
+
+
+@router.post(
+    "/{run_id}/shadow-cluster/teardown-now",
+    response_model=ShadowClusterResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def teardown_shadow_cluster_now(
+    run_id: uuid.UUID,
+    service: ShadowClusterSvc,
+) -> ShadowClusterResponse:
+    """End a HOLDING cluster's inspection window immediately.
+
+    After execute+measure finish, the cluster is held (not destroyed) for
+    ``settings.shadow_hold_minutes`` so the row-sample/schema-diff box stays
+    populated — see app.lambdas.handlers.cleanup. This lets the user end that
+    hold early instead of waiting out the window or the sweeper. Idempotent:
+    calling it on an already-destroyed cluster just returns its current state.
+    """
+    from app.lambdas.handlers.cleanup import delete_shadow_secret
+    from app.lambdas.runtime import get_runtime
+    from app.shadow.factory import create_shadow_provider, provider_choice_for_name
+
+    shadow = await service.get_by_run(run_id)
+    if shadow is None:
+        raise NotFoundError(f"No shadow cluster recorded for MigrationRun {run_id}")
+
+    if shadow.status.value != "destroyed":
+        # Reconstruct the provider that actually *created* this cluster, not
+        # whatever SHADOW_PROVIDER is currently set to (see factory.py) — a
+        # global-setting mismatch here means calling destroy() against the
+        # wrong backend entirely (e.g. the real Cloud API for a cluster that
+        # only ever existed as a mock scratch database).
+        provider = create_shadow_provider(
+            provider_choice=provider_choice_for_name(shadow.provider)
+        )
+        try:
+            shadow = await service.teardown_now(shadow.id, provider=provider)
+        finally:
+            await provider.aclose()
+        if shadow.status.value == "destroyed":
+            await delete_shadow_secret(get_runtime(), run_id)
+
+    return ShadowClusterResponse.from_orm(shadow)
 
 
 @router.get("/{run_id}/shadow-cluster/stream")

@@ -1,8 +1,19 @@
-"""Cleanup Lambda — tear down shadow cluster and delete temporary secrets."""
+"""Cleanup Lambda — hold the shadow cluster for inspection, then (later) tear
+it down and delete temporary secrets.
+
+Historically this destroyed the cluster immediately. It now starts a bounded
+HOLD instead (see ShadowClusterStatus.HOLDING / settings.shadow_hold_minutes):
+the cluster — and the before/after row-sample + schema-diff data already
+captured during ExecuteMigration — stays inspectable for a few minutes rather
+than vanishing the instant measurement finishes. Actual teardown then happens
+one of two ways, both already-existing mechanisms with no new infra:
+  1. The orphan sweeper (already scheduled, already generic over any active
+     status past its expiry) reaps it once the hold window closes.
+  2. A user ends the hold early via POST /runs/{id}/shadow-cluster/teardown-now.
+"""
 
 from __future__ import annotations
 
-from time import perf_counter
 from typing import Any
 
 from app.core.logging import get_logger
@@ -29,124 +40,69 @@ def handler(event: dict[str, Any], context: Any = None) -> dict[str, Any]:
 async def _handle(event: dict[str, Any]) -> dict[str, Any]:
     run_id = parse_run_id(event)
     runtime = get_runtime()
-    provider = runtime.create_provider()
+    settings = runtime.settings
 
-    logger.info("Cleanup started")
+    logger.info("Cleanup (hold) started")
 
-    try:
+    async def _run(session):
+        shadow_service = ShadowClusterService(
+            repository=ShadowClusterRepository(session),
+            session=session,
+        )
+        shadow = await shadow_service.get_by_run(run_id)
+        if shadow is None:
+            logger.info("Cleanup: no shadow row; nothing to hold")
+            return {
+                "run_id": str(run_id),
+                "destroyed": True,
+                "status": "absent",
+                "idempotent": True,
+            }
 
-        async def _run(session):
-            shadow_service = ShadowClusterService(
-                repository=ShadowClusterRepository(session),
-                session=session,
-            )
-            shadow = await shadow_service.get_by_run(run_id)
-            if shadow is None:
-                logger.info("Cleanup: no shadow row; nothing to destroy")
-                await _delete_secret(runtime, run_id)
-                return {
-                    "run_id": str(run_id),
-                    "destroyed": True,
-                    "status": "absent",
-                    "idempotent": True,
-                }
-
-            if shadow.status == ShadowClusterStatus.DESTROYED:
-                await _delete_secret(runtime, run_id)
-                return {
-                    "run_id": str(run_id),
-                    "shadow_id": str(shadow.id),
-                    "destroyed": True,
-                    "status": shadow.status.value,
-                    "idempotent": True,
-                }
-
-            if shadow.status != ShadowClusterStatus.DESTROYING:
-                try:
-                    await shadow_service.transition(
-                        shadow.id,
-                        ShadowClusterStatus.DESTROYING,
-                    )
-                except Exception:  # noqa: BLE001 - continue teardown anyway
-                    logger.warning(
-                        "Cleanup could not transition to destroying",
-                        extra={
-                            "shadow_id": str(shadow.id),
-                            "status": shadow.status.value,
-                        },
-                    )
-
-            t0 = perf_counter()
-            try:
-                destroyed = await provider.destroy(
-                    cluster_id=shadow.cluster_id,
-                    cluster_name=shadow.cluster_name,
-                )
-            except Exception:
-                if runtime.observability is not None:
-                    await runtime.observability.record_cleanup_failed(
-                        run_id=str(run_id)
-                    )
-                raise
-
-            try:
-                await shadow_service.transition(
-                    shadow.id,
-                    ShadowClusterStatus.DESTROYED,
-                )
-                final_status = ShadowClusterStatus.DESTROYED.value
-            except Exception:  # noqa: BLE001
-                try:
-                    await shadow_service.transition(
-                        shadow.id,
-                        ShadowClusterStatus.FAILED,
-                    )
-                    final_status = ShadowClusterStatus.FAILED.value
-                except Exception:  # noqa: BLE001
-                    final_status = shadow.status.value
-                if runtime.observability is not None:
-                    await runtime.observability.record_cleanup_failed(
-                        run_id=str(run_id)
-                    )
-
-            await shadow_service.merge_timings(
-                shadow.id,
-                teardown_ms=round((perf_counter() - t0) * 1000.0, 1),
-            )
-            await _delete_secret(runtime, run_id)
+        if shadow.status in (
+            ShadowClusterStatus.DESTROYED,
+            ShadowClusterStatus.DESTROYING,
+            ShadowClusterStatus.HOLDING,
+        ):
+            # Already held, already being torn down, or already gone — a
+            # user's "delete now" or the sweeper may have already won the
+            # race. Idempotent no-op either way.
             return {
                 "run_id": str(run_id),
                 "shadow_id": str(shadow.id),
-                "destroyed": bool(destroyed),
-                "status": final_status,
-                "idempotent": False,
+                "destroyed": shadow.status == ShadowClusterStatus.DESTROYED,
+                "status": shadow.status.value,
+                "idempotent": True,
             }
 
-        try:
-            result = await with_session(runtime, _run)
-        except Exception as exc:
-            if runtime.observability is not None:
-                try:
-                    await runtime.observability.record_cleanup_failed(
-                        run_id=str(run_id)
-                    )
-                except Exception:  # noqa: BLE001
-                    pass
-            raise LambdaHandlerError(f"Cleanup failed for run_id={run_id}") from exc
-    finally:
-        await provider.aclose()
+        updated = await shadow_service.start_hold(
+            shadow.id, hold_minutes=settings.shadow_hold_minutes
+        )
+        return {
+            "run_id": str(run_id),
+            "shadow_id": str(shadow.id),
+            "destroyed": False,
+            "status": updated.status.value,
+            "expires_at": updated.expires_at.isoformat() if updated.expires_at else None,
+            "idempotent": False,
+        }
+
+    try:
+        result = await with_session(runtime, _run)
+    except Exception as exc:
+        raise LambdaHandlerError(f"Cleanup (hold) failed for run_id={run_id}") from exc
 
     logger.info(
-        "Cleanup completed",
-        extra={
-            "destroyed": result.get("destroyed"),
-            "status": result.get("status"),
-        },
+        "Cleanup (hold) completed",
+        extra={"status": result.get("status"), "expires_at": result.get("expires_at")},
     )
     return result
 
 
-async def _delete_secret(runtime, run_id) -> None:
+async def delete_shadow_secret(runtime, run_id) -> None:
+    """Shared with the teardown-now API route — called once the cluster is
+    actually destroyed (hold-start no longer deletes the secret, since a
+    live cluster held for inspection may still need it)."""
     secret_id = shadow_secret_name(run_id)
     try:
         await runtime.secrets.delete(secret_id)

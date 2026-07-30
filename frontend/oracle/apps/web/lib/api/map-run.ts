@@ -797,6 +797,11 @@ export function mapShadowLifecycleRail(
     cursor = migrateMs ? 3 : 2
   } else if (status === "destroying") {
     cursor = 4
+  } else if (status === "holding") {
+    // Execution + measurement are done; teardown is deliberately paused
+    // (see mapShadowHold) rather than pending — reads naturally as "current"
+    // on the teardown stage, which is exactly what's happening.
+    cursor = 4
   } else {
     cursor = 0 // provisioning | ready
   }
@@ -819,6 +824,35 @@ export function mapShadowLifecycleRail(
     else state = "pending"
     return { id, label: RAIL_LABELS[id], state, durationLabel: durationLabels[id] }
   })
+}
+
+export type ShadowHoldView = {
+  isHolding: boolean
+  expiresAt: string | null
+  /** null once expired/unknown — render "any moment now" rather than a negative countdown. */
+  secondsRemaining: number | null
+}
+
+/** The cluster (and the before/after data already captured) is deliberately
+ * kept alive for a bounded window after execute+measure finish — see
+ * ShadowClusterStatus.HOLDING. `now` is injectable for testing; callers
+ * re-derive this every tick (e.g. on a 1s interval) rather than computing
+ * `secondsRemaining` once, since it's a live countdown. */
+export function mapShadowHold(
+  shadow: ShadowCluster | null,
+  now: number = Date.now()
+): ShadowHoldView {
+  const isHolding = (shadow?.status || "").toLowerCase() === "holding"
+  const expiresAt = isHolding ? (shadow?.expires_at ?? null) : null
+  if (!expiresAt) {
+    return { isHolding, expiresAt: null, secondsRemaining: null }
+  }
+  const remainingMs = new Date(expiresAt).getTime() - now
+  return {
+    isHolding,
+    expiresAt,
+    secondsRemaining: remainingMs > 0 ? Math.round(remainingMs / 1000) : 0,
+  }
 }
 
 export type ExecutePanelView = {
@@ -949,6 +983,7 @@ export type RowSampleTableView = {
   sampledCount: number
   totalRowCount: number | null
   matchedByPk: boolean
+  primaryKey: string[]
   note: string | null
   error: string | null
 }
@@ -996,6 +1031,7 @@ function mapRowSampleTables(
       sampledCount: Number(t.sampled_count ?? rows.length),
       totalRowCount: t.total_row_count != null ? Number(t.total_row_count) : null,
       matchedByPk: Boolean(t.matched_by_pk),
+      primaryKey: Array.isArray(t.primary_key) ? (t.primary_key as unknown[]).map(String) : [],
       note: t.note != null ? String(t.note) : null,
       error: t.error != null ? String(t.error) : null,
     }
@@ -1050,6 +1086,174 @@ export function mapRowSamplePanel(shadow: ShadowCluster | null): RowSamplePanelV
     before: mapRowSampleTables(shadow.row_sample_before, diffTables),
     after: mapRowSampleTables(shadow.row_sample_after, diffTables),
   }
+}
+
+export type UnifiedDiffColumnView = {
+  name: string
+  type: string | null
+  nullable: boolean | null
+  diffKind: "added" | "removed" | "changed" | "unchanged"
+  isPrimaryKey: boolean
+}
+
+export type UnifiedDiffRowView = {
+  /** Primary-key value (or a full-row fallback key when there's no usable PK). */
+  key: string
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+  /** True when this exact key exists on both sides — required for cell-level diffing. */
+  matched: boolean
+}
+
+export type UnifiedTableDiffView = {
+  requestedName: string
+  tableName: string | null
+  primaryKey: string[]
+  matchedByPk: boolean
+  /** Every captured column, before/after-union, diff-classified. */
+  columns: UnifiedDiffColumnView[]
+  rows: UnifiedDiffRowView[]
+  totalRowCount: number | null
+  sampledCount: number
+  note: string | null
+  error: string | null
+}
+
+export type UnifiedDiffPanelView = {
+  status: RowSamplePanelStatus
+  message: string | null
+  scaleTier: string | null
+  tables: UnifiedTableDiffView[]
+}
+
+function rowMatchKey(row: Record<string, unknown>, pk: string[]): string {
+  if (pk.length === 0) return JSON.stringify(row)
+  return pk.map((k) => JSON.stringify(row[k])).join("::")
+}
+
+/**
+ * One table, one before→after box: merges what used to be three separate
+ * panels (structural diff, masked table shape, real row samples) into a
+ * single view model — one row array shared by both sides, so "before" and
+ * "after" are guaranteed aligned by the same key instead of two
+ * independently-ordered tables. This is what makes cell-level diffing
+ * (`isCellChanged` below) possible without a second matching pass.
+ */
+export function mapUnifiedTableDiff(shadow: ShadowCluster | null): UnifiedDiffPanelView {
+  const panel = mapRowSamplePanel(shadow)
+  if (panel.status !== "ready") {
+    return {
+      status: panel.status,
+      message: panel.message,
+      scaleTier: panel.scaleTier,
+      tables: [],
+    }
+  }
+
+  const byName = new Map<
+    string,
+    { before?: RowSampleTableView; after?: RowSampleTableView }
+  >()
+  for (const t of panel.before) {
+    byName.set(t.requestedName, { ...byName.get(t.requestedName), before: t })
+  }
+  for (const t of panel.after) {
+    byName.set(t.requestedName, { ...byName.get(t.requestedName), after: t })
+  }
+
+  const tables: UnifiedTableDiffView[] = Array.from(byName.entries()).map(
+    ([requestedName, { before, after }]) => {
+      const primary = after ?? before ?? null
+      if (!primary || primary.error) {
+        return {
+          requestedName,
+          tableName: primary?.tableName ?? null,
+          primaryKey: [],
+          matchedByPk: false,
+          columns: [],
+          rows: [],
+          totalRowCount: primary?.totalRowCount ?? null,
+          sampledCount: 0,
+          note: primary?.note ?? null,
+          error: primary?.error ?? "No data captured for this table.",
+        }
+      }
+
+      // Union of columns. `after` wins on metadata when both sides have the
+      // same column (it's the more current shape); a column only present
+      // `before` (removed) or only `after` (added) comes from that side.
+      const columnByName = new Map<string, RowSampleColumnView>()
+      for (const c of before?.columns ?? []) columnByName.set(c.name, c)
+      for (const c of after?.columns ?? []) columnByName.set(c.name, c)
+      const pk = after?.primaryKey ?? before?.primaryKey ?? []
+      const columns: UnifiedDiffColumnView[] = Array.from(columnByName.values()).map(
+        (c) => ({
+          name: c.name,
+          type: c.type,
+          nullable: c.nullable,
+          diffKind: c.diffKind,
+          isPrimaryKey: pk.includes(c.name),
+        })
+      )
+      const beforeRows = before?.rows ?? []
+      const afterRows = after?.rows ?? []
+      const beforeByKey = new Map(beforeRows.map((r) => [rowMatchKey(r, pk), r]))
+      const afterByKey = new Map(afterRows.map((r) => [rowMatchKey(r, pk), r]))
+      const orderedKeys: string[] = []
+      const seenKeys = new Set<string>()
+      for (const r of beforeRows) {
+        const k = rowMatchKey(r, pk)
+        if (!seenKeys.has(k)) {
+          seenKeys.add(k)
+          orderedKeys.push(k)
+        }
+      }
+      for (const r of afterRows) {
+        const k = rowMatchKey(r, pk)
+        if (!seenKeys.has(k)) {
+          seenKeys.add(k)
+          orderedKeys.push(k)
+        }
+      }
+      const rows: UnifiedDiffRowView[] = orderedKeys.map((k) => ({
+        key: k,
+        before: beforeByKey.get(k) ?? null,
+        after: afterByKey.get(k) ?? null,
+        matched: beforeByKey.has(k) && afterByKey.has(k),
+      }))
+
+      return {
+        requestedName,
+        tableName: primary.tableName,
+        primaryKey: pk,
+        matchedByPk: after?.matchedByPk ?? before?.matchedByPk ?? false,
+        columns,
+        rows,
+        totalRowCount: after?.totalRowCount ?? before?.totalRowCount ?? null,
+        sampledCount: Math.max(beforeRows.length, afterRows.length),
+        note: after?.note ?? before?.note ?? null,
+        error: null,
+      }
+    }
+  )
+
+  return { status: "ready", message: null, scaleTier: panel.scaleTier, tables }
+}
+
+/**
+ * A cell is only ever flagged changed for a matched row on an
+ * unchanged/changed column — added/removed columns already read as
+ * changed via the whole-column color, and unmatched rows have nothing on
+ * one side to compare against.
+ */
+export function isCellChanged(
+  row: UnifiedDiffRowView,
+  columnName: string,
+  diffKind: UnifiedDiffColumnView["diffKind"]
+): boolean {
+  if (diffKind !== "unchanged" && diffKind !== "changed") return false
+  if (!row.matched || !row.before || !row.after) return false
+  return JSON.stringify(row.before[columnName]) !== JSON.stringify(row.after[columnName])
 }
 
 export type CostStripView = {

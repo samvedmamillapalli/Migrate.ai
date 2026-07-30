@@ -29,7 +29,10 @@ ALLOWED_TRANSITIONS: dict[ShadowClusterStatus, frozenset[ShadowClusterStatus]] =
     ShadowClusterStatus.SEEDING: frozenset(
         {ShadowClusterStatus.MIGRATING, ShadowClusterStatus.DESTROYING}
     ),
-    ShadowClusterStatus.MIGRATING: frozenset({ShadowClusterStatus.DESTROYING}),
+    ShadowClusterStatus.MIGRATING: frozenset(
+        {ShadowClusterStatus.HOLDING, ShadowClusterStatus.DESTROYING}
+    ),
+    ShadowClusterStatus.HOLDING: frozenset({ShadowClusterStatus.DESTROYING}),
     ShadowClusterStatus.DESTROYING: frozenset(
         {ShadowClusterStatus.DESTROYED, ShadowClusterStatus.FAILED}
     ),
@@ -262,6 +265,65 @@ class ShadowClusterService:
             return updated
 
         return await with_txn_retry(_commit, on_retry=self._session.rollback)
+
+    async def start_hold(
+        self,
+        shadow_id: uuid.UUID,
+        *,
+        hold_minutes: int,
+    ) -> ShadowCluster:
+        """Pause teardown: hold the (still-live) cluster for inspection.
+
+        Sets status to HOLDING and shortens ``expires_at`` to
+        ``now + hold_minutes`` so the existing orphan sweeper — which already
+        reaps any active status past its expiry — tears it down automatically
+        once the window closes, with no separate mechanism needed. A user can
+        still end the hold immediately via ``teardown_now``.
+        """
+
+        async def _commit() -> ShadowCluster:
+            entity = await self._repository.get_by_id_or_raise(shadow_id)
+            previous = entity.status
+            if previous != ShadowClusterStatus.HOLDING:
+                self._validate_transition(previous, ShadowClusterStatus.HOLDING)
+                entity.status = ShadowClusterStatus.HOLDING
+            entity.expires_at = datetime.now(UTC) + timedelta(minutes=hold_minutes)
+            entity.event_log = _append_event(
+                entity.event_log,
+                status=entity.status.value,
+                stage_timings=entity.stage_timings,
+            )
+            updated = await self._repository.update(entity)
+            await self._session.commit()
+            await self._session.refresh(updated)
+            return updated
+
+        return await with_txn_retry(_commit, on_retry=self._session.rollback)
+
+    async def teardown_now(
+        self,
+        shadow_id: uuid.UUID,
+        *,
+        provider,
+    ) -> ShadowCluster:
+        """End a hold immediately: destroy the cluster and mark DESTROYED.
+
+        Idempotent — a cluster that's already DESTROYED (e.g. the sweeper won
+        the race) is returned as-is rather than erroring.
+        """
+        entity = await self._repository.get_by_id_or_raise(shadow_id)
+        if entity.status == ShadowClusterStatus.DESTROYED:
+            return entity
+
+        await self.transition(shadow_id, ShadowClusterStatus.DESTROYING)
+        try:
+            await provider.destroy(
+                cluster_id=entity.cluster_id, cluster_name=entity.cluster_name
+            )
+        except Exception:  # noqa: BLE001 - still record what we know, sweeper is backstop
+            await self.set_error(shadow_id, "teardown_now: provider.destroy failed")
+            return await self.transition(shadow_id, ShadowClusterStatus.FAILED)
+        return await self.transition(shadow_id, ShadowClusterStatus.DESTROYED)
 
     async def count_active(self) -> int:
         return await self._repository.count_active()

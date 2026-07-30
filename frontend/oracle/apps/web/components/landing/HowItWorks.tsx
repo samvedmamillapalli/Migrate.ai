@@ -33,7 +33,8 @@ export function HowItWorks() {
             CockroachDB
           </p>
           <p className="text-sm text-foreground/85">
-            Managed MCP / SHOW JOBS watch during shadow ExecuteMigration.
+            Live Managed MCP agent investigates each shadow migration&apos;s
+            actual blast radius, real tool calls and all.
           </p>
         </div>
         <div className="space-y-1">

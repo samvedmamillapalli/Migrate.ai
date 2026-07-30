@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -28,6 +29,70 @@ from app.database import DatabaseSessionManager
 from app.prediction.bedrock_client import MockBedrockClient
 
 logger = get_logger(__name__)
+
+# How often the in-process background sweep checks for HOLDING/expired shadow
+# clusters. In production this job is a separately-scheduled Lambda (SAM
+# template: ShadowSweeperFunction, every 15 minutes) — this loop exists so the
+# same reaping happens locally too, at a much tighter interval appropriate for
+# testing a several-minute hold window rather than waiting on a 15-minute
+# EventBridge schedule. Reuses the exact same ShadowClusterSweeper the
+# deployed Lambda uses; nothing here is a separate/parallel implementation.
+_SHADOW_SWEEP_INTERVAL_SECONDS = 30.0
+
+
+async def _shadow_sweep_loop(database, settings) -> None:
+    import contextlib
+    from datetime import UTC, datetime
+
+    from app.repositories.shadow_cluster_repository import ShadowClusterRepository
+    from app.services.shadow_cluster_service import ShadowClusterService
+    from app.shadow.factory import create_shadow_provider, provider_choice_for_name
+
+    while True:
+        await asyncio.sleep(_SHADOW_SWEEP_INTERVAL_SECONDS)
+        try:
+            async with contextlib.aclosing(database.session()) as gen:
+                session = await gen.__anext__()
+                service = ShadowClusterService(
+                    repository=ShadowClusterRepository(session), session=session
+                )
+
+                # Group by each row's *own* stored provider — not the current
+                # SHADOW_PROVIDER setting — since a mock-provider cluster
+                # (e.g. from verify-local, which only overrides the setting
+                # for its own duration) and a real ccloud_api cluster can both
+                # be active at once in this dev environment, and destroying
+                # one with the other's provider fails outright (confirmed:
+                # calling the real Cloud API DELETE with a mock database name
+                # 400s). Production deployments only ever use one
+                # SHADOW_PROVIDER, so this grouping is a no-op there.
+                expired = await service.list_expired_active(datetime.now(UTC))
+                by_provider: dict[str, list] = {}
+                for row in expired:
+                    by_provider.setdefault(row.provider, []).append(row)
+
+                reaped = 0
+                for provider_name, rows in by_provider.items():
+                    provider = create_shadow_provider(
+                        settings,
+                        provider_choice=provider_choice_for_name(provider_name),
+                    )
+                    try:
+                        for row in rows:
+                            await service.teardown_now(row.id, provider=provider)
+                            reaped += 1
+                    finally:
+                        await provider.aclose()
+
+                if reaped:
+                    logger.info(
+                        "Background shadow sweep reaped expired clusters",
+                        extra={"count": reaped},
+                    )
+        except asyncio.CancelledError:
+            raise
+        except Exception:  # noqa: BLE001 - one bad tick must not kill the loop
+            logger.warning("Background shadow sweep tick failed", exc_info=True)
 
 
 @asynccontextmanager
@@ -121,9 +186,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except Exception:
         logger.warning("Open-source corpus seed skipped (non-fatal)", exc_info=True)
 
+    sweep_task = asyncio.create_task(_shadow_sweep_loop(database, settings))
+
     try:
         yield
     finally:
+        sweep_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await sweep_task
         aws_clients: AwsClientFactory | None = app.state.aws_clients
         if aws_clients is not None:
             aws_clients.close()

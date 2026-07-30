@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from app.core.logging import get_logger
 from app.schema_analysis.connection import normalize_target_database_url
 from app.shadow.job_progress import run_with_job_progress
-from app.shadow.job_watch import mcp_tool_attribution, snapshot_schema_jobs
+from app.shadow.job_watch import snapshot_schema_jobs
 from app.shadow.schema_snapshot import (
     build_row_ids_for_matching,
     build_schema_diff,
@@ -76,6 +76,12 @@ async def _measure_storage_mb(conn) -> float | None:
         )
         return round(int(result.scalar_one()) / (1024 * 1024), 4)
     except Exception:  # noqa: BLE001
+        # `conn` is reused by the caller for `snapshot_schema_jobs` right
+        # after this — a failed statement here (this query is known to be
+        # unavailable on some CockroachDB Cloud tiers) leaves the connection
+        # in an aborted-transaction state otherwise, and the next query on
+        # it fails with InFailedSqlTransaction instead of running at all.
+        await conn.rollback()
         return None
 
 
@@ -135,7 +141,6 @@ async def run_migration(
                     "duration_seconds": duration,
                     "job_watch_count": len(jobs),
                     "job_progress_count": len(progress.observations),
-                    **mcp_tool_attribution(),
                 },
             )
             return ExecutionOutcome(
@@ -180,7 +185,6 @@ async def run_migration(
                 "storage_growth_mb": growth,
                 "job_watch_count": len(jobs),
                 "job_progress_count": len(progress.observations),
-                **mcp_tool_attribution(),
             },
         )
         return ExecutionOutcome(

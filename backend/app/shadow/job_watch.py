@@ -1,9 +1,12 @@
-"""Shadow job watch — MCP-compatible blast-radius theater.
+"""Shadow job watch — real SQL introspection, no MCP involved.
 
-The CockroachDB Managed MCP Server exposes cluster/job introspection to IDE
-agents (.cursor/mcp.json). During ExecuteMigration we poll the same job surface
-via SQL (SHOW JOBS / crdb_internal) so the demo can show live backfill duration
-and schema-change job state without a separate vector store or external monitor.
+During ExecuteMigration we poll the schema-change job surface via SQL
+(SHOW JOBS / crdb_internal) to show live backfill duration and schema-change
+job state. This is independent of, and complementary to, the real MCP-backed
+blast-radius investigation in app.shadow.blast_radius_investigator — this
+module used to also carry a hardcoded "Managed MCP Server" attribution string
+that never made an MCP call; that's gone, see
+docs/COCKROACHDB_MCP_INTEGRATION_PLAN.md §0 for why.
 """
 
 from __future__ import annotations
@@ -52,14 +55,3 @@ async def snapshot_schema_jobs(conn: AsyncConnection) -> list[dict[str, Any]]:
             extra={"error": f"{type(exc).__name__}: {exc}"},
         )
         return []
-
-
-def mcp_tool_attribution() -> dict[str, str]:
-    return {
-        "cockroachdb_tools": (
-            "Distributed Vector Indexing (memory retrieval) + "
-            "Managed MCP Server / SQL job watch (shadow blast-radius)"
-        ),
-        "mcp_endpoint": "https://cockroachlabs.cloud/mcp",
-        "runtime_watch": "SHOW JOBS on shadow cluster during ExecuteMigration",
-    }

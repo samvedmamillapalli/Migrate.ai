@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import uuid
 
+import sqlglot
+from sqlglot.errors import ParseError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from datetime import datetime, timezone
@@ -14,6 +16,24 @@ from app.debug.fake_migration import build_fake_schema_snapshot, pick_fake_migra
 from app.repositories.migration_run_repository import MigrationRunRepository
 
 logger = get_logger(__name__)
+
+# Same dialect/parse convention as app.policy.engine and app.shadow.schema_snapshot.
+_SQL_DIALECT = "postgres"
+
+
+def _statement_count(sql: str) -> int:
+    """Best-effort count of top-level SQL statements.
+
+    Unparseable SQL is treated as a single statement here — sqlglot's own
+    parse failure is a *different*, already-handled problem (surfaced by the
+    policy engine at predict time as a ``parse_failure`` finding), not this
+    check's job to report.
+    """
+    try:
+        statements = sqlglot.parse(sql, dialect=_SQL_DIALECT)
+    except ParseError:
+        return 1
+    return len([s for s in statements if s is not None])
 
 ALLOWED_STATUS_TRANSITIONS: dict[MigrationRunStatus, frozenset[MigrationRunStatus]] = {
     MigrationRunStatus.PENDING: frozenset(
@@ -71,6 +91,14 @@ class MigrationRunService:
         normalized_sql = migration_sql.strip()
         if not normalized_sql:
             raise ValidationError("migration_sql must not be empty")
+        if _statement_count(normalized_sql) > 1:
+            raise ValidationError(
+                "migration_sql must be a single SQL statement. CockroachDB "
+                "commits DDL per-statement, so if a later statement in a "
+                "multi-statement migration fails, the earlier ones stay "
+                "applied — a rollback can't be guaranteed. Submit one "
+                "statement per migration run."
+            )
         identity = (owner_identity or "anonymous").strip() or "anonymous"
         if len(identity) > 256:
             raise ValidationError("owner_identity must be at most 256 characters")

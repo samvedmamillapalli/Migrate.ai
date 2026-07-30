@@ -200,6 +200,14 @@ export function getShadowCluster(runId: string) {
   return api<ShadowCluster>(`/runs/${runId}/shadow-cluster`)
 }
 
+/** Ends a HOLDING cluster's inspection window immediately instead of
+ * waiting out the hold or the sweeper. Idempotent. */
+export function teardownShadowClusterNow(runId: string) {
+  return api<ShadowCluster>(`/runs/${runId}/shadow-cluster/teardown-now`, {
+    method: "POST",
+  })
+}
+
 export function getModelTraces(runId: string) {
   return api<ModelTracesResponse>(`/runs/${runId}/model-traces`)
 }

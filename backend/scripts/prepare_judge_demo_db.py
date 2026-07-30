@@ -126,6 +126,20 @@ def main() -> None:
             conn.execute(text(f"REVOKE CREATE ON DATABASE {engine.url.database} FROM {ROLE}"))
         except Exception:
             pass
+        # Database-level CREATE isn't the only write path: CockroachDB grants
+        # CREATE on the `public` schema to the implicit `public` role by
+        # default, so a freshly created database lets any user CREATE TABLE
+        # there unless this is revoked too. Without it, app.schema_analysis's
+        # own read-only probe (a real CREATE TABLE attempt) correctly rejects
+        # this "read-only" role as writable.
+        try:
+            conn.execute(text("REVOKE CREATE ON SCHEMA public FROM public"))
+        except Exception:
+            pass
+        try:
+            conn.execute(text(f"REVOKE CREATE ON SCHEMA public FROM {ROLE}"))
+        except Exception:
+            pass
 
         final_count = conn.execute(text(f"SELECT count(*) FROM {TABLE}")).scalar()
 

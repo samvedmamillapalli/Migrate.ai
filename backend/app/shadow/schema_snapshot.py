@@ -15,6 +15,7 @@ same open connection as the structural snapshot rather than a second one.
 
 from __future__ import annotations
 
+import asyncio
 import decimal
 import uuid
 from dataclasses import dataclass
@@ -39,6 +40,13 @@ _IGNORED_SCHEMAS = frozenset(
 )
 _SQL_DIALECT = "postgres"
 _ROW_SAMPLE_LIMIT_DEFAULT = 20
+# A freshly-provisioned shadow cluster can have a brief connection hiccup
+# (DNS/proxy/pod warmup) in the seconds right after creation — real cloud
+# infra, not a code bug. Mirrors the bounded-retry style already used for the
+# Cloud API itself (app.shadow.ccloud_api_provider), scaled down for a local
+# SQL connect instead of an HTTP call.
+_SNAPSHOT_MAX_RETRIES = 2
+_SNAPSHOT_BACKOFF_BASE_SECONDS = 1.0
 
 DiffKind = Literal["added", "removed", "changed", "unchanged"]
 
@@ -120,38 +128,61 @@ async def capture_shadow_snapshot(
     primary-key values instead of an arbitrary fresh LIMIT, so the same
     conceptual rows are comparable before/after.
 
-    Best-effort throughout: returns None only if the connection itself never
-    opens. Row-sample failure for an individual table never fails the whole
-    snapshot — it's recorded per-table instead (see ``_capture_row_samples``).
+    Best-effort throughout: returns None only if the connection never opens
+    even after retrying (see ``_SNAPSHOT_MAX_RETRIES`` — a fresh shadow
+    cluster can have a brief transient connection hiccup in the seconds
+    right after creation; retried before giving up rather than failing on
+    the first blip). Row-sample failure for an individual table never fails
+    the whole snapshot — it's recorded per-table instead (see
+    ``_capture_row_samples``).
     """
-    try:
-        async with SchemaAnalysisConnection(
-            connection_url,
-            statement_timeout_ms=statement_timeout_ms,
-            force_cockroach=True,
-        ) as target:
-            async with target.connection() as conn:
-                metadata: DatabaseMetadata = await SchemaAnalyzer().analyze_open_connection(
-                    conn, enforce_read_only=False
-                )
-                row_samples: dict[str, Any] | None = None
-                if sample_tables:
-                    row_samples = await _capture_row_samples(
-                        conn,
-                        metadata,
-                        sample_tables,
-                        limit=sample_limit,
-                        match_row_ids=match_row_ids,
+    attempt = 0
+    last_exc: Exception | None = None
+    while attempt <= _SNAPSHOT_MAX_RETRIES:
+        attempt += 1
+        try:
+            async with SchemaAnalysisConnection(
+                connection_url,
+                statement_timeout_ms=statement_timeout_ms,
+                force_cockroach=True,
+            ) as target:
+                async with target.connection() as conn:
+                    metadata: DatabaseMetadata = await SchemaAnalyzer().analyze_open_connection(
+                        conn, enforce_read_only=False
                     )
-        return ShadowSnapshot(
-            schema=metadata.model_dump(mode="json"), row_samples=row_samples
-        )
-    except Exception as exc:  # noqa: BLE001 - best-effort, never blocks migration
-        logger.warning(
-            "Shadow snapshot capture failed",
-            extra={"error": f"{type(exc).__name__}: {exc}"},
-        )
-        return None
+                    row_samples: dict[str, Any] | None = None
+                    if sample_tables:
+                        row_samples = await _capture_row_samples(
+                            conn,
+                            metadata,
+                            sample_tables,
+                            limit=sample_limit,
+                            match_row_ids=match_row_ids,
+                        )
+            return ShadowSnapshot(
+                schema=metadata.model_dump(mode="json"), row_samples=row_samples
+            )
+        except Exception as exc:  # noqa: BLE001 - best-effort, never blocks migration
+            last_exc = exc
+            if attempt <= _SNAPSHOT_MAX_RETRIES:
+                delay = _SNAPSHOT_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1))
+                logger.info(
+                    "Shadow snapshot capture attempt failed, retrying",
+                    extra={
+                        "attempt": attempt,
+                        "delay_seconds": delay,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    },
+                )
+                await asyncio.sleep(delay)
+    logger.warning(
+        "Shadow snapshot capture failed",
+        extra={
+            "attempts": attempt,
+            "error": f"{type(last_exc).__name__}: {last_exc}" if last_exc else "unknown",
+        },
+    )
+    return None
 
 
 # --- row sampling -----------------------------------------------------------

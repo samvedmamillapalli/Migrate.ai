@@ -12,7 +12,9 @@ import {
   mapRowSamplePanel,
   mapSchemaDiff,
   mapShadowEventLog,
+  mapShadowHold,
   mapShadowLifecycleRail,
+  teardownShadowClusterNow,
   useShadowStream,
   type ComparisonRow,
   type LifecycleRailStage,
@@ -209,6 +211,9 @@ function StagePanel({
   }
 
   // teardown
+  if (shadow.status === "holding") {
+    return <HoldingPanel shadow={shadow} />
+  }
   const isDone = shadow.status === "destroyed"
   return (
     <div className="space-y-1 font-mono text-xs tracking-tight">
@@ -225,6 +230,69 @@ function StagePanel({
       {shadow.error_message ? (
         <p className="text-[var(--oracle-risk)]">{shadow.error_message}</p>
       ) : null}
+    </div>
+  )
+}
+
+/** Execute+measure are done, but the cluster is deliberately held (not torn
+ * down) so the row-sample/schema-diff data stays inspectable — see
+ * ShadowClusterStatus.HOLDING. Ticks its own countdown locally (no extra
+ * polling needed) and lets the user end the hold immediately. */
+function HoldingPanel({ shadow }: { shadow: NonNullable<RunExtras["shadow"]> }) {
+  const [now, setNow] = React.useState(() => Date.now())
+  const [deleting, setDeleting] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [])
+
+  const hold = mapShadowHold(shadow, now)
+
+  const handleDeleteNow = async () => {
+    setDeleting(true)
+    setError(null)
+    try {
+      await teardownShadowClusterNow(shadow.migration_run_id)
+      // Deliberately leave `deleting` true — the next live-stream/poll tick
+      // will flip status to destroying/destroyed and this panel unmounts.
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete shadow cluster")
+      setDeleting(false)
+    }
+  }
+
+  const label =
+    hold.secondsRemaining == null
+      ? "any moment now"
+      : hold.secondsRemaining >= 60
+        ? `${Math.floor(hold.secondsRemaining / 60)}m ${hold.secondsRemaining % 60}s`
+        : `${hold.secondsRemaining}s`
+
+  return (
+    <div className="space-y-2 font-mono text-xs tracking-tight">
+      <p className="text-foreground/85">
+        {shadow.cluster_name || "The shadow cluster"} is still live — held for
+        inspection.
+      </p>
+      <p className="text-muted-foreground/70">
+        Auto-deletes in {label}. Look over the row samples and schema diff
+        above, then delete it early if you are done looking — no need to wait.
+      </p>
+      <button
+        type="button"
+        onClick={handleDeleteNow}
+        disabled={deleting}
+        className={cn(
+          "rounded-md border px-2.5 py-1 text-[11px] transition-colors",
+          "border-[var(--oracle-risk)]/40 text-[var(--oracle-risk)]",
+          "hover:bg-[var(--oracle-risk)]/10 disabled:opacity-50"
+        )}
+      >
+        {deleting ? "Deleting…" : "Delete now"}
+      </button>
+      {error ? <p className="text-[var(--oracle-risk)]">{error}</p> : null}
     </div>
   )
 }

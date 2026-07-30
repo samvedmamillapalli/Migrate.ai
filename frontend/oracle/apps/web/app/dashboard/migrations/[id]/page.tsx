@@ -230,6 +230,13 @@ function ExpandableText({
   )
 }
 
+type TraceToolCall = {
+  name?: unknown
+  arguments?: unknown
+  result_text?: unknown
+  is_error?: unknown
+}
+
 type TraceAttempt = {
   raw_response?: unknown
   parsed?: unknown
@@ -238,6 +245,10 @@ type TraceAttempt = {
   input_tokens?: unknown
   output_tokens?: unknown
   repair?: unknown
+  // Only present on tool-use traces (kind="blast_radius_investigation") —
+  // the real MCP tool calls made during this turn, so a claim in the trace
+  // can be checked against what the tool actually returned.
+  tool_calls?: TraceToolCall[] | null
 }
 
 function ModelTraceBlock({
@@ -338,6 +349,37 @@ function ModelTraceBlock({
                   label="parsed"
                   text={JSON.stringify(attempt.parsed, null, 2)}
                 />
+              ) : null}
+              {Array.isArray(attempt.tool_calls) && attempt.tool_calls.length > 0 ? (
+                <div className="space-y-1.5">
+                  <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.1em] uppercase">
+                    Live tool calls ({attempt.tool_calls.length})
+                  </p>
+                  {attempt.tool_calls.map((call, callIdx) => (
+                    <div
+                      key={callIdx}
+                      className="border-border/40 bg-muted/10 rounded border p-2"
+                    >
+                      <p className="font-mono text-[11px]">
+                        <span
+                          className={
+                            call.is_error
+                              ? "text-[var(--oracle-risk)]"
+                              : "text-[var(--oracle-verified)]"
+                          }
+                        >
+                          {String(call.name ?? "?")}
+                        </span>
+                        <span className="text-muted-foreground/60">
+                          ({JSON.stringify(call.arguments ?? {})})
+                        </span>
+                      </p>
+                      <p className="text-muted-foreground/70 mt-1 font-mono text-[10px] leading-relaxed break-all">
+                        {String(call.result_text ?? "")}
+                      </p>
+                    </div>
+                  ))}
+                </div>
               ) : null}
             </div>
           ))}
@@ -458,6 +500,9 @@ export default function MigrationRunDetailPage() {
   const predictionTrace = traces ? asRecord(traces.traces)?.prediction : null
   const recommendationTrace = traces
     ? asRecord(traces.traces)?.recommendation
+    : null
+  const investigationTrace = traces
+    ? asRecord(traces.traces)?.blast_radius_investigation
     : null
 
   if (loading && !run) {
@@ -599,11 +644,12 @@ export default function MigrationRunDetailPage() {
             <span className="text-foreground/85 font-mono text-xs">
               SHOW JOBS
             </span>{" "}
-            on the shadow cluster during ExecuteMigration — same job surface
-            Managed MCP uses for blast-radius watch.
+            on the shadow cluster during ExecuteMigration, plus — separately
+            — a real CockroachDB Managed MCP investigation with its own live
+            tool calls (see Model Traces below for the full call log).
           </p>
           {typeof stageTimings?.cockroachdb_tools === "string" ? (
-            <p className="text-muted-foreground/70 mb-3 font-mono text-[10px] tracking-tight">
+            <p className="text-muted-foreground/70 mb-3 text-xs leading-relaxed">
               {stageTimings.cockroachdb_tools}
             </p>
           ) : null}
@@ -788,7 +834,7 @@ export default function MigrationRunDetailPage() {
       </Section>
 
       <Section title="Model Traces">
-        {!predictionTrace && !recommendationTrace ? (
+        {!predictionTrace && !recommendationTrace && !investigationTrace ? (
           <p className="text-muted-foreground text-sm">
             No Bedrock model traces recorded for this run.
           </p>
@@ -804,6 +850,12 @@ export default function MigrationRunDetailPage() {
               <ModelTraceBlock
                 kind="Recommendation"
                 trace={asRecord(recommendationTrace) ?? {}}
+              />
+            ) : null}
+            {investigationTrace ? (
+              <ModelTraceBlock
+                kind="Blast-radius investigation (live CockroachDB MCP)"
+                trace={asRecord(investigationTrace) ?? {}}
               />
             ) : null}
           </div>
