@@ -18,6 +18,14 @@ EMBEDDING_STATUS_PENDING = "pending"
 EMBEDDING_STATUS_READY = "ready"
 EMBEDDING_STATUS_FAILED = "failed"
 
+# CockroachDB Distributed Vector Index names (Alembic m8h4e1f7a596). Both are
+# partial indexes on `embedding_status = 'ready'`; the scoped one additionally
+# carries `owner_identity` as a prefix column so tenant-scoped retrieval stays
+# on the index. Declared here (a dependency-free module) so both the repository
+# and app.memory.index_health can use them without an import cycle.
+VECTOR_INDEX_SCOPED = "ix_migration_memories_embedding_scoped"
+VECTOR_INDEX_READY = "ix_migration_memories_embedding_ready"
+
 DEFAULT_TITAN_MODEL_ID = "amazon.titan-embed-text-v2:0"
 # Documented example value for BEDROCK_EMBEDDING_MODEL_ID (.env.example / SAM).
 # Prefer settings.bedrock_embedding_model_id at runtime — do not invent another id.

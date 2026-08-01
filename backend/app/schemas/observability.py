@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -72,6 +72,90 @@ class MemoryListResponse(BaseModel):
     limit: int
     offset: int
     health: dict[str, Any]
+
+
+class MemorySearchRequest(BaseModel):
+    """Free-text semantic search over graded memories."""
+
+    query: str = Field(min_length=1, max_length=2000)
+    scope: Literal["mine", "corpus", "all"] = "all"
+    migration_type: str | None = None
+    scale_tier: str | None = None
+    min_similarity: float = Field(default=0.0, ge=0.0, le=1.0)
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class MemorySearchHit(BaseModel):
+    """One ranked memory. Carries the same integrity markers as the browse and
+    retrieval paths so a seeded open-source corpus entry can never be mistaken
+    for a real graded run."""
+
+    memory_id: uuid.UUID
+    migration_run_id: uuid.UUID
+    similarity_score: float
+    owner_identity: str
+    migration_type: str
+    scale_tier: str
+    migration_summary: str
+    lessons_learned: str
+    surprise_notes: str | None = None
+    outcome_class: str | None = None
+    execution_success: bool | None = None
+    predicted_duration_seconds: float | None = None
+    actual_duration_seconds: float | None = None
+    predicted_storage_mb: float | None = None
+    actual_storage_mb: float | None = None
+    scalar_accuracy_score: float | None = None
+    memory_origin: str | None = None
+    not_a_graded_run: bool = False
+    source_url: str | None = None
+    ui_label: str | None = None
+    created_at: datetime
+
+    @classmethod
+    def from_orm_memory(cls, memory: Any, similarity: float) -> MemorySearchHit:
+        integrity = integrity_fields(memory.grade_summary)
+        pred = memory.prediction_summary or {}
+        exe = memory.execution_summary or {}
+        grade = memory.grade_summary if isinstance(memory.grade_summary, dict) else {}
+        return cls(
+            memory_id=memory.id,
+            migration_run_id=memory.migration_run_id,
+            similarity_score=round(float(similarity), 6),
+            owner_identity=memory.owner_identity,
+            migration_type=memory.migration_type,
+            scale_tier=memory.scale_tier,
+            migration_summary=memory.migration_summary,
+            lessons_learned=memory.lessons_learned,
+            surprise_notes=memory.surprise_notes,
+            outcome_class=grade.get("outcome_class"),
+            execution_success=exe.get("success"),
+            predicted_duration_seconds=pred.get("estimated_duration_seconds"),
+            actual_duration_seconds=exe.get("actual_duration_seconds"),
+            predicted_storage_mb=pred.get("estimated_storage_mb"),
+            actual_storage_mb=exe.get("actual_storage_mb"),
+            scalar_accuracy_score=integrity["scalar_accuracy_score"],
+            memory_origin=integrity["integrity_kind"],
+            not_a_graded_run=integrity["not_a_graded_run"],
+            source_url=integrity["source_url"],
+            ui_label=integrity["ui_label"],
+            created_at=memory.created_at,
+        )
+
+
+class MemorySearchResponse(BaseModel):
+    query: str
+    scope: str
+    embedding_model_id: str | None = None
+    # Which CockroachDB vector index served this search, and how long it took.
+    # Surfaced deliberately: it makes the distributed vector index visible in
+    # the product rather than only claimed in a README. None means no query
+    # ran at all (e.g. scope="mine" with no authenticated owner) — never a
+    # name attached to a query that didn't execute.
+    index_used: str | None
+    took_ms: float
+    total: int
+    results: list[MemorySearchHit]
 
 
 class ShadowClusterResponse(BaseModel):

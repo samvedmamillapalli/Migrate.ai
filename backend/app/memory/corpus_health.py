@@ -122,6 +122,19 @@ async def fetch_corpus_health(session: AsyncSession) -> dict[str, Any]:
             "with embedding_status=ready"
         )
 
+    # Is the distributed vector index actually reachable by retrieval? This is
+    # the check that would have caught the Phase 10 defect (index created but
+    # structurally unusable) instead of it going unnoticed for a week.
+    from app.grading.config import get_grading_file
+    from app.memory.index_health import check_vector_index, vector_index_problems
+
+    try:
+        pool_size = get_grading_file().retrieval.candidate_pool_size
+    except Exception:  # noqa: BLE001 - health must not depend on config loading
+        pool_size = 20
+    vector_index = await check_vector_index(session, pool_size=pool_size)
+    problems.extend(vector_index_problems(vector_index))
+
     by_status = {str(row[0]): int(row[1]) for row in by_status_rows}
     return {
         # Empty store is not "healthy" for demo readiness — surface problems loudly.
@@ -153,6 +166,12 @@ async def fetch_corpus_health(session: AsyncSession) -> dict[str, Any]:
         "legacy_demo_corpus_owner_count": int(wrong_seed_identity or 0),
         "corpus_identity": CORPUS_OWNER_IDENTITY,
         "corpus_ready_count": int(corpus_ready or 0),
+        # True when the distributed vector index CAN serve retrieval. Whether
+        # the planner currently chooses it is a cost decision reported
+        # separately under "vector_index" — see app/memory/index_health.py for
+        # why conflating the two produces false alarms.
+        "vector_index_used": vector_index.get("usable"),
+        "vector_index": vector_index,
         "problems": problems,
     }
 

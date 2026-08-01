@@ -390,6 +390,55 @@ async def main() -> int:
             fail("hybrid retrieval", str(exc))
             traceback.print_exc()
 
+        # --- 6b) The distributed vector index is reachable by retrieval ---
+        # Guards the Phase 10 defect: the index existed but was structurally
+        # unusable, and nothing caught it because a brute-force scan over a
+        # small table is instant. See docs/HACKATHON_INTEGRATION_AUDIT.md §1.
+        try:
+            from app.memory.index_health import (
+                VECTOR_INDEX_READY,
+                VECTOR_INDEX_SCOPED,
+                check_vector_index,
+            )
+
+            pool_size = get_grading_file().retrieval.candidate_pool_size
+            report = await check_vector_index(session, pool_size=pool_size)
+            check(report.get("error") is None, f"probe error: {report.get('error')}")
+
+            # (a) Structural: the index CAN serve the real retrieval query.
+            # Asserting selection at the production pool size would be wrong —
+            # see (b).
+            check(
+                report["usable"] is True,
+                f"{VECTOR_INDEX_SCOPED} cannot serve the retrieval query — "
+                f"{report.get('forced_plan_error') or 'no vector search node'}\n"
+                f"plan:\n{report.get('forced_plan', '(none)')}",
+            )
+            ok(f"{VECTOR_INDEX_SCOPED} is usable by the real retrieval query")
+
+            # (b) Cost: the planner picks it unforced at small k. It may decline
+            # at the production pool size on a small corpus, where an exact
+            # brute-force scan is genuinely cheaper — that is not a defect.
+            check(
+                report["selected_at_small_k"] is True,
+                f"planner did not choose the vector index at k={report['small_k']}",
+            )
+            ok(
+                f"planner chooses the vector index unforced at k={report['small_k']} "
+                f"(at pool size {pool_size}: "
+                f"{'index' if report['selected_at_pool_size'] else 'exact scan, expected on a small corpus'})"
+            )
+
+            # (c) Corpus-wide search rides the no-prefix partial index.
+            check(
+                report["corpus_wide_selected"] is True,
+                f"corpus-wide search is not using {VECTOR_INDEX_READY}",
+            )
+            ok(f"corpus-wide semantic search uses {VECTOR_INDEX_READY}")
+        except Exception as exc:
+            fail("vector index reachability", str(exc))
+            traceback.print_exc()
+
         # --- 7) Metrics SQL ---
         try:
             metrics = await fetch_accuracy_metrics(session)

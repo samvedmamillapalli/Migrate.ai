@@ -31,6 +31,15 @@ class EmbeddingClient(ABC):
     def embed(self, text: str, *, model_id: str | None = None) -> list[float]:
         """Return a 1024-d embedding vector."""
 
+    @property
+    def model_id(self) -> str | None:
+        """The model this client embeds with, for response attribution.
+
+        Mirrors ``BedrockClient.model_id`` so callers can report which model
+        produced a vector without reaching into private attributes.
+        """
+        return None
+
 
 def vector_to_literal(values: Sequence[float]) -> str:
     """Format a float sequence as a CockroachDB VECTOR literal."""
@@ -88,6 +97,10 @@ class AwsTitanEmbeddingClient(EmbeddingClient):
                 config=config,
             )
 
+    @property
+    def model_id(self) -> str | None:
+        return self._default_model_id
+
     def embed(self, text: str, *, model_id: str | None = None) -> list[float]:
         mid = model_id or self._default_model_id
         body = {
@@ -142,6 +155,10 @@ class MockEmbeddingClient(EmbeddingClient):
     def __init__(self, *, dimensions: int = EMBEDDING_DIMENSIONS) -> None:
         self.dimensions = dimensions
         self.calls: list[str] = []
+
+    @property
+    def model_id(self) -> str | None:
+        return "mock-embedding"
 
     def embed(self, text: str, *, model_id: str | None = None) -> list[float]:
         self.calls.append(text)
