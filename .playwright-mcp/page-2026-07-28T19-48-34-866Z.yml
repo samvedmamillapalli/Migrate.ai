@@ -1,0 +1,93 @@
+- generic [active] [ref=f18e1]:
+  - generic [ref=f18e2]:
+    - generic [ref=f18e5]:
+      - list [ref=f18e7]:
+        - listitem [ref=f18e8]:
+          - button "Migration Oracle Workspace" [ref=f18e9]:
+            - generic [ref=f18e13]:
+              - generic [ref=f18e14]: Migration Oracle
+              - generic [ref=f18e15]: Workspace
+      - generic [ref=f18e19]:
+        - list [ref=f18e21]:
+          - listitem [ref=f18e22]:
+            - link "Overview" [ref=f18e23] [cursor=pointer]:
+              - /url: /dashboard
+        - generic [ref=f18e30]:
+          - generic [ref=f18e31]: Migrations
+          - list [ref=f18e32]:
+            - listitem [ref=f18e33]:
+              - link "Current Migration" [ref=f18e34] [cursor=pointer]:
+                - /url: /dashboard/migrations/current
+            - listitem [ref=f18e40]:
+              - link "Past Migrations" [ref=f18e41] [cursor=pointer]:
+                - /url: /dashboard/migrations/history
+        - generic [ref=f18e47]:
+          - generic [ref=f18e48]: Intelligence
+          - list [ref=f18e49]:
+            - listitem [ref=f18e50]:
+              - link "Agent Memory" [ref=f18e51] [cursor=pointer]:
+                - /url: /dashboard/memory
+      - generic [ref=f18e61]:
+        - generic [ref=f18e63]:
+          - generic [ref=f18e64]: Owner identity
+          - textbox "Owner identity" [ref=f18e134]:
+            - /placeholder: e.g. samved
+            - text: claude-agent+clerk_test@migration-oracle.dev
+          - paragraph [ref=f18e65]: Scoped to your signed-in account. Hover to see the raw id.
+        - list [ref=f18e67]:
+          - listitem [ref=f18e68]:
+            - button "Operator Operator claude-agent+clerk_test@migration-oracle.dev" [ref=f18e135]:
+              - img "Operator" [ref=f18e136]
+              - generic [ref=f18e72]:
+                - generic [ref=f18e73]: Operator
+                - generic [ref=f18e137]: claude-agent+clerk_test@migration-oracle.dev
+        - list [ref=f18e78]:
+          - listitem [ref=f18e79]:
+            - button "Settings" [ref=f18e80]
+      - button "Toggle Sidebar" [ref=f18e85]
+    - main [ref=f18e86]:
+      - generic [ref=f18e87]:
+        - generic [ref=f18e88]:
+          - button "Toggle Sidebar" [ref=f18e89]
+          - separator [ref=f18e91]
+        - button "Sign out" [ref=f18e93]
+      - generic [ref=f18e94]:
+        - generic [ref=f18e95]:
+          - generic [ref=f18e96]:
+            - heading "Overview" [level=1] [ref=f18e97]
+            - paragraph [ref=f18e98]: Your migration environment.
+          - button "New Migration" [ref=f18e99]
+        - region "System Health" [ref=f18e100]:
+          - paragraph [ref=f18e102]: System Health
+          - generic [ref=f18e103]:
+            - generic [ref=f18e104]:
+              - generic [ref=f18e106]: API
+              - generic [ref=f18e107]: Ready
+            - generic [ref=f18e108]:
+              - generic [ref=f18e110]: Shadow
+              - generic [ref=f18e111]: Ready
+            - generic [ref=f18e112]:
+              - generic [ref=f18e114]: Predictions
+              - generic [ref=f18e115]: Ready
+        - region "Latest Migration" [ref=f18e116]:
+          - paragraph [ref=f18e118]: Latest Migration
+          - paragraph [ref=f18e119]: No migration runs yet. Create one to get started.
+        - region "Accuracy" [ref=f18e120]:
+          - generic [ref=f18e121]:
+            - paragraph [ref=f18e122]: Accuracy
+            - link "Memory →" [ref=f18e123] [cursor=pointer]:
+              - /url: /dashboard/memory
+          - paragraph [ref=f18e124]: No graded runs yet.
+          - generic [ref=f18e153]:
+            - generic [ref=f18e154]: Memory
+            - generic [ref=f18e155]: 31 ready
+            - generic [ref=f18e156]: 0 pending
+  - button "Open Next.js Dev Tools" [ref=f18e130] [cursor=pointer]
+  - alert [ref=f18e138]
+  - generic [ref=f18e139]:
+    - button "Keyless prompt" [expanded] [ref=f18e140] [cursor=pointer]:
+      - generic [ref=f18e145]: You've created your first user!
+    - generic [ref=f18e149]:
+      - paragraph [ref=f18e151]: Head to the dashboard to customize authentication settings, view user info, and explore more features.
+      - link "Configure your application" [ref=f18e152] [cursor=pointer]:
+        - /url: https://dashboard.clerk.com/apps/claim?token=n69pjw7g6bubd89h7auh2epg8lqco4oqtvb5kxqd&return_url=http%3A%2F%2Flocalhost%3A3000%2Fdashboard

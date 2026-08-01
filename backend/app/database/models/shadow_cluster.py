@@ -20,7 +20,15 @@ class ShadowClusterStatus(str, enum.Enum):
     """Lifecycle state of a disposable shadow cluster.
 
     The orchestration walks these states in order:
-    PROVISIONING -> READY -> SEEDING -> MIGRATING -> DESTROYING -> DESTROYED.
+    PROVISIONING -> READY -> SEEDING -> MIGRATING -> HOLDING -> DESTROYING ->
+    DESTROYED. HOLDING is a deliberate pause after execution/measurement
+    finishes: the cluster (and the before/after data already captured) stays
+    inspectable for a bounded window (``settings.shadow_hold_minutes``,
+    default 5) instead of being torn down immediately, so the row-sample/
+    schema-diff box has something real to show. Reaped automatically by the
+    existing orphan sweeper once ``expires_at`` passes (no separate mechanism
+    needed — the sweeper already reaps any active status past its expiry), or
+    torn down immediately via ``POST /runs/{id}/shadow-cluster/teardown-now``.
     Any stage may transition to FAILED, after which teardown still runs and the
     row lands in DESTROYED (or FAILED if teardown itself could not complete).
     """
@@ -29,6 +37,7 @@ class ShadowClusterStatus(str, enum.Enum):
     READY = "ready"
     SEEDING = "seeding"
     MIGRATING = "migrating"
+    HOLDING = "holding"
     DESTROYING = "destroying"
     DESTROYED = "destroyed"
     FAILED = "failed"
@@ -42,6 +51,7 @@ ACTIVE_SHADOW_STATUSES: frozenset[ShadowClusterStatus] = frozenset(
         ShadowClusterStatus.READY,
         ShadowClusterStatus.SEEDING,
         ShadowClusterStatus.MIGRATING,
+        ShadowClusterStatus.HOLDING,
         ShadowClusterStatus.DESTROYING,
     }
 )
@@ -126,6 +136,34 @@ class ShadowCluster(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     destroyed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
+    )
+    # Append-only observation log: one entry per status transition or timing
+    # merge, each `{"at": iso timestamp, "status": ..., "stage_timings": {...}}`.
+    # Lets a finished run be replayed step by step instead of only showing the
+    # final overwritten state (status/stage_timings above remain last-write-wins
+    # for cheap reads; this is the durable history behind them).
+    event_log: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB, nullable=True)
+    # Structural DatabaseMetadata (see app.schema_analysis.models) captured on
+    # the shadow cluster immediately before and after the migration runs, for
+    # the before/after schema diff. Never captured on the customer's database.
+    schema_snapshot_before: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    schema_snapshot_after: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    # Small real row sample (columns + up to 20 rows + total count) for the
+    # tables the migration references, captured in the same connection as the
+    # schema snapshot above. Shadow-tier synthetic data, never the customer's
+    # real rows. `after` re-fetches the same primary keys as `before` where
+    # possible so the panel compares the same conceptual rows, not an
+    # arbitrary new sample. None when capture wasn't attempted or failed
+    # outright; per-table `error` inside the JSON when only one table failed.
+    row_sample_before: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    row_sample_after: Mapped[dict[str, Any] | None] = mapped_column(
+        JSONB, nullable=True
     )
 
     migration_run: Mapped[MigrationRun] = relationship(

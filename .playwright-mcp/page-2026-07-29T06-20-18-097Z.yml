@@ -1,0 +1,10 @@
+- generic [active] [ref=e1]:
+  - main [ref=e2]:
+    - link "← Migration Oracle" [ref=e4] [cursor=pointer]:
+      - /url: /
+    - generic [ref=e7]:
+      - generic [ref=e14]:
+        - generic [ref=e19]: shadow-execution.log
+        - generic [ref=e20]: Shadow Ready
+      - paragraph [ref=e24]: By continuing, you agree to our Terms of Service and Privacy Policy.
+  - alert [ref=e25]

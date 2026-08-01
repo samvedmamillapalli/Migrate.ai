@@ -1,0 +1,117 @@
+- generic [active] [ref=f19e1]:
+  - generic [ref=f19e2]:
+    - generic [ref=f19e5]:
+      - list [ref=f19e7]:
+        - listitem [ref=f19e8]:
+          - button "Migration Oracle Workspace" [ref=f19e9]:
+            - generic [ref=f19e13]:
+              - generic [ref=f19e14]: Migration Oracle
+              - generic [ref=f19e15]: Workspace
+      - generic [ref=f19e19]:
+        - list [ref=f19e21]:
+          - listitem [ref=f19e22]:
+            - link "Overview" [ref=f19e23] [cursor=pointer]:
+              - /url: /dashboard
+        - generic [ref=f19e30]:
+          - generic [ref=f19e31]: Migrations
+          - list [ref=f19e32]:
+            - listitem [ref=f19e33]:
+              - link "Current Migration" [ref=f19e34] [cursor=pointer]:
+                - /url: /dashboard/migrations/current
+            - listitem [ref=f19e40]:
+              - link "Past Migrations" [ref=f19e41] [cursor=pointer]:
+                - /url: /dashboard/migrations/history
+        - generic [ref=f19e47]:
+          - generic [ref=f19e48]: Intelligence
+          - list [ref=f19e49]:
+            - listitem [ref=f19e50]:
+              - link "Agent Memory" [ref=f19e51] [cursor=pointer]:
+                - /url: /dashboard/memory
+      - generic [ref=f19e61]:
+        - generic [ref=f19e63]:
+          - generic [ref=f19e64]: Owner identity
+          - textbox "Owner identity" [ref=f19e65]:
+            - /placeholder: e.g. samved
+            - text: claude-agent+clerk_test@migration-oracle.dev
+          - paragraph [ref=f19e66]: Scoped to your signed-in account. Hover to see the raw id.
+        - list [ref=f19e68]:
+          - listitem [ref=f19e69]:
+            - button "Operator Operator claude-agent+clerk_test@migration-oracle.dev" [ref=f19e116]:
+              - img "Operator" [ref=f19e117]
+              - generic [ref=f19e73]:
+                - generic [ref=f19e74]: Operator
+                - generic [ref=f19e118]: claude-agent+clerk_test@migration-oracle.dev
+        - list [ref=f19e79]:
+          - listitem [ref=f19e80]:
+            - button "Settings" [ref=f19e81]
+      - button "Toggle Sidebar" [ref=f19e86]
+    - main [ref=f19e87]:
+      - generic [ref=f19e88]:
+        - generic [ref=f19e89]:
+          - button "Toggle Sidebar" [ref=f19e90]
+          - separator [ref=f19e92]
+        - button "Sign out" [ref=f19e94]
+      - generic [ref=f19e95]:
+        - generic [ref=f19e96]:
+          - link "← Back to Overview" [ref=f19e97] [cursor=pointer]:
+            - /url: /dashboard
+          - link "Past Migrations →" [ref=f19e98] [cursor=pointer]:
+            - /url: /dashboard/migrations/history
+        - generic [ref=f19e99]:
+          - generic [ref=f19e100]:
+            - generic [ref=f19e101]:
+              - heading "Current Migration" [level=1] [ref=f19e102]
+              - paragraph [ref=f19e103]: Waiting for a migration…
+            - generic [ref=f19e119]:
+              - generic [ref=f19e120]: Pending
+              - paragraph [ref=f19e123]: 15s ago
+          - generic [ref=f19e124]:
+            - list [ref=f19e125]:
+              - listitem [ref=f19e126]:
+                - generic [ref=f19e127]: Create
+              - listitem [ref=f19e128]:
+                - generic [ref=f19e129]: →
+                - generic [ref=f19e130]: Predict
+              - listitem [ref=f19e131]:
+                - generic [ref=f19e132]: →
+                - generic [ref=f19e133]: Approve
+              - listitem [ref=f19e134]:
+                - generic [ref=f19e135]: →
+                - generic [ref=f19e136]: Shadow
+              - listitem [ref=f19e137]:
+                - generic [ref=f19e138]: →
+                - generic [ref=f19e139]: Grade
+              - listitem [ref=f19e140]:
+                - generic [ref=f19e141]: →
+                - generic [ref=f19e142]: Remember
+            - generic [ref=f19e143]:
+              - link "Full detail & model traces" [ref=f19e144] [cursor=pointer]:
+                - /url: /dashboard/migrations/a47a7aa1-9fbe-4c34-bb9d-b8fa4d2679bc
+              - link "Shadow execution" [ref=f19e145] [cursor=pointer]:
+                - /url: /dashboard/migrations/current/shadow
+        - region "1. Attach your database" [ref=f19e160]:
+          - heading "1. Attach your database" [level=2] [ref=f19e162]
+          - generic [ref=f19e163]:
+            - generic [ref=f19e164]: Connected — schema succeeded
+            - button "Schema details (2 tables)" [ref=f19e167]:
+              - generic [ref=f19e168]: ▸
+              - text: Schema details (2 tables)
+        - region "2. Migration" [ref=f19e169]:
+          - heading "2. Migration" [level=2] [ref=f19e171]
+          - button "View migration SQL (migration_a47a7aa1.sql)" [ref=f19e174]:
+            - generic [ref=f19e175]: ▸
+            - text: View migration SQL (migration_a47a7aa1.sql)
+        - region "3. Prediction" [ref=f19e176]:
+          - heading "3. Prediction" [level=2] [ref=f19e178]
+          - generic [ref=f19e180]:
+            - button "Run prediction" [ref=f19e181]
+            - paragraph [ref=f19e182]: Estimates duration, storage, and risk.
+  - button "Open Next.js Dev Tools" [ref=f19e111] [cursor=pointer]
+  - alert [ref=f19e115]
+  - generic [ref=f19e146]:
+    - button "Keyless prompt" [expanded] [ref=f19e147] [cursor=pointer]:
+      - generic [ref=f19e152]: You've created your first user!
+    - generic [ref=f19e156]:
+      - paragraph [ref=f19e158]: Head to the dashboard to customize authentication settings, view user info, and explore more features.
+      - link "Configure your application" [ref=f19e159] [cursor=pointer]:
+        - /url: https://dashboard.clerk.com/apps/claim?token=n69pjw7g6bubd89h7auh2epg8lqco4oqtvb5kxqd&return_url=http%3A%2F%2Flocalhost%3A3000%2Fdashboard%2Fmigrations%2Fcurrent

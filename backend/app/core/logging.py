@@ -2,7 +2,27 @@ import json
 import logging
 import sys
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Callable
+
+# NOTE: correlation lives in app.aws.correlation. It is imported lazily (see
+# ``_correlation_fields``) so the core logging layer does not depend on the AWS
+# layer at import time — importing it eagerly creates a circular import
+# (core.logging -> aws.* -> core.logging) whenever a core/db module is imported
+# before the aws package.
+_correlation_provider: Callable[[], dict[str, str]] | None = None
+
+
+def _correlation_fields() -> dict[str, str]:
+    """Return correlation fields, resolving the provider lazily and safely."""
+    global _correlation_provider
+    if _correlation_provider is None:
+        try:
+            from app.aws.correlation import get_correlation_fields
+        except Exception:  # pragma: no cover - only during import bootstrap
+            return {}
+        _correlation_provider = get_correlation_fields
+    return _correlation_provider()
+
 
 _LOG_RECORD_STANDARD_ATTRS = {
     "args",
@@ -39,6 +59,10 @@ class JsonFormatter(logging.Formatter):
             "logger": record.name,
             "message": record.getMessage(),
         }
+
+        # Correlation fields (run_id, lambda, sfn) — never overwrite explicit extras.
+        for key, value in _correlation_fields().items():
+            payload.setdefault(key, value)
 
         if record.exc_info:
             payload["exception"] = self.formatException(record.exc_info)

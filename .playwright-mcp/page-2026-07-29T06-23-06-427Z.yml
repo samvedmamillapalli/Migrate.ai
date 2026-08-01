@@ -1,0 +1,131 @@
+- generic [active] [ref=f3e1]:
+  - button "Open Next.js Dev Tools" [ref=f3e30] [cursor=pointer]
+  - alert [ref=f3e34]: Overview
+  - generic [ref=f3e35]:
+    - button [expanded] [ref=f3e258] [cursor=pointer]:
+      - generic [ref=f3e41]: You've created your first user!
+    - generic [ref=f3e45]:
+      - paragraph [ref=f3e47]: Head to the dashboard to customize authentication settings, view user info, and explore more features.
+      - link [ref=f3e259] [cursor=pointer]:
+        - /url: https://dashboard.clerk.com/apps/claim?token=n69pjw7g6bubd89h7auh2epg8lqco4oqtvb5kxqd&return_url=http%3A%2F%2Flocalhost%3A3000%2Flogin
+        - text: Configure your application
+  - generic [ref=f3e49]:
+    - generic [ref=f3e52]:
+      - list [ref=f3e54]:
+        - listitem [ref=f3e55]:
+          - button [ref=f3e260]:
+            - generic [ref=f3e60]:
+              - generic [ref=f3e61]: Migration Oracle
+              - generic [ref=f3e62]: Workspace
+      - generic [ref=f3e66]:
+        - list [ref=f3e68]:
+          - listitem [ref=f3e69]:
+            - link [ref=f3e261] [cursor=pointer]:
+              - /url: /dashboard
+              - generic [ref=f3e76]: Overview
+        - generic [ref=f3e77]:
+          - generic [ref=f3e78]: Migrations
+          - list [ref=f3e79]:
+            - listitem [ref=f3e80]:
+              - link [ref=f3e262] [cursor=pointer]:
+                - /url: /dashboard/migrations/current
+                - generic [ref=f3e86]: Current Migration
+            - listitem [ref=f3e87]:
+              - link [ref=f3e263] [cursor=pointer]:
+                - /url: /dashboard/migrations/history
+                - generic [ref=f3e93]: Past Migrations
+        - generic [ref=f3e94]:
+          - generic [ref=f3e95]: Intelligence
+          - list [ref=f3e96]:
+            - listitem [ref=f3e97]:
+              - link [ref=f3e264] [cursor=pointer]:
+                - /url: /dashboard/memory
+                - generic [ref=f3e107]: Agent Memory
+      - generic [ref=f3e108]:
+        - generic [ref=f3e110]:
+          - generic [ref=f3e111]: Owner identity
+          - textbox [ref=f3e265]:
+            - /placeholder: e.g. samved
+            - text: claude-agent+clerk_test@migration-oracle.dev
+          - paragraph [ref=f3e113]: Scoped to your signed-in account. Hover to see the raw id.
+        - list [ref=f3e115]:
+          - listitem [ref=f3e116]:
+            - button [ref=f3e266]:
+              - generic [ref=f3e120]:
+                - generic [ref=f3e121]: Operator
+                - generic [ref=f3e122]: claude-agent+clerk_test@migration-oracle.dev
+        - list [ref=f3e127]:
+          - listitem [ref=f3e128]:
+            - button [ref=f3e268]:
+              - generic [ref=f3e133]: Settings
+      - button [ref=f3e269]
+    - main [ref=f3e135]:
+      - generic [ref=f3e136]:
+        - generic [ref=f3e137]:
+          - button [ref=f3e270]:
+            - generic [ref=f3e139]: Toggle Sidebar
+          - separator [ref=f3e140]
+        - button [ref=f3e271]: Sign out
+      - generic [ref=f3e212]:
+        - generic [ref=f3e213]:
+          - generic [ref=f3e214]:
+            - heading [level=1] [ref=f3e272]: Overview
+            - paragraph [ref=f3e216]: Your migration environment.
+          - button [expanded] [ref=f3e273]: New Migration
+        - region [ref=f3e274]:
+          - paragraph [ref=f3e220]: System Health
+          - generic [ref=f3e221]:
+            - generic [ref=f3e222]:
+              - generic [ref=f3e224]: API
+              - generic [ref=f3e225]: Ready
+            - generic [ref=f3e226]:
+              - generic [ref=f3e228]: Shadow
+              - generic [ref=f3e229]: Ready
+            - generic [ref=f3e230]:
+              - generic [ref=f3e232]: Predictions
+              - generic [ref=f3e233]: Ready
+        - region [ref=f3e275]:
+          - paragraph [ref=f3e236]: Latest Migration
+          - generic [ref=f3e243]:
+            - generic [ref=f3e244]:
+              - generic [ref=f3e245]:
+                - paragraph [ref=f3e246]: ALTER TABLE customers ADD COLUMN loyalty_tier STRING NOT NULL DEFAULT 'standard';
+                - paragraph [ref=f3e247]: 11h ago
+              - generic [ref=f3e248]: Pending
+            - generic [ref=f3e251]:
+              - link [ref=f3e276] [cursor=pointer]:
+                - /url: /dashboard/migrations/current
+                - text: Set as current
+              - link [ref=f3e277] [cursor=pointer]:
+                - /url: /dashboard/migrations/bbbab194-ca02-40be-ac2b-a7813e4ec089
+                - text: View detail →
+        - region [ref=f3e278]:
+          - generic [ref=f3e239]:
+            - paragraph [ref=f3e240]: Accuracy
+            - link [ref=f3e279] [cursor=pointer]:
+              - /url: /dashboard/memory
+              - text: Memory →
+          - paragraph [ref=f3e242]: No graded runs yet.
+          - generic [ref=f3e254]:
+            - generic [ref=f3e255]: Memory
+            - generic [ref=f3e256]: 32 ready
+            - generic [ref=f3e257]: 0 pending
+  - dialog [ref=f3e283]:
+    - generic [ref=f3e284]:
+      - heading "New Migration" [level=2] [ref=f3e285]
+      - paragraph [ref=f3e286]: Choose how you want to provide your database migration.
+    - generic [ref=f3e287]:
+      - button "Upload SQL File Upload a .sql migration file." [ref=f3e288]:
+        - generic [ref=f3e289]: Upload SQL File
+        - paragraph [ref=f3e297]: Upload a .sql migration file.
+      - button "Paste SQL Paste migration SQL directly into an editor." [ref=f3e298]:
+        - generic [ref=f3e299]: Paste SQL
+        - paragraph [ref=f3e307]: Paste migration SQL directly into an editor.
+    - generic [ref=f3e311]:
+      - text: Migration SQL
+      - textbox "Migration SQL" [ref=f3e312]:
+        - /placeholder: "-- paste migration SQL"
+        - text: ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active';
+    - generic [ref=f3e313]:
+      - button "Submitting…" [disabled]
+    - button "Close" [ref=f3e308]

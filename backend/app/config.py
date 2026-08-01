@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     cors_origins_value: str = Field(
-        default="http://localhost:3000",
+        default="http://localhost:3000,http://127.0.0.1:3000",
         validation_alias="CORS_ORIGINS",
         exclude=True,
     )
@@ -58,6 +58,11 @@ class Settings(BaseSettings):
     # Max cluster lifetime; the sweeper reaps active app-tagged clusters older
     # than this, catching leaks from processes that died before teardown.
     shadow_max_lifetime_minutes: int = Field(default=30, ge=1, le=1440)
+    # After execute+measure finish, the cluster is HELD (not torn down) for
+    # this long so the row-sample/schema-diff box stays inspectable — the
+    # sweeper reaps it once this window closes; a user can also end the hold
+    # immediately via POST /runs/{id}/shadow-cluster/teardown-now.
+    shadow_hold_minutes: int = Field(default=5, ge=1, le=60)
     # How long a caller will wait for a concurrency slot before giving up.
     shadow_slot_wait_timeout_seconds: int = Field(default=600, ge=1, le=3600)
     shadow_slot_poll_interval_seconds: float = Field(default=2.0, ge=0.1, le=60.0)
@@ -67,6 +72,9 @@ class Settings(BaseSettings):
     shadow_ready_poll_interval_seconds: float = Field(default=5.0, ge=0.5, le=120.0)
     shadow_seed_timeout_seconds: int = Field(default=300, ge=1, le=3600)
     shadow_migrate_timeout_seconds: int = Field(default=600, ge=1, le=3600)
+    # After schema load, insert tier-capped synthetic rows so storage/runtime
+    # metrics are meaningful (default on for demo/hackathon).
+    shadow_seed_synthetic_rows: bool = Field(default=True)
     # ccloud CLI executable (interactive-auth path only; kept for optional demos).
     ccloud_binary: str = Field(default="ccloud")
     # CockroachDB Cloud service-account credential. ``ccloud_api_secret`` is the
@@ -82,6 +90,44 @@ class Settings(BaseSettings):
     ccloud_api_timeout_seconds: float = Field(default=30.0, ge=1.0, le=300.0)
     ccloud_api_max_retries: int = Field(default=4, ge=0, le=10)
     ccloud_api_backoff_base_seconds: float = Field(default=0.5, ge=0.05, le=10.0)
+
+    # Demo deploy gate (optional). When set, API routes require X-API-Key.
+    demo_api_key: str | None = Field(default=None, validation_alias="DEMO_API_KEY")
+
+    # Wave 2 session auth (JWT-like HMAC tokens). Off by default for local demos.
+    auth_enabled: bool = Field(default=False, validation_alias="AUTH_ENABLED")
+    auth_secret: str | None = Field(default=None, validation_alias="AUTH_SECRET")
+    auth_token_ttl_seconds: int = Field(
+        default=60 * 60 * 24 * 7,
+        ge=300,
+        le=60 * 60 * 24 * 30,
+        validation_alias="AUTH_TOKEN_TTL_SECONDS",
+    )
+
+    # --- Clerk Authentication ---
+    # Clerk provides authentication via JWTs. When configured, the backend
+    # validates Clerk-issued tokens using the JWKS endpoint.
+    clerk_secret_key: str | None = Field(
+        default=None,
+        validation_alias="CLERK_SECRET_KEY",
+    )
+    clerk_publishable_key: str | None = Field(
+        default=None,
+        validation_alias="CLERK_PUBLISHABLE_KEY",
+    )
+    # Optional: Clerk Frontend API URL (e.g., "clerk.abc123.accounts.dev")
+    clerk_frontend_api_url: str | None = Field(
+        default=None,
+        validation_alias="CLERK_FRONTEND_API_URL",
+    )
+
+    # CockroachDB Managed MCP endpoint (hackathon tool #2 alongside Vector Index).
+    # Used for documentation and optional job-watch correlation; IDE config lives
+    # in .cursor/mcp.json. Runtime job watch uses CRDB SQL (same job surface).
+    cockroach_mcp_url: str = Field(
+        default="https://cockroachlabs.cloud/mcp",
+        validation_alias="COCKROACH_MCP_URL",
+    )
 
     @field_validator("log_level")
     @classmethod

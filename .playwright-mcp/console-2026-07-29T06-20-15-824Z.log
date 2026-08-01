@@ -1,0 +1,72 @@
+[    2029ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[    2060ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[    2227ms] [WARNING] Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[    2227ms] [WARNING] Clerk: The prop "afterSignInUrl" is deprecated and should be replaced with the new "fallbackRedirectUrl" or "forceRedirectUrl" props instead. Learn more: https://clerk.com/docs/guides/custom-redirects#redirect-url-props @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[    2245ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[    2350ms] [LOG] [Fast Refresh] done in 222ms @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[    2573ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[    2585ms] [LOG] [Fast Refresh] done in 121ms @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[    2644ms] [WARNING] Clerk: The "signInFallbackRedirectUrl" prop ("http://localhost:3000/dashboard") has priority over the legacy "afterSignInUrl" (or "redirectUrl") ("http://localhost:3000/dashboard"), which will be completely ignored in this case. "afterSignInUrl" (or "redirectUrl" prop) should be replaced with the new "fallbackRedirectUrl" or "forceRedirectUrl" props instead. Learn more: https://clerk.com/docs/guides/custom-redirects#redirect-url-props @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[    2645ms] [WARNING] Clerk: The "signUpFallbackRedirectUrl" prop ("http://localhost:3000/dashboard") has priority over the legacy "afterSignUpUrl" (or "redirectUrl") ("http://localhost:3000/dashboard"), which will be completely ignored in this case. "afterSignUpUrl" (or "redirectUrl" prop) should be replaced with the new "fallbackRedirectUrl" or "forceRedirectUrl" props instead. Learn more: https://clerk.com/docs/guides/custom-redirects#redirect-url-props @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[    2883ms] [VERBOSE] [DOM] Input elements should have autocomplete attributes (suggested: "current-password"): (More info: https://goo.gl/9p2vKq) %o @ http://localhost:3000/login:0
+[   16925ms] [ERROR] Failed to load resource: the server responded with a status of 422 () @ https://improved-panda-78.clerk.accounts.dev/v1/client/sign_ins?__clerk_api_version=2025-11-10&_clerk_js_version=5.127.1&__clerk_db_jwt=dvb_3HALdnkVculEAivBWTEY95BtR3e:0
+[   90030ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   91509ms] [WARNING] [Fast Refresh] performing full reload
+
+Fast Refresh will perform a full reload when you edit a file that's imported by modules outside of the React rendering tree.
+You might have a file which exports a React component but also exports a value that is imported by a non-React component file.
+Consider migrating the non-React component export to a separate file and importing it into both files.
+
+It is also possible the parent component of the component you edited is a class component, which disables Fast Refresh.
+Fast Refresh requires at least one parent function component in your React tree. @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   91515ms] [LOG] [Fast Refresh] done in 1583ms @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   91863ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   92536ms] [LOG] [Fast Refresh] done in 779ms @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   92645ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   92794ms] [LOG] [Fast Refresh] done in 257ms @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   92801ms] [LOG] %c%s%c 
+[35m
+[Clerk]:[0m You are running in keyless mode.
+You can [35mclaim your keys[0m by visiting https://dashboard.clerk.com/apps/claim?token=n69pjw7g6bubd89h7auh2epg8lqco4oqtvb5kxqd&return_url=http%3A%2F%2Flocalhost%3A3000%2F
+ background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server   @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   93186ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   93217ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   93269ms] [WARNING] Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   93269ms] [WARNING] Clerk: The prop "afterSignInUrl" is deprecated and should be replaced with the new "fallbackRedirectUrl" or "forceRedirectUrl" props instead. Learn more: https://clerk.com/docs/guides/custom-redirects#redirect-url-props @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   93531ms] [WARNING] Clerk: The "signInFallbackRedirectUrl" prop ("http://localhost:3000/dashboard") has priority over the legacy "afterSignInUrl" (or "redirectUrl") ("http://localhost:3000/dashboard"), which will be completely ignored in this case. "afterSignInUrl" (or "redirectUrl" prop) should be replaced with the new "fallbackRedirectUrl" or "forceRedirectUrl" props instead. Learn more: https://clerk.com/docs/guides/custom-redirects#redirect-url-props @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   93532ms] [WARNING] Clerk: The "signUpFallbackRedirectUrl" prop ("http://localhost:3000/dashboard") has priority over the legacy "afterSignUpUrl" (or "redirectUrl") ("http://localhost:3000/dashboard"), which will be completely ignored in this case. "afterSignUpUrl" (or "redirectUrl" prop) should be replaced with the new "fallbackRedirectUrl" or "forceRedirectUrl" props instead. Learn more: https://clerk.com/docs/guides/custom-redirects#redirect-url-props @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   93579ms] [INFO] 🔒 Clerk:
+The <SignIn/> component cannot render when a user is already signed in, unless the application allows multiple sessions. Since a user is signed in and this application only allows a single session, Clerk is redirecting to the `afterSignIn` URL instead.
+(This notice only appears in development) @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   93757ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   93757ms] [LOG] [Fast Refresh] done in 101ms @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   93861ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   94208ms] [LOG] [Fast Refresh] done in 450ms @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   94464ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   94472ms] [LOG] [Fast Refresh] done in 117ms @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   94747ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   94773ms] [LOG] [Fast Refresh] done in 131ms @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[   97822ms] [WARNING] The resource http://localhost:3000/_next/static/chunks/%5Broot-of-the-server%5D__0~3.blr._.css was preloaded using link preload but not used within a few seconds from the window's load event. Please make sure it has an appropriate `as` value and it is preloaded intentionally. @ http://localhost:3000/login:0
+[  102530ms] [ERROR] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=eTC8eEiMd9UQ0PpJ0N_xX' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/0i31_next_dist_client_0qmrub-._.js:13322
+[  105872ms] [ERROR] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=eTC8eEiMd9UQ0PpJ0N_xX' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED @ http://localhost:3000/_next/static/chunks/0i31_next_dist_client_0qmrub-._.js:13322
+[  109903ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[  112771ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[  112793ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[  112806ms] [LOG] %c%s%c 
+[35m
+[Clerk]:[0m You are running in keyless mode.
+You can [35mclaim your keys[0m by visiting https://dashboard.clerk.com/apps/claim?token=n69pjw7g6bubd89h7auh2epg8lqco4oqtvb5kxqd&return_url=http%3A%2F%2Flocalhost%3A3000%2F
+ background: #e6e6e6;background: light-dark(rgba(0,0,0,0.1), rgba(255,255,255,0.25));color: #000000;color: light-dark(#000000, #ffffff);border-radius: 2px  Server   @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[  112853ms] [WARNING] Clerk: Clerk has been loaded with development keys. Development instances have strict usage limits and should not be used when deploying your application to production. Learn more: https://clerk.com/docs/deployments/overview @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[  112853ms] [WARNING] Clerk: The prop "afterSignInUrl" is deprecated and should be replaced with the new "fallbackRedirectUrl" or "forceRedirectUrl" props instead. Learn more: https://clerk.com/docs/guides/custom-redirects#redirect-url-props @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[  112929ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[  112976ms] [LOG] [Fast Refresh] done in 158ms @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[  113047ms] [WARNING] Clerk: The "signInFallbackRedirectUrl" prop ("http://localhost:3000/dashboard") has priority over the legacy "afterSignInUrl" (or "redirectUrl") ("http://localhost:3000/dashboard"), which will be completely ignored in this case. "afterSignInUrl" (or "redirectUrl" prop) should be replaced with the new "fallbackRedirectUrl" or "forceRedirectUrl" props instead. Learn more: https://clerk.com/docs/guides/custom-redirects#redirect-url-props @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[  113047ms] [WARNING] Clerk: The "signUpFallbackRedirectUrl" prop ("http://localhost:3000/dashboard") has priority over the legacy "afterSignUpUrl" (or "redirectUrl") ("http://localhost:3000/dashboard"), which will be completely ignored in this case. "afterSignUpUrl" (or "redirectUrl" prop) should be replaced with the new "fallbackRedirectUrl" or "forceRedirectUrl" props instead. Learn more: https://clerk.com/docs/guides/custom-redirects#redirect-url-props @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[  113062ms] [INFO] 🔒 Clerk:
+The <SignIn/> component cannot render when a user is already signed in, unless the application allows multiple sessions. Since a user is signed in and this application only allows a single session, Clerk is redirecting to the `afterSignIn` URL instead.
+(This notice only appears in development) @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[  113310ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[  113438ms] [LOG] [Fast Refresh] done in 234ms @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[  113863ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477
+[  114050ms] [LOG] [Fast Refresh] done in 292ms @ http://localhost:3000/_next/static/chunks/0i31_next_dist_0wayu0v._.js:2477

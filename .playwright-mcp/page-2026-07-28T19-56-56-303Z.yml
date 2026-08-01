@@ -1,0 +1,61 @@
+- generic [active] [ref=f21e1]:
+  - generic [ref=f21e2]:
+    - generic [ref=f21e5]:
+      - list [ref=f21e7]:
+        - listitem [ref=f21e8]:
+          - button "Migration Oracle Workspace" [ref=f21e9]:
+            - generic [ref=f21e13]:
+              - generic [ref=f21e14]: Migration Oracle
+              - generic [ref=f21e15]: Workspace
+      - generic [ref=f21e19]:
+        - list [ref=f21e21]:
+          - listitem [ref=f21e22]:
+            - link "Overview" [ref=f21e23] [cursor=pointer]:
+              - /url: /dashboard
+        - generic [ref=f21e30]:
+          - generic [ref=f21e31]: Migrations
+          - list [ref=f21e32]:
+            - listitem [ref=f21e33]:
+              - link "Current Migration" [ref=f21e34] [cursor=pointer]:
+                - /url: /dashboard/migrations/current
+            - listitem [ref=f21e40]:
+              - link "Past Migrations" [ref=f21e41] [cursor=pointer]:
+                - /url: /dashboard/migrations/history
+        - generic [ref=f21e47]:
+          - generic [ref=f21e48]: Intelligence
+          - list [ref=f21e49]:
+            - listitem [ref=f21e50]:
+              - link "Agent Memory" [ref=f21e51] [cursor=pointer]:
+                - /url: /dashboard/memory
+      - generic [ref=f21e61]:
+        - generic [ref=f21e63]:
+          - generic [ref=f21e64]: Owner identity
+          - textbox "Owner identity" [disabled]:
+            - /placeholder: Loading…
+          - paragraph [ref=f21e65]: Scopes runs and memories. Set manually when auth is off.
+        - list [ref=f21e67]:
+          - listitem [ref=f21e68]:
+            - button "O Operator" [ref=f21e69]:
+              - generic [ref=f21e70]: O
+              - generic [ref=f21e72]: Operator
+        - list [ref=f21e78]:
+          - listitem [ref=f21e79]:
+            - button "Settings" [ref=f21e80]
+      - button "Toggle Sidebar" [ref=f21e85]
+    - main [ref=f21e86]:
+      - generic [ref=f21e87]:
+        - generic [ref=f21e88]:
+          - button "Toggle Sidebar" [ref=f21e89]
+          - separator [ref=f21e91]
+        - button "Sign out" [ref=f21e93]
+      - generic [ref=f21e94]:
+        - generic [ref=f21e95]:
+          - link "← Back to Overview" [ref=f21e96] [cursor=pointer]:
+            - /url: /dashboard
+          - link "Past Migrations →" [ref=f21e97] [cursor=pointer]:
+            - /url: /dashboard/migrations/history
+        - generic [ref=f21e100]:
+          - heading "Current Migration" [level=1] [ref=f21e101]
+          - paragraph [ref=f21e102]: Waiting for a migration…
+        - paragraph [ref=f21e104]: Loading current run…
+  - button "Open Next.js Dev Tools" [ref=f21e110] [cursor=pointer]

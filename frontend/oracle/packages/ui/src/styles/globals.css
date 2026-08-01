@@ -1,0 +1,293 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+@source "../../../apps/**/*.{ts,tsx}";
+@source "../../../components/**/*.{ts,tsx}";
+@source "../**/*.{ts,tsx}";
+
+@theme inline {
+    --font-heading: var(--font-display);
+    --font-display: var(--font-display);
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar: var(--sidebar);
+    --color-chart-5: var(--chart-5);
+    --color-chart-4: var(--chart-4);
+    --color-chart-3: var(--chart-3);
+    --color-chart-2: var(--chart-2);
+    --color-chart-1: var(--chart-1);
+    --color-ring: var(--ring);
+    --color-input: var(--input);
+    --color-border: var(--border);
+    --color-destructive: var(--destructive);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-accent: var(--accent);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-muted: var(--muted);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-secondary: var(--secondary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-primary: var(--primary);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-popover: var(--popover);
+    --color-card-foreground: var(--card-foreground);
+    --color-card: var(--card);
+    --color-foreground: var(--foreground);
+    --color-background: var(--background);
+    --color-ink: var(--ink);
+    --color-ink-foreground: var(--ink-foreground);
+    --color-surface: var(--surface);
+    --color-surface-tint: var(--surface-tint);
+    --radius-sm: calc(var(--radius) * 0.6);
+    --radius-md: calc(var(--radius) * 0.8);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) * 1.4);
+    --radius-2xl: calc(var(--radius) * 1.8);
+    --radius-3xl: calc(var(--radius) * 2.2);
+    --radius-4xl: calc(var(--radius) * 2.6);
+    --font-sans: var(--font-sans);
+    --font-mono: var(--font-mono);
+}
+
+/*
+ * Dream / Framer light theme (source: framer-to-next-dream-main).
+ * Warm parchment surface + terracotta primary. Dark tokens remain for dashboard.
+ */
+:root {
+    --radius: 0.625rem;
+    --background: oklch(0.968 0.008 85);
+    --foreground: oklch(0.245 0.008 40);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.245 0.008 40);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.245 0.008 40);
+    --primary: oklch(0.4 0.135 25.8);
+    --primary-foreground: oklch(0.985 0.006 85);
+    --secondary: oklch(0.985 0.005 85);
+    --secondary-foreground: oklch(0.245 0.008 40);
+    --muted: oklch(0.955 0.008 80);
+    --muted-foreground: oklch(0.55 0.012 50);
+    --accent: oklch(0.4 0.135 25.8);
+    --accent-foreground: oklch(0.985 0.006 85);
+    --ink: oklch(0.22 0.006 40);
+    --ink-foreground: oklch(0.985 0.006 85);
+    --surface: oklch(0.985 0.005 85);
+    --surface-tint: oklch(0.975 0.012 60);
+    --destructive: oklch(0.577 0.245 27.325);
+    --border: oklch(0.905 0.012 70);
+    --input: oklch(0.905 0.012 70);
+    --ring: oklch(0.38 0.135 27);
+    --chart-1: oklch(0.646 0.222 41.116);
+    --chart-2: oklch(0.6 0.118 184.704);
+    --chart-3: oklch(0.398 0.07 227.392);
+    --chart-4: oklch(0.828 0.189 84.429);
+    --chart-5: oklch(0.769 0.188 70.08);
+    --sidebar: oklch(0.984 0.003 247.858);
+    --sidebar-foreground: oklch(0.129 0.042 264.695);
+    --sidebar-primary: oklch(0.208 0.042 265.755);
+    --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
+    --sidebar-accent: oklch(0.968 0.007 247.896);
+    --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
+    --sidebar-border: oklch(0.929 0.013 255.508);
+    --sidebar-ring: oklch(0.704 0.04 256.788);
+
+    /* Migration Oracle semantic tokens */
+    --oracle-structure: oklch(0.82 0 0);
+    --oracle-content: oklch(0.2 0 0);
+    --oracle-reasoning: #6d5fad;
+    --oracle-reasoning-soft: #8b7ec8;
+    --oracle-verified: #059669;
+    --oracle-risk: #dc2626;
+}
+
+.dark {
+    --background: oklch(0.145 0 0);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.205 0 0);
+    --card-foreground: oklch(0.985 0 0);
+    --popover: oklch(0.205 0 0);
+    --popover-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.922 0 0);
+    --primary-foreground: oklch(0.205 0 0);
+    --secondary: oklch(0.269 0 0);
+    --secondary-foreground: oklch(0.985 0 0);
+    --muted: oklch(0.269 0 0);
+    --muted-foreground: oklch(0.708 0 0);
+    --accent: oklch(0.269 0 0);
+    --accent-foreground: oklch(0.985 0 0);
+    --ink: oklch(0.985 0 0);
+    --ink-foreground: oklch(0.205 0 0);
+    --surface: oklch(0.205 0 0);
+    --surface-tint: oklch(0.269 0 0);
+    --destructive: oklch(0.704 0.191 22.216);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.556 0 0);
+    --chart-1: oklch(0.87 0 0);
+    --chart-2: oklch(0.556 0 0);
+    --chart-3: oklch(0.439 0 0);
+    --chart-4: oklch(0.371 0 0);
+    --chart-5: oklch(0.269 0 0);
+    --sidebar: oklch(0.205 0 0);
+    --sidebar-foreground: oklch(0.985 0 0);
+    --sidebar-primary: oklch(0.488 0.243 264.376);
+    --sidebar-primary-foreground: oklch(0.985 0 0);
+    --sidebar-accent: oklch(0.269 0 0);
+    --sidebar-accent-foreground: oklch(0.985 0 0);
+    --sidebar-border: oklch(1 0 0 / 10%);
+    --sidebar-ring: oklch(0.556 0 0);
+
+    /* Migration Oracle semantic tokens */
+    --oracle-structure: oklch(0.35 0 0);
+    --oracle-content: oklch(0.98 0 0);
+    --oracle-reasoning: #8b7ec8;
+    --oracle-reasoning-soft: #c4b5fd;
+    --oracle-verified: #34d399;
+    --oracle-risk: #f87171;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+    }
+  body {
+    @apply bg-background text-foreground;
+    }
+}
+
+@utility font-display {
+  font-family: var(--font-display), "Bodoni Moda", serif;
+  font-weight: 500;
+  font-style: normal;
+  font-optical-sizing: auto;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+@utility eyebrow {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+@utility dotted-rule {
+  background-image: repeating-linear-gradient(
+    to right,
+    var(--color-accent) 0 3px,
+    transparent 3px 8px
+  );
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes text-reveal {
+  from {
+    -webkit-mask-position: 100% 0;
+    mask-position: 100% 0;
+  }
+  to {
+    -webkit-mask-position: 0 0;
+    mask-position: 0 0;
+  }
+}
+
+@utility animate-marquee {
+  animation: marquee 32s linear infinite;
+}
+
+@utility animate-rise {
+  animation: rise-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@utility animate-text-reveal {
+  -webkit-mask-image: linear-gradient(
+    to right,
+    rgb(0 0 0 / 1) 0%,
+    rgb(0 0 0 / 1) 33%,
+    rgb(0 0 0 / 0) 50%,
+    rgb(0 0 0 / 0) 100%
+  );
+  mask-image: linear-gradient(
+    to right,
+    rgb(0 0 0 / 1) 0%,
+    rgb(0 0 0 / 1) 33%,
+    rgb(0 0 0 / 0) 50%,
+    rgb(0 0 0 / 0) 100%
+  );
+  -webkit-mask-size: 300% 100%;
+  mask-size: 300% 100%;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  animation: text-reveal 1.4s cubic-bezier(0.22, 1, 0.36, 1) 0.1s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-text-reveal {
+    -webkit-mask-image: none;
+    mask-image: none;
+    animation: none;
+  }
+
+  .animate-marquee,
+  .animate-rise {
+    animation: none !important;
+  }
+}
+
+.group\/marquee:hover .animate-marquee {
+  animation-play-state: paused;
+}
+
+/* Clerk auth — keep Dream light chrome; kill default dark footer slab */
+.cl-footer,
+.cl-internal-b3fm6y,
+.cl-card > .cl-footer {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+.cl-footerPagesLink,
+.cl-footerActionLink {
+  color: var(--primary) !important;
+}
+
+/* AnimatedThemeToggler — required for the circular view-transition reveal */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+html[data-magicui-theme-vt="active"]::view-transition-group(root) {
+  animation-duration: var(--magicui-theme-toggle-vt-duration, 550ms);
+}
+
+html[data-magicui-theme-vt="active"]::view-transition-new(root) {
+  clip-path: var(--magicui-theme-vt-clip-from);
+}

@@ -1,0 +1,46 @@
+{
+  "source_key": "airflow:add_nullable_note_column_low_risk",
+  "project": "Apache Airflow",
+  "repo": "https://github.com/apache/airflow",
+  "license": "Apache-2.0",
+  "migration_file": "https://github.com/apache/airflow/tree/main/airflow-core/src/airflow/migrations/versions",
+  "incident_issue": "https://github.com/apache/airflow/blob/main/airflow-core/docs/migrations-ref.rst",
+  "migration_summary": "Additive nullable column with no backfill and no constraint validation—low lock risk, metadata-only change on a busy table.",
+  "migration_sql": "ALTER TABLE task_instance ADD COLUMN note TEXT;",
+  "scale_tier": "medium",
+  "migration_type": "add_column",
+  "parsed_statement_types": ["AlterTable"],
+  "schema_summary": "Representative low-risk Airflow-style additive DDL (nullable text column).",
+  "index_count": 8,
+  "table_complexity": 25,
+  "risk_flags": [],
+  "risk_narrative": "Nullable ADD COLUMN without DEFAULT rewrite is typically a short catalog operation on PostgreSQL. No full-table rewrite, no NOT NULL scan, no index build. Rollback is a simple DROP COLUMN if the column is unused.",
+  "lessons_learned": "Prefer nullable additive columns as the expand step before backfills or NOT NULL enforcement. Keep high-risk work (backfill, constraints, indexes) in later migrations so each step has a clear downgrade.",
+  "surprise_notes": "Low risk does not mean zero time on enormous catalogs, but blast radius is orders of magnitude smaller than STORED generated columns or blocking indexes.",
+  "documented_outcomes": {
+    "success": true,
+    "actual_duration_seconds": 2.0,
+    "actual_storage_mb": 0.0,
+    "rollback_required": false,
+    "timed_out": false,
+    "error_message": null
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 2.0,
+    "estimated_storage_mb": 0.0,
+    "rollback_risk": "low",
+    "confidence_score": 0.85,
+    "risk_explanation": "Catalog-only additive nullable column."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "low_risk_additive",
+    "duration_within_band": true,
+    "storage_within_band": true,
+    "rollback_within_band": true,
+    "dimension_details": {
+      "source": "open_source",
+      "representative": true
+    }
+  }
+}

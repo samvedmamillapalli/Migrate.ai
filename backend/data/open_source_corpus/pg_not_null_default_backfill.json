@@ -1,0 +1,53 @@
+{
+  "source_key": "generic:add_not_null_default_backfill",
+  "project": "PostgreSQL ops pattern",
+  "repo": "https://www.postgresql.org/docs/current/ddl-alter.html",
+  "license": "PostgreSQL",
+  "migration_file": "https://www.postgresql.org/docs/current/sql-altertable.html",
+  "incident_issue": "https://www.postgresql.org/docs/current/ddl-alter.html",
+  "source_url": "https://www.postgresql.org/docs/current/ddl-alter.html",
+  "migration_summary": "ADD COLUMN with NOT NULL and a DEFAULT on older PostgreSQL rewrites every row (backfill); newer versions may optimize constant defaults as metadata-only, but applications must still treat this as a potential full-table rewrite.",
+  "migration_sql": "ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'active';",
+  "scale_tier": "large",
+  "migration_type": "add_column",
+  "parsed_statement_types": ["AlterTable"],
+  "schema_summary": "Large users table; status column required by application immediately.",
+  "index_count": 5,
+  "table_complexity": 35,
+  "risk_flags": [
+    {
+      "rule_id": "not_null_default_backfill",
+      "severity": "high",
+      "message": "NOT NULL DEFAULT can rewrite all rows depending on engine version and default volatility."
+    }
+  ],
+  "risk_narrative": "A defaulted NOT NULL column looks like a one-liner but historically rewrote the heap, holding locks proportional to table size—the same scaling law as index builds and generated STORED columns. Safe expand/contract uses nullable add, backfill in batches, then set NOT NULL.",
+  "lessons_learned": "Split into expand (nullable) → backfill → constrain. Never assume ADD COLUMN NOT NULL DEFAULT is metadata-only across all engines and versions. Measure on a shadow cluster sized like production.",
+  "surprise_notes": "Teams often confuse this with nullable ADD COLUMN. The NOT NULL + DEFAULT combination is the backfill mechanism that should retrieve alongside hot-table index lessons.",
+  "documented_outcomes": {
+    "success": true,
+    "actual_duration_seconds": 1200.0,
+    "actual_storage_mb": 64.0,
+    "rollback_required": false,
+    "timed_out": false,
+    "error_message": null
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 900.0,
+    "estimated_storage_mb": 64.0,
+    "rollback_risk": "medium",
+    "confidence_score": 0.6,
+    "risk_explanation": "Full-table rewrite risk scales with row count."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "backfill_rewrite",
+    "duration_within_band": true,
+    "storage_within_band": true,
+    "rollback_within_band": true,
+    "dimension_details": {
+      "source": "open_source",
+      "mechanism": "row_backfill"
+    }
+  }
+}

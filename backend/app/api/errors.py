@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
+from app.aws.exceptions import AwsConfigurationError, AwsConnectivityError
 from app.core.exceptions import (
     AppError,
     ConflictError,
@@ -14,10 +15,17 @@ from app.core.exceptions import (
     SchemaNetworkError,
     SchemaSSLError,
     SchemaTimeoutError,
+    UnauthorizedError,
     UnsupportedDatabaseError,
     ValidationError,
 )
 from app.core.logging import get_logger
+from app.policy.config import PolicyConfigError
+from app.grading.config import GradingConfigError
+from app.prediction.bedrock_client import BedrockAccessError, BedrockInvocationError
+from app.prediction.predictor import PredictionValidationError
+from app.prediction.recommender import RecommendationValidationError
+from app.memory.embedding_client import EmbeddingAccessError, EmbeddingInvocationError
 
 logger = get_logger(__name__)
 
@@ -27,6 +35,7 @@ _STATUS_BY_ERROR: dict[type[AppError], int] = {
     NotFoundError: status.HTTP_404_NOT_FOUND,
     ValidationError: _HTTP_422_UNPROCESSABLE,
     ConflictError: status.HTTP_409_CONFLICT,
+    UnauthorizedError: status.HTTP_401_UNAUTHORIZED,
     ReadWriteCredentialsError: status.HTTP_403_FORBIDDEN,
     SchemaAuthenticationError: status.HTTP_401_UNAUTHORIZED,
     SchemaDatabaseNotFoundError: status.HTTP_404_NOT_FOUND,
@@ -35,6 +44,16 @@ _STATUS_BY_ERROR: dict[type[AppError], int] = {
     SchemaNetworkError: status.HTTP_503_SERVICE_UNAVAILABLE,
     UnsupportedDatabaseError: status.HTTP_400_BAD_REQUEST,
     SchemaConnectionError: status.HTTP_400_BAD_REQUEST,
+    AwsConfigurationError: status.HTTP_503_SERVICE_UNAVAILABLE,
+    AwsConnectivityError: status.HTTP_503_SERVICE_UNAVAILABLE,
+    BedrockAccessError: status.HTTP_503_SERVICE_UNAVAILABLE,
+    BedrockInvocationError: status.HTTP_502_BAD_GATEWAY,
+    PredictionValidationError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    RecommendationValidationError: status.HTTP_422_UNPROCESSABLE_ENTITY,
+    PolicyConfigError: status.HTTP_500_INTERNAL_SERVER_ERROR,
+    GradingConfigError: status.HTTP_500_INTERNAL_SERVER_ERROR,
+    EmbeddingAccessError: status.HTTP_503_SERVICE_UNAVAILABLE,
+    EmbeddingInvocationError: status.HTTP_502_BAD_GATEWAY,
 }
 
 

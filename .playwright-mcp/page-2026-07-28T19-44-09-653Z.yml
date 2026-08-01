@@ -1,0 +1,78 @@
+- generic [ref=f1e1]:
+  - main [ref=f1e2]:
+    - link "← Migration Oracle" [ref=f1e4] [cursor=pointer]:
+      - /url: /
+    - generic [ref=f1e7]:
+      - generic [ref=f1e9]:
+        - generic [ref=f1e202]:
+          - generic [ref=f1e203]:
+            - generic [ref=f1e205]:
+              - heading "Verify your email" [level=1] [ref=f1e206]
+              - paragraph [ref=f1e207]: Enter the verification code sent to your email
+              - generic [ref=f1e208]:
+                - paragraph [ref=f1e209]: claude-agent+clerk_test@migration-oracle.dev
+                - button "Edit" [ref=f1e210] [cursor=pointer]
+            - generic [ref=f1e213]:
+              - generic [ref=f1e214]:
+                - generic [ref=f1e216]:
+                  - generic:
+                    - group
+                    - textbox "Enter verification code" [active] [ref=f1e217]
+                - button "Didn't receive a code? Resend (29)" [disabled]
+              - button [ref=f1e220] [cursor=pointer]
+          - generic [ref=f1e226]:
+            - generic [ref=f1e228]:
+              - paragraph [ref=f1e229]: Secured by
+              - link "Clerk logo" [ref=f1e230] [cursor=pointer]:
+                - /url: https://go.clerk.com/components
+            - paragraph [ref=f1e236]: Development mode
+        - generic [ref=f1e13]:
+          - generic [ref=f1e14]:
+            - generic [ref=f1e19]: shadow-execution.log
+            - generic [ref=f1e20]: Shadow Ready
+          - generic [ref=f1e23]:
+            - paragraph [ref=f1e112]:
+              - generic [ref=f1e113]: 09:42:11.241
+              - generic [ref=f1e114]: "> loading migration.sql"
+            - paragraph [ref=f1e115]:
+              - generic [ref=f1e116]: 09:42:11.698
+              - generic [ref=f1e117]: ✓ schema analyzed
+            - paragraph [ref=f1e118]:
+              - generic [ref=f1e119]: 09:42:12.044
+              - generic [ref=f1e120]: "✓ estimated runtime: 3.8s"
+            - paragraph [ref=f1e121]:
+              - generic [ref=f1e122]: 09:42:12.971
+              - generic [ref=f1e123]: "✓ rollback risk: low"
+            - paragraph [ref=f1e124]:
+              - generic [ref=f1e125]: 09:42:13.418
+              - generic [ref=f1e126]: ✓ provisioning shadow cluster
+            - paragraph [ref=f1e127]:
+              - generic [ref=f1e128]: 09:42:16.882
+              - generic [ref=f1e129]: ✓ shadow execution completed
+            - paragraph [ref=f1e130]:
+              - generic [ref=f1e131]: 09:42:17.156
+              - generic [ref=f1e132]: "✓ prediction accuracy: 98%"
+            - paragraph [ref=f1e133]:
+              - generic [ref=f1e134]: 09:42:17.603
+              - generic [ref=f1e135]: ✓ learned outcome stored
+            - paragraph [ref=f1e196]:
+              - generic [ref=f1e197]: 09:42:49.104
+              - generic [ref=f1e198]: "> waiting for next migration..."
+            - paragraph [ref=f1e199]:
+              - generic [ref=f1e201]: ▌
+      - paragraph [ref=f1e24]: By continuing, you agree to our Terms of Service and Privacy Policy.
+  - button "Open Next.js Dev Tools" [ref=f1e30] [cursor=pointer]
+  - alert [ref=f1e34]
+  - generic [ref=f1e142]:
+    - button "Keyless prompt" [expanded] [ref=f1e143] [cursor=pointer]:
+      - generic [ref=f1e148]: Configure your application
+    - generic [ref=f1e152]:
+      - generic [ref=f1e153]:
+        - paragraph [ref=f1e154]: Temporary API keys are enabled so you can get started immediately.
+        - list [ref=f1e155]:
+          - listitem [ref=f1e156]: Add SSO connections (eg. GitHub)
+          - listitem [ref=f1e157]: Set up B2B authentication
+          - listitem [ref=f1e158]: Enable MFA
+        - paragraph [ref=f1e159]: Access the dashboard to customize auth settings and explore Clerk features.
+      - link "Configure your application" [ref=f1e160] [cursor=pointer]:
+        - /url: https://dashboard.clerk.com/apps/claim?token=n69pjw7g6bubd89h7auh2epg8lqco4oqtvb5kxqd&return_url=http%3A%2F%2Flocalhost%3A3000%2Fget-started

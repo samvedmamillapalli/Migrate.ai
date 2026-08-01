@@ -1,0 +1,131 @@
+- generic [active] [ref=f18e1]:
+  - generic [ref=f18e2]:
+    - generic [ref=f18e5]:
+      - list [ref=f18e7]:
+        - listitem [ref=f18e8]:
+          - button "Migration Oracle Workspace" [ref=f18e212]:
+            - generic [ref=f18e13]:
+              - generic [ref=f18e14]: Migration Oracle
+              - generic [ref=f18e15]: Workspace
+      - generic [ref=f18e19]:
+        - list [ref=f18e21]:
+          - listitem [ref=f18e22]:
+            - link "Overview" [ref=f18e213] [cursor=pointer]:
+              - /url: /dashboard
+        - generic [ref=f18e30]:
+          - generic [ref=f18e31]: Migrations
+          - list [ref=f18e32]:
+            - listitem [ref=f18e33]:
+              - link "Current Migration" [ref=f18e214] [cursor=pointer]:
+                - /url: /dashboard/migrations/current
+            - listitem [ref=f18e40]:
+              - link "Past Migrations" [ref=f18e215] [cursor=pointer]:
+                - /url: /dashboard/migrations/history
+        - generic [ref=f18e47]:
+          - generic [ref=f18e48]: Intelligence
+          - list [ref=f18e49]:
+            - listitem [ref=f18e50]:
+              - link "Agent Memory" [ref=f18e216] [cursor=pointer]:
+                - /url: /dashboard/memory
+      - generic [ref=f18e61]:
+        - generic [ref=f18e63]:
+          - generic [ref=f18e64]: Owner identity
+          - textbox "Owner identity" [ref=f18e217]:
+            - /placeholder: e.g. samved
+            - text: claude-agent+clerk_test@migration-oracle.dev
+          - paragraph [ref=f18e65]: Scoped to your signed-in account. Hover to see the raw id.
+        - list [ref=f18e67]:
+          - listitem [ref=f18e68]:
+            - button "Operator Operator claude-agent+clerk_test@migration-oracle.dev" [ref=f18e218]:
+              - img "Operator" [ref=f18e219]
+              - generic [ref=f18e72]:
+                - generic [ref=f18e73]: Operator
+                - generic [ref=f18e137]: claude-agent+clerk_test@migration-oracle.dev
+        - list [ref=f18e78]:
+          - listitem [ref=f18e79]:
+            - button "Settings" [ref=f18e220]
+      - button "Toggle Sidebar" [ref=f18e221]
+    - main [ref=f18e86]:
+      - generic [ref=f18e87]:
+        - generic [ref=f18e88]:
+          - button "Toggle Sidebar" [ref=f18e222]
+          - separator [ref=f18e91]
+        - button "Sign out" [ref=f18e223]
+      - generic [ref=f18e224]:
+        - generic [ref=f18e225]:
+          - link "← Back to Overview" [ref=f18e226] [cursor=pointer]:
+            - /url: /dashboard
+          - link "Past Migrations →" [ref=f18e227] [cursor=pointer]:
+            - /url: /dashboard/migrations/history
+        - generic [ref=f18e228]:
+          - generic [ref=f18e229]:
+            - generic [ref=f18e230]:
+              - heading "Current Migration" [level=1] [ref=f18e231]
+              - paragraph [ref=f18e232]: Connecting the demo database and discovering schema…
+              - paragraph [ref=f18e298]: Invalid database credentials; authentication failed
+            - generic [ref=f18e237]:
+              - generic [ref=f18e238]: Pending
+              - paragraph [ref=f18e241]: 35s ago
+          - generic [ref=f18e242]:
+            - list [ref=f18e243]:
+              - listitem [ref=f18e244]:
+                - generic [ref=f18e245]: Create
+              - listitem [ref=f18e246]:
+                - generic [ref=f18e247]: →
+                - generic [ref=f18e248]: Predict
+              - listitem [ref=f18e249]:
+                - generic [ref=f18e250]: →
+                - generic [ref=f18e251]: Approve
+              - listitem [ref=f18e252]:
+                - generic [ref=f18e253]: →
+                - generic [ref=f18e254]: Shadow
+              - listitem [ref=f18e255]:
+                - generic [ref=f18e256]: →
+                - generic [ref=f18e257]: Grade
+              - listitem [ref=f18e258]:
+                - generic [ref=f18e259]: →
+                - generic [ref=f18e260]: Remember
+            - generic [ref=f18e261]:
+              - link "Full detail & model traces" [ref=f18e262] [cursor=pointer]:
+                - /url: /dashboard/migrations/bbbab194-ca02-40be-ac2b-a7813e4ec089
+              - link "Shadow execution" [ref=f18e263] [cursor=pointer]:
+                - /url: /dashboard/migrations/current/shadow
+        - region "1. Attach your database" [ref=f18e264]:
+          - heading "1. Attach your database" [level=2] [ref=f18e266]
+          - generic [ref=f18e267]:
+            - generic [ref=f18e268]: Not connected — paste a read-only URL or secret, then Discover.
+            - generic [ref=f18e269]:
+              - generic [ref=f18e270]:
+                - generic [ref=f18e271]:
+                  - paragraph [ref=f18e272]: No database of your own?
+                  - paragraph [ref=f18e273]: Connect a prepared demo database instead — not your data, always available, real read-only discovery.
+                - button "Try the demo database" [ref=f18e274]
+              - generic [ref=f18e275]:
+                - generic [ref=f18e276]:
+                  - text: Read-only database URL
+                  - textbox "Read-only database URL" [ref=f18e277]:
+                    - /placeholder: postgresql://readonly@host:26257/mydb?sslmode=verify-full
+                  - paragraph [ref=f18e278]: Example format — paste your own read-only connection string, not this one.
+                - button "Have a credential already in AWS Secrets Manager? →" [ref=f18e279]
+                - button "Discover schema" [ref=f18e280]
+              - button "▸ How do I create a read-only user?" [ref=f18e282]
+            - button "Schema details (0 tables)" [ref=f18e285]:
+              - generic [ref=f18e286]: ▸
+              - text: Schema details (0 tables)
+        - region "2. Migration" [ref=f18e287]:
+          - heading "2. Migration" [level=2] [ref=f18e289]
+          - button "View migration SQL (migration_bbbab194.sql)" [ref=f18e292]:
+            - generic [ref=f18e293]: ▸
+            - text: View migration SQL (migration_bbbab194.sql)
+        - region "3. Prediction" [ref=f18e294]:
+          - heading "3. Prediction" [level=2] [ref=f18e296]
+          - paragraph [ref=f18e297]: Attach and discover schema first.
+  - button "Open Next.js Dev Tools" [ref=f18e130] [cursor=pointer]
+  - alert [ref=f18e138]: Current Migration
+  - generic [ref=f18e139]:
+    - button "Keyless prompt" [expanded] [ref=f18e235] [cursor=pointer]:
+      - generic [ref=f18e145]: You've created your first user!
+    - generic [ref=f18e149]:
+      - paragraph [ref=f18e151]: Head to the dashboard to customize authentication settings, view user info, and explore more features.
+      - link "Configure your application" [ref=f18e236] [cursor=pointer]:
+        - /url: https://dashboard.clerk.com/apps/claim?token=n69pjw7g6bubd89h7auh2epg8lqco4oqtvb5kxqd&return_url=http%3A%2F%2Flocalhost%3A3000%2Fdashboard

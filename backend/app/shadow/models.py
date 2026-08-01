@@ -144,6 +144,7 @@ class SeedReport:
     indexes_created: int = 0
     rows_inserted: int = 0
     per_table_rows: dict[str, int] = field(default_factory=dict)
+    warnings: list[str] = field(default_factory=list)
 
 
 @dataclass

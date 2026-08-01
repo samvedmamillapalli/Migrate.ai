@@ -21,6 +21,10 @@ class ConflictError(AppError):
     """Raised when an operation conflicts with current state."""
 
 
+class UnauthorizedError(AppError):
+    """Raised when authentication is missing or invalid."""
+
+
 class ReadWriteCredentialsError(AppError):
     """Raised when customer database credentials allow writes."""
 

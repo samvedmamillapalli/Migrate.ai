@@ -14,7 +14,12 @@ if TYPE_CHECKING:
 
 
 class LearnedOutcome(UUIDPrimaryKeyMixin, TimestampMixin, Base):
-    """Learning artifact retained from a completed migration run."""
+    """DEPRECATED — superseded by Phase 10 ``Grade`` + ``MigrationMemory``.
+
+    Retained only so existing Alembic history / tables do not break. There is
+    **no write path**. New learning artifacts go to ``migration_memories``.
+    Do not surface this model in product docs or demos.
+    """
 
     __tablename__ = "learned_outcomes"
     __table_args__ = (

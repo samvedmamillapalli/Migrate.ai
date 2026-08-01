@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import Callable
 
 from sqlalchemy import text
 
@@ -23,6 +24,20 @@ from app.schema_analysis.read_only import assert_read_only_connection
 
 logger = get_logger(__name__)
 
+# (stage_id, message, percent) — best-effort progress callback so callers can
+# drive a staged UI instead of one opaque spinner. Never raises; discovery
+# must not fail because a progress sink misbehaves.
+OnStage = Callable[[str, str, int], None]
+
+
+def _emit(on_stage: OnStage | None, stage: str, message: str, percent: int) -> None:
+    if on_stage is None:
+        return
+    try:
+        on_stage(stage, message, percent)
+    except Exception:  # noqa: BLE001 - progress reporting must never break discovery
+        pass
+
 
 async def discover_database_metadata(
     connection: DatabaseConnection,
@@ -31,6 +46,7 @@ async def discover_database_metadata(
     discovery_timeout: int = 60,
     include_schemas: frozenset[str] | None = None,
     analyzer: SchemaAnalyzer | None = None,
+    on_stage: OnStage | None = None,
 ) -> DatabaseMetadata:
     """Validate read-only access and return structured schema metadata.
 
@@ -57,6 +73,7 @@ async def discover_database_metadata(
         analyzer=analyzer or SchemaAnalyzer(),
         expected_database=database,
         log_target=log_target,
+        on_stage=on_stage,
     )
 
     logger.info(
@@ -103,6 +120,7 @@ async def _discover_with_url(
     analyzer: SchemaAnalyzer,
     expected_database: str | None,
     log_target: dict[str, str],
+    on_stage: OnStage | None = None,
 ) -> DatabaseMetadata:
     try:
         return await _discover_once(
@@ -113,6 +131,7 @@ async def _discover_with_url(
             analyzer=analyzer,
             expected_database=expected_database,
             force_cockroach=False,
+            on_stage=on_stage,
         )
     except Exception as exc:
         if is_cockroach_version_parse_error(exc):
@@ -129,6 +148,7 @@ async def _discover_with_url(
                     analyzer=analyzer,
                     expected_database=expected_database,
                     force_cockroach=True,
+                    on_stage=on_stage,
                 )
             except Exception as retry_exc:
                 mapped = translate_schema_error(retry_exc)
@@ -159,10 +179,12 @@ async def _discover_once(
     analyzer: SchemaAnalyzer,
     expected_database: str | None,
     force_cockroach: bool,
+    on_stage: OnStage | None = None,
 ) -> DatabaseMetadata:
     statement_timeout_ms = max(discovery_timeout, 1) * 1000
 
     async def _run() -> DatabaseMetadata:
+        _emit(on_stage, "connecting", "Connecting to database…", 10)
         async with SchemaAnalysisConnection(
             database_url,
             connect_timeout=connect_timeout,
@@ -170,6 +192,12 @@ async def _discover_once(
             force_cockroach=force_cockroach,
         ) as target:
             await target.ping()
+            _emit(
+                on_stage,
+                "authenticating",
+                "Connected — verifying read-only access…",
+                40,
+            )
             async with target.connection() as probe_connection:
                 if expected_database is not None:
                     current_db = (
@@ -183,10 +211,18 @@ async def _discover_once(
                         )
                 await assert_read_only_connection(probe_connection)
 
-            return await analyzer.analyze_connection(
+            _emit(
+                on_stage,
+                "reading_schema",
+                "Access confirmed — reading tables, columns, indexes…",
+                70,
+            )
+            metadata = await analyzer.analyze_connection(
                 target,
                 include_schemas=include_schemas,
                 enforce_read_only=True,
             )
+            _emit(on_stage, "reading_schema", "Schema read complete.", 95)
+            return metadata
 
     return await asyncio.wait_for(_run(), timeout=discovery_timeout)

@@ -1,0 +1,51 @@
+{
+  "source_key": "airflow:task_instance_indexes_blocking",
+  "project": "Apache Airflow",
+  "repo": "https://github.com/apache/airflow",
+  "license": "Apache-2.0",
+  "migration_file": "https://github.com/apache/airflow/pull/65602",
+  "incident_issue": "https://github.com/apache/airflow/pull/65602",
+  "migration_summary": "Blocking CREATE INDEX on task_instance inside an Alembic transaction; CONCURRENTLY intentionally omitted because batch mode cannot run concurrent builds in a transaction.",
+  "migration_sql": "CREATE INDEX ix_task_instance_updated_at ON task_instance (updated_at);",
+  "scale_tier": "large",
+  "migration_type": "create_index",
+  "parsed_statement_types": ["CreateIndex"],
+  "schema_summary": "task_instance is one of Airflow's largest operational tables; indexes added for polling and cleanup queries.",
+  "index_count": 10,
+  "table_complexity": 40,
+  "risk_flags": [
+    {
+      "rule_id": "blocking_index_in_txn",
+      "severity": "high",
+      "message": "Alembic batch migrations wrap DDL in a transaction, so CONCURRENTLY is unavailable and writers can block."
+    }
+  ],
+  "risk_narrative": "Airflow maintainers documented that CONCURRENTLY is intentionally omitted from migrations because Alembic batch mode runs inside a transaction. Operators with large task_instance tables who need lock-free builds must apply CREATE INDEX CONCURRENTLY manually before airflow db migrate.",
+  "lessons_learned": "Framework migration runners often cannot express online index builds. For large Airflow metadata DBs, pre-create indexes concurrently, then let the migration no-op or use IF NOT EXISTS. Treat metadata DB size like production data size for blast-radius estimates.",
+  "surprise_notes": "The 'correct' in-repo migration is still a blocking index for large fleets—the safe path is an out-of-band manual step documented in the PR, not the migration file alone.",
+  "documented_outcomes": {
+    "success": true,
+    "actual_duration_seconds": null,
+    "actual_storage_mb": null,
+    "rollback_required": false,
+    "timed_out": false,
+    "error_message": null
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 600.0,
+    "estimated_storage_mb": 128.0,
+    "rollback_risk": "medium",
+    "confidence_score": 0.65,
+    "risk_explanation": "Blocking index duration scales with task_instance row count; concurrent alternative exists but outside Alembic."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "documented_ops_guidance",
+    "duration_within_band": true,
+    "storage_within_band": true,
+    "rollback_within_band": true,
+    "dimension_details": {
+      "source": "open_source"
+    }
+  }
+}

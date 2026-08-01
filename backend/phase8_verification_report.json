@@ -1,0 +1,250 @@
+[
+  {
+    "group": "AWS Foundation",
+    "name": "Credentials loaded correctly",
+    "passed": true,
+    "detail": "account=630434208625 auth_mode=access_key",
+    "seconds": 0.9235164000128862,
+    "severity": ""
+  },
+  {
+    "group": "AWS Foundation",
+    "name": "Configuration validated",
+    "passed": true,
+    "detail": "missing_prod=['MIGRATION_WORKFLOW_ARN']",
+    "seconds": 9.90001717582345e-06,
+    "severity": ""
+  },
+  {
+    "group": "AWS Foundation",
+    "name": "Region configuration",
+    "passed": true,
+    "detail": "region=us-east-1",
+    "seconds": 1.700012944638729e-06,
+    "severity": ""
+  },
+  {
+    "group": "AWS Foundation",
+    "name": "Client initialization + reuse",
+    "passed": true,
+    "detail": "reused 7 clients",
+    "seconds": 0.1107676999818068,
+    "severity": ""
+  },
+  {
+    "group": "Secrets Manager",
+    "name": "Secret storage (no duplicate create)",
+    "passed": true,
+    "detail": "idempotent create arn=arn:aws:secretsmanager:us-east-1:630434208625:secret:migration-oracle/connections/phase8-verify-07524063-Swr3Eu",
+    "seconds": 1.630205699999351,
+    "severity": ""
+  },
+  {
+    "group": "Secrets Manager",
+    "name": "Secret retrieval",
+    "passed": true,
+    "detail": "round-trip ok",
+    "seconds": 0.0004276999970898032,
+    "severity": ""
+  },
+  {
+    "group": "Secrets Manager",
+    "name": "Secret rotation compatibility",
+    "passed": true,
+    "detail": "cache-bypass read supported",
+    "seconds": 0.10856459999922663,
+    "severity": ""
+  },
+  {
+    "group": "S3",
+    "name": "Artifact upload (no duplicate)",
+    "passed": true,
+    "detail": "first=True dup=False",
+    "seconds": 0.8594731999910437,
+    "severity": ""
+  },
+  {
+    "group": "S3",
+    "name": "Artifact retrieval",
+    "passed": true,
+    "detail": "download ok",
+    "seconds": 0.09709570000995882,
+    "severity": ""
+  },
+  {
+    "group": "S3",
+    "name": "Execution report upload",
+    "passed": true,
+    "detail": "uri=s3://migration-oracle-seed-data/runs/07524063-f799-47bb-963c-72e8a59a9fa3/execution_report.json",
+    "seconds": 0.253255400020862,
+    "severity": ""
+  },
+  {
+    "group": "CloudWatch",
+    "name": "Log groups + alarm creation",
+    "passed": true,
+    "detail": "log_groups=9 alarms=['migration-oracle-cleanup-failed', 'migration-oracle-orphaned-shadow-clusters']",
+    "seconds": 2.992513900011545,
+    "severity": ""
+  },
+  {
+    "group": "CloudWatch",
+    "name": "Structured logs + run_id/Lambda/SFN correlation",
+    "passed": true,
+    "detail": "run_id/lambda/sfn correlation present",
+    "seconds": 0.0001711999939288944,
+    "severity": ""
+  },
+  {
+    "group": "CloudWatch",
+    "name": "Metric publication",
+    "passed": true,
+    "detail": "metrics published",
+    "seconds": 0.25724380000610836,
+    "severity": ""
+  },
+  {
+    "group": "Step Functions",
+    "name": "Definition validates via AWS",
+    "passed": true,
+    "detail": "aws_result=OK",
+    "seconds": 0.7481048000045121,
+    "severity": ""
+  },
+  {
+    "group": "Step Functions",
+    "name": "Happy path",
+    "passed": true,
+    "detail": "happy path linked",
+    "seconds": 4.8999791033566e-06,
+    "severity": ""
+  },
+  {
+    "group": "Step Functions",
+    "name": "Retry path (exponential backoff)",
+    "passed": true,
+    "detail": "7 tasks have exponential backoff",
+    "seconds": 1.1399999493733048e-05,
+    "severity": ""
+  },
+  {
+    "group": "Step Functions",
+    "name": "Failure path",
+    "passed": true,
+    "detail": "all tasks catch to MarkFailed",
+    "seconds": 5.3000112529844046e-06,
+    "severity": ""
+  },
+  {
+    "group": "Step Functions",
+    "name": "Cleanup path (guaranteed)",
+    "passed": true,
+    "detail": "cleanup guaranteed on success+failure",
+    "seconds": 1.8999853637069464e-06,
+    "severity": ""
+  },
+  {
+    "group": "Step Functions",
+    "name": "Timeout handling",
+    "passed": true,
+    "detail": "top-level + per-task timeouts",
+    "seconds": 8.300004992634058e-06,
+    "severity": ""
+  },
+  {
+    "group": "Step Functions",
+    "name": "Resume after interruption (idempotent)",
+    "passed": true,
+    "detail": "run_id execution name + idempotent handlers",
+    "seconds": 1.7799990018829703e-05,
+    "severity": ""
+  },
+  {
+    "group": "CockroachDB",
+    "name": "Workflow state + execution ARN persisted",
+    "passed": true,
+    "detail": "arn+workflow_status persisted run=97502855-13d5-48a5-95bb-086eb7900f95",
+    "seconds": 6.588572799984831,
+    "severity": ""
+  },
+  {
+    "group": "CockroachDB",
+    "name": "Status transitions correct",
+    "passed": true,
+    "detail": "valid path + terminal rejection enforced",
+    "seconds": 9.40280189999612,
+    "severity": ""
+  },
+  {
+    "group": "Lambda",
+    "name": "Input validation",
+    "passed": true,
+    "detail": "all handlers reject missing run_id",
+    "seconds": 0.00017040001694113016,
+    "severity": ""
+  },
+  {
+    "group": "Lambda",
+    "name": "Exception handling",
+    "passed": true,
+    "detail": "handler raises on invalid state",
+    "seconds": 4.469485600013286,
+    "severity": ""
+  },
+  {
+    "group": "Reliability",
+    "name": "AWS throttling retries",
+    "passed": true,
+    "detail": "botocore retries={'mode': 'standard', 'total_max_attempts': 4} (adaptive/standard w/ backoff)",
+    "seconds": 2.8099981136620045e-05,
+    "severity": ""
+  },
+  {
+    "group": "Reliability",
+    "name": "Network / API failures mapped",
+    "passed": true,
+    "detail": "typed error: SecretsServiceError",
+    "seconds": 0.08845410001231357,
+    "severity": ""
+  },
+  {
+    "group": "Reliability",
+    "name": "Partial failures (txn retry)",
+    "passed": true,
+    "detail": "40001 detected for txn retry",
+    "seconds": 1.3599987141788006e-05,
+    "severity": ""
+  },
+  {
+    "group": "Security",
+    "name": "No credentials/secrets logged",
+    "passed": true,
+    "detail": "no secret material in logs",
+    "seconds": 3.630001447163522e-05,
+    "severity": ""
+  },
+  {
+    "group": "Security",
+    "name": "No secrets exposed (repr/masking)",
+    "passed": true,
+    "detail": "DatabaseConnection repr masks password",
+    "seconds": 1.550000160932541e-05,
+    "severity": ""
+  },
+  {
+    "group": "Security",
+    "name": "Least-privilege IAM surface",
+    "passed": true,
+    "detail": "services scoped to 7; caller=arn:aws:iam::630434208625:user/migration-oracle-backend",
+    "seconds": 1.0399991879239678e-05,
+    "severity": ""
+  },
+  {
+    "group": "S3",
+    "name": "Cleanup (verification secret)",
+    "passed": true,
+    "detail": "verification secret deleted",
+    "seconds": 0.5988183000008576,
+    "severity": ""
+  }
+]

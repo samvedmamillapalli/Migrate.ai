@@ -1,0 +1,37 @@
+{
+  "name": "web",
+  "version": "0.0.1",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "dev": "node ../../scripts/free-port.js 3000 && next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "format": "prettier --write \"**/*.{ts,tsx}\"",
+    "typecheck": "tsc --noEmit",
+    "gen:api": "openapi-typescript ./lib/api/openapi.json -o ./lib/api/schema.ts"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^6.39.6",
+    "@workspace/ui": "*",
+    "@xyflow/react": "^12.11.2",
+    "lucide-react": "^1.26.0",
+    "motion": "^12.42.2",
+    "next": "16.2.6",
+    "next-themes": "^0.4.6",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@workspace/eslint-config": "*",
+    "@workspace/typescript-config": "*",
+    "eslint": "^9",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "^5"
+  }
+}

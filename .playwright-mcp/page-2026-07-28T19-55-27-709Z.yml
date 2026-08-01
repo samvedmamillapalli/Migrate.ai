@@ -1,0 +1,265 @@
+- generic [active] [ref=f20e1]:
+  - generic [ref=f20e2]:
+    - generic [ref=f20e5]:
+      - list [ref=f20e7]:
+        - listitem [ref=f20e8]:
+          - button "Migration Oracle Workspace" [ref=f20e9]:
+            - generic [ref=f20e13]:
+              - generic [ref=f20e14]: Migration Oracle
+              - generic [ref=f20e15]: Workspace
+      - generic [ref=f20e19]:
+        - list [ref=f20e21]:
+          - listitem [ref=f20e22]:
+            - link "Overview" [ref=f20e23] [cursor=pointer]:
+              - /url: /dashboard
+        - generic [ref=f20e30]:
+          - generic [ref=f20e31]: Migrations
+          - list [ref=f20e32]:
+            - listitem [ref=f20e33]:
+              - link "Current Migration" [ref=f20e34] [cursor=pointer]:
+                - /url: /dashboard/migrations/current
+            - listitem [ref=f20e40]:
+              - link "Past Migrations" [ref=f20e41] [cursor=pointer]:
+                - /url: /dashboard/migrations/history
+        - generic [ref=f20e47]:
+          - generic [ref=f20e48]: Intelligence
+          - list [ref=f20e49]:
+            - listitem [ref=f20e50]:
+              - link "Agent Memory" [ref=f20e51] [cursor=pointer]:
+                - /url: /dashboard/memory
+      - generic [ref=f20e61]:
+        - generic [ref=f20e63]:
+          - generic [ref=f20e64]: Owner identity
+          - textbox "Owner identity" [ref=f20e114]:
+            - /placeholder: e.g. samved
+            - text: claude-agent+clerk_test@migration-oracle.dev
+          - paragraph [ref=f20e65]: Scoped to your signed-in account. Hover to see the raw id.
+        - list [ref=f20e67]:
+          - listitem [ref=f20e68]:
+            - button "Operator Operator claude-agent+clerk_test@migration-oracle.dev" [ref=f20e115]:
+              - img "Operator" [ref=f20e116]
+              - generic [ref=f20e72]:
+                - generic [ref=f20e73]: Operator
+                - generic [ref=f20e117]: claude-agent+clerk_test@migration-oracle.dev
+        - list [ref=f20e78]:
+          - listitem [ref=f20e79]:
+            - button "Settings" [ref=f20e80]
+      - button "Toggle Sidebar" [ref=f20e85]
+    - main [ref=f20e86]:
+      - generic [ref=f20e87]:
+        - generic [ref=f20e88]:
+          - button "Toggle Sidebar" [ref=f20e89]
+          - separator [ref=f20e91]
+        - button "Sign out" [ref=f20e93]
+      - generic [ref=f20e94]:
+        - generic [ref=f20e95]:
+          - link "← Back to Overview" [ref=f20e96] [cursor=pointer]:
+            - /url: /dashboard
+          - link "Past Migrations →" [ref=f20e97] [cursor=pointer]:
+            - /url: /dashboard/migrations/history
+        - generic [ref=f20e98]:
+          - generic [ref=f20e99]:
+            - generic [ref=f20e100]:
+              - heading "Current Migration" [level=1] [ref=f20e101]
+              - paragraph [ref=f20e102]: Aborting shadow workflow and tearing down cluster…
+            - generic [ref=f20e118]:
+              - generic [ref=f20e119]: Running shadow
+              - paragraph [ref=f20e122]: 5m ago
+          - generic [ref=f20e123]:
+            - list [ref=f20e124]:
+              - listitem [ref=f20e125]:
+                - generic [ref=f20e126]: Create
+              - listitem [ref=f20e127]:
+                - generic [ref=f20e128]: →
+                - generic [ref=f20e129]: Predict
+              - listitem [ref=f20e130]:
+                - generic [ref=f20e131]: →
+                - generic [ref=f20e132]: Approve
+              - listitem [ref=f20e133]:
+                - generic [ref=f20e134]: →
+                - generic [ref=f20e135]: Shadow
+              - listitem [ref=f20e136]:
+                - generic [ref=f20e137]: →
+                - generic [ref=f20e138]: Grade
+              - listitem [ref=f20e139]:
+                - generic [ref=f20e140]: →
+                - generic [ref=f20e141]: Remember
+            - generic [ref=f20e142]:
+              - link "Full detail & model traces" [ref=f20e143] [cursor=pointer]:
+                - /url: /dashboard/migrations/a47a7aa1-9fbe-4c34-bb9d-b8fa4d2679bc
+              - link "Shadow execution" [ref=f20e144] [cursor=pointer]:
+                - /url: /dashboard/migrations/current/shadow
+        - region "1. Attach your database" [ref=f20e160]:
+          - heading "1. Attach your database" [level=2] [ref=f20e162]
+          - generic [ref=f20e163]:
+            - generic [ref=f20e164]: Connected — schema succeeded
+            - button "Schema details (2 tables)" [ref=f20e167]:
+              - generic [ref=f20e168]: ▸
+              - text: Schema details (2 tables)
+        - region "2. Migration" [ref=f20e169]:
+          - heading "2. Migration" [level=2] [ref=f20e171]
+          - button "View migration SQL (migration_a47a7aa1.sql)" [ref=f20e174]:
+            - generic [ref=f20e175]: ▸
+            - text: View migration SQL (migration_a47a7aa1.sql)
+        - region "Assessment" [ref=f20e176]:
+          - heading "Assessment" [level=2] [ref=f20e178]
+          - generic [ref=f20e179]:
+            - generic [ref=f20e180]:
+              - generic [ref=f20e181]:
+                - paragraph [ref=f20e182]: Policy
+                - paragraph [ref=f20e183]: Allow
+              - generic [ref=f20e184]:
+                - paragraph [ref=f20e185]: Risk
+                - paragraph [ref=f20e186]: low
+              - generic [ref=f20e187]:
+                - paragraph [ref=f20e188]: Confidence
+                - paragraph [ref=f20e189]: 72%
+            - generic [ref=f20e190]:
+              - generic [ref=f20e191]:
+                - term [ref=f20e192]: Duration
+                - definition [ref=f20e193]: 16s
+              - generic [ref=f20e194]:
+                - term [ref=f20e195]: Storage
+                - definition [ref=f20e196]: 7.5 MB
+              - generic [ref=f20e197]:
+                - term [ref=f20e198]: Rollback
+                - definition [ref=f20e199]: low
+            - paragraph [ref=f20e200]: This change is safe to run and is expected to complete quickly on the shadow cluster. It works by scanning every existing row in the users table to build a new searchable structure for the username column, which takes a short but non-zero amount of time proportional to the 100,000 rows present. The uniqueness requirement means the build will fail if any two rows share the same username value, so duplicate data is the one thing that could cause this to error out rather than succeed. A closely matched past synthetic run on the same scale tier measured about 14.5 seconds, which gives reasonable confidence in the estimate here.
+            - generic [ref=f20e201]:
+              - paragraph [ref=f20e202]: Recommendation
+              - paragraph [ref=f20e203]: Apply the unique index directly during a low-traffic window, monitoring the backfill job as it runs.
+              - paragraph [ref=f20e204]: This migration is straightforward and policy allows it, but the uniqueness constraint is the one thing that can cause a hard failure rather than a slow one. If any two users share a username today, the entire index build will be rejected instantly and no index will be created. The backfill itself is fast and CockroachDB handles it online, so the main preparation work is a duplicate-data audit before you run anything. Running off-peak is still worthwhile because the backfill competes for I/O, and actively watching the job status prevents you from assuming success when the build may have silently failed and left an invalid index behind.
+            - button "Show details" [ref=f20e206]
+        - region "Learning" [ref=f20e207]:
+          - heading "Learning" [level=2] [ref=f20e209]
+          - generic [ref=f20e211]:
+            - paragraph [ref=f20e213]: Learning from 5 similar runs
+            - button "View" [ref=f20e214]
+        - region "Approval" [ref=f20e215]:
+          - heading "Approval" [level=2] [ref=f20e217]
+          - generic [ref=f20e218]:
+            - paragraph [ref=f20e219]: Approved — use Shadow cluster below to start or watch the real verify.
+            - generic [ref=f20e249]:
+              - paragraph [ref=f20e250]: Recorded decision
+              - paragraph [ref=f20e251]: proceed·user_3H96IPMRcG0I2hX7AfeR1Htxq7L
+        - region "Shadow" [ref=f20e224]:
+          - heading "Shadow" [level=2] [ref=f20e226]
+          - generic [ref=f20e252]:
+            - generic [ref=f20e253]:
+              - paragraph [ref=f20e254]: Live · reconnecting…
+              - paragraph [ref=f20e255]: 0/5 · Provision
+            - list [ref=f20e256]:
+              - listitem [ref=f20e257]:
+                - generic [ref=f20e261]:
+                  - paragraph [ref=f20e262]: Provision
+                  - paragraph [ref=f20e263]: 11s
+              - listitem [ref=f20e264]:
+                - generic [ref=f20e268]:
+                  - paragraph [ref=f20e269]: Seed
+                  - paragraph [ref=f20e270]: —
+              - listitem [ref=f20e271]:
+                - generic [ref=f20e275]:
+                  - paragraph [ref=f20e276]: Execute
+                  - paragraph [ref=f20e277]: —
+              - listitem [ref=f20e278]:
+                - generic [ref=f20e282]:
+                  - paragraph [ref=f20e283]: Measure
+                  - paragraph [ref=f20e284]: —
+              - listitem [ref=f20e285]:
+                - generic [ref=f20e288]:
+                  - paragraph [ref=f20e289]: Teardown
+                  - paragraph [ref=f20e290]: —
+            - paragraph [ref=f20e292]: Waiting for the shadow cluster to be created…
+            - generic [ref=f20e293]:
+              - paragraph [ref=f20e294]: Pred → actual
+              - generic [ref=f20e295]:
+                - generic [ref=f20e296]:
+                  - term [ref=f20e297]: Duration
+                  - definition [ref=f20e298]: pred 16s→actual measuring…
+                - generic [ref=f20e299]:
+                  - term [ref=f20e300]: Storage
+                  - definition [ref=f20e301]: pred 7.5 MB→actual measuring…
+                - generic [ref=f20e302]:
+                  - term [ref=f20e303]: Rollback
+                  - definition [ref=f20e304]: pred low→actual measuring…
+            - generic [ref=f20e305]:
+              - paragraph [ref=f20e306]: Schema diff
+              - paragraph [ref=f20e307]: Schema diff appears once before/after snapshots are captured (measure stage).
+            - generic [ref=f20e308]:
+              - paragraph [ref=f20e309]: Event log
+              - paragraph [ref=f20e310]: No events recorded yet.
+            - generic [ref=f20e311]:
+              - button "Watch live" [ref=f20e312]
+              - link "Open full page" [ref=f20e313] [cursor=pointer]:
+                - /url: /dashboard/migrations/current/shadow
+              - button "Aborting…" [disabled]
+  - button "Open Next.js Dev Tools" [ref=f20e110] [cursor=pointer]
+  - alert [ref=f20e145]
+  - generic [ref=f20e146]:
+    - button "Keyless prompt" [expanded] [ref=f20e147] [cursor=pointer]:
+      - generic [ref=f20e152]: You've created your first user!
+    - generic [ref=f20e156]:
+      - paragraph [ref=f20e158]: Head to the dashboard to customize authentication settings, view user info, and explore more features.
+      - link "Configure your application" [ref=f20e159] [cursor=pointer]:
+        - /url: https://dashboard.clerk.com/apps/claim?token=n69pjw7g6bubd89h7auh2epg8lqco4oqtvb5kxqd&return_url=http%3A%2F%2Flocalhost%3A3000%2Fdashboard%2Fmigrations%2Fcurrent
+  - dialog "Shadow cluster visualization" [ref=f20e315]:
+    - banner [ref=f20e316]:
+      - generic [ref=f20e317]:
+        - paragraph [ref=f20e318]: Shadow visualization
+        - paragraph [ref=f20e319]: run a47a7aa1· live
+      - generic [ref=f20e320]:
+        - button "Min" [ref=f20e321]
+        - button "Close" [ref=f20e322]
+    - generic [ref=f20e323]:
+      - generic [ref=f20e329]:
+        - paragraph [ref=f20e330]: Live
+        - button "SQL" [ref=f20e331]
+      - generic [ref=f20e332]:
+        - generic [ref=f20e333]:
+          - paragraph [ref=f20e334]: Live · reconnecting…
+          - paragraph [ref=f20e335]: 0/5 · Provision
+        - list [ref=f20e336]:
+          - listitem [ref=f20e337]:
+            - generic [ref=f20e341]:
+              - paragraph [ref=f20e342]: Provision
+              - paragraph [ref=f20e343]: 10s
+          - listitem [ref=f20e344]:
+            - generic [ref=f20e348]:
+              - paragraph [ref=f20e349]: Seed
+              - paragraph [ref=f20e350]: —
+          - listitem [ref=f20e351]:
+            - generic [ref=f20e355]:
+              - paragraph [ref=f20e356]: Execute
+              - paragraph [ref=f20e357]: —
+          - listitem [ref=f20e358]:
+            - generic [ref=f20e362]:
+              - paragraph [ref=f20e363]: Measure
+              - paragraph [ref=f20e364]: —
+          - listitem [ref=f20e365]:
+            - generic [ref=f20e368]:
+              - paragraph [ref=f20e369]: Teardown
+              - paragraph [ref=f20e370]: —
+        - paragraph [ref=f20e372]: Waiting for the shadow cluster to be created…
+        - generic [ref=f20e373]:
+          - paragraph [ref=f20e374]: Pred → actual
+          - generic [ref=f20e375]:
+            - generic [ref=f20e376]:
+              - term [ref=f20e377]: Duration
+              - definition [ref=f20e378]: pred 16s→actual measuring…
+            - generic [ref=f20e379]:
+              - term [ref=f20e380]: Storage
+              - definition [ref=f20e381]: pred 7.5 MB→actual measuring…
+            - generic [ref=f20e382]:
+              - term [ref=f20e383]: Rollback
+              - definition [ref=f20e384]: pred low→actual measuring…
+        - generic [ref=f20e385]:
+          - paragraph [ref=f20e386]: Schema diff
+          - paragraph [ref=f20e387]: Schema diff appears once before/after snapshots are captured (measure stage).
+        - generic [ref=f20e388]:
+          - paragraph [ref=f20e389]: Event log
+          - paragraph [ref=f20e390]: No events recorded yet.
+    - contentinfo [ref=f20e325]:
+      - link "Full shadow page" [ref=f20e326] [cursor=pointer]:
+        - /url: /dashboard/migrations/current/shadow
+      - link "Current migration" [ref=f20e327] [cursor=pointer]:
+        - /url: /dashboard/migrations/current

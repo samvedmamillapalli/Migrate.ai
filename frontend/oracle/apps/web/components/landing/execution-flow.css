@@ -1,0 +1,31 @@
+.oracle-execution-flow {
+  --xy-edge-stroke: rgba(255, 255, 255, 0.2);
+  --xy-edge-stroke-selected: rgba(255, 255, 255, 0.2);
+  --xy-edge-stroke-width: 1.15;
+  --xy-background-color: transparent;
+}
+
+.oracle-execution-flow .react-flow {
+  background: transparent;
+}
+
+.oracle-execution-flow .react-flow__edge-path {
+  stroke-linecap: round;
+}
+
+.oracle-execution-flow .react-flow__node {
+  font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+.oracle-execution-flow .react-flow__attribution {
+  display: none;
+}
+
+.oracle-execution-flow .react-flow__handle {
+  pointer-events: none;
+}
+
+.oracle-execution-flow .react-flow__viewport {
+  /* Keep composed layout stable */
+  cursor: default;
+}

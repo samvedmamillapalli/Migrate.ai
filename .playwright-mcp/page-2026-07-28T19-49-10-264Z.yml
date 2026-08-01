@@ -1,0 +1,72 @@
+- generic [active] [ref=f18e1]:
+  - generic [ref=f18e2]:
+    - generic [ref=f18e5]:
+      - list [ref=f18e7]:
+        - listitem [ref=f18e8]:
+          - button "Migration Oracle Workspace" [ref=f18e212]:
+            - generic [ref=f18e13]:
+              - generic [ref=f18e14]: Migration Oracle
+              - generic [ref=f18e15]: Workspace
+      - generic [ref=f18e19]:
+        - list [ref=f18e21]:
+          - listitem [ref=f18e22]:
+            - link "Overview" [ref=f18e213] [cursor=pointer]:
+              - /url: /dashboard
+        - generic [ref=f18e30]:
+          - generic [ref=f18e31]: Migrations
+          - list [ref=f18e32]:
+            - listitem [ref=f18e33]:
+              - link "Current Migration" [ref=f18e214] [cursor=pointer]:
+                - /url: /dashboard/migrations/current
+            - listitem [ref=f18e40]:
+              - link "Past Migrations" [ref=f18e215] [cursor=pointer]:
+                - /url: /dashboard/migrations/history
+        - generic [ref=f18e47]:
+          - generic [ref=f18e48]: Intelligence
+          - list [ref=f18e49]:
+            - listitem [ref=f18e50]:
+              - link "Agent Memory" [ref=f18e216] [cursor=pointer]:
+                - /url: /dashboard/memory
+      - generic [ref=f18e61]:
+        - generic [ref=f18e63]:
+          - generic [ref=f18e64]: Owner identity
+          - textbox "Owner identity" [ref=f18e217]:
+            - /placeholder: e.g. samved
+            - text: claude-agent+clerk_test@migration-oracle.dev
+          - paragraph [ref=f18e65]: Scoped to your signed-in account. Hover to see the raw id.
+        - list [ref=f18e67]:
+          - listitem [ref=f18e68]:
+            - button "Operator Operator claude-agent+clerk_test@migration-oracle.dev" [ref=f18e218]:
+              - img "Operator" [ref=f18e219]
+              - generic [ref=f18e72]:
+                - generic [ref=f18e73]: Operator
+                - generic [ref=f18e137]: claude-agent+clerk_test@migration-oracle.dev
+        - list [ref=f18e78]:
+          - listitem [ref=f18e79]:
+            - button "Settings" [ref=f18e220]
+      - button "Toggle Sidebar" [ref=f18e221]
+    - main [ref=f18e86]:
+      - generic [ref=f18e87]:
+        - generic [ref=f18e88]:
+          - button "Toggle Sidebar" [ref=f18e222]
+          - separator [ref=f18e91]
+        - button "Sign out" [ref=f18e223]
+      - generic [ref=f18e224]:
+        - generic [ref=f18e225]:
+          - link "← Back to Overview" [ref=f18e226] [cursor=pointer]:
+            - /url: /dashboard
+          - link "Past Migrations →" [ref=f18e227] [cursor=pointer]:
+            - /url: /dashboard/migrations/history
+        - generic [ref=f18e230]:
+          - heading "Current Migration" [level=1] [ref=f18e231]
+          - paragraph [ref=f18e232]: Waiting for a migration…
+        - paragraph [ref=f18e234]: Loading current run…
+  - button "Open Next.js Dev Tools" [ref=f18e130] [cursor=pointer]
+  - alert [ref=f18e138]: Current Migration
+  - generic [ref=f18e139]:
+    - button "Keyless prompt" [expanded] [ref=f18e235] [cursor=pointer]:
+      - generic [ref=f18e145]: You've created your first user!
+    - generic [ref=f18e149]:
+      - paragraph [ref=f18e151]: Head to the dashboard to customize authentication settings, view user info, and explore more features.
+      - link "Configure your application" [ref=f18e236] [cursor=pointer]:
+        - /url: https://dashboard.clerk.com/apps/claim?token=n69pjw7g6bubd89h7auh2epg8lqco4oqtvb5kxqd&return_url=http%3A%2F%2Flocalhost%3A3000%2Fdashboard

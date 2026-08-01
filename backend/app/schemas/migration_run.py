@@ -6,11 +6,43 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
-from app.database.models import MigrationRunStatus, SchemaDiscoveryStatus
+from app.database.models import (
+    CompatibilityRisk,
+    MigrationRunStatus,
+    PolicyDecision,
+    SchemaDiscoveryStatus,
+    WorkflowStatus,
+)
 
 
 class MigrationRunCreateRequest(BaseModel):
     migration_sql: str = Field(min_length=1, description="SQL migration to analyze")
+    owner_identity: str = Field(
+        default="anonymous",
+        min_length=1,
+        max_length=256,
+        description="Soft owner identity (no real auth yet); scopes memory retrieval",
+    )
+    revises_run_id: uuid.UUID | None = Field(
+        default=None,
+        description="Optional link to an earlier run this migration revises",
+    )
+    run_kind: str = Field(
+        default="standard",
+        description=(
+            "standard (default) | chaos (deliberate failure test) | "
+            "debug (developer/demo tooling). Keeps chaos/debug runs out of "
+            "the default Recent list and future accuracy queries."
+        ),
+    )
+
+    @field_validator("run_kind")
+    @classmethod
+    def validate_run_kind(cls, value: str) -> str:
+        normalized = (value or "standard").strip().lower() or "standard"
+        if normalized not in {"standard", "chaos", "debug"}:
+            raise ValueError("run_kind must be one of: standard, chaos, debug")
+        return normalized
 
     @field_validator("migration_sql")
     @classmethod
@@ -18,6 +50,14 @@ class MigrationRunCreateRequest(BaseModel):
         normalized = value.strip()
         if not normalized:
             raise ValueError("migration_sql must not be empty")
+        return normalized
+
+    @field_validator("owner_identity")
+    @classmethod
+    def validate_owner_identity(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("owner_identity must not be empty")
         return normalized
 
 
@@ -33,12 +73,32 @@ class MigrationRunResponse(BaseModel):
     status: MigrationRunStatus
     created_at: datetime
     updated_at: datetime
+    owner_identity: str = "anonymous"
+    run_kind: str = "standard"
+    revises_run_id: uuid.UUID | None = None
     schema_snapshot: dict[str, Any] | None = None
     schema_discovered_at: datetime | None = None
     schema_discovery_duration_ms: float | None = None
     schema_database_engine: str | None = None
     schema_database_version: str | None = None
     schema_discovery_status: SchemaDiscoveryStatus | None = None
+    sfn_execution_arn: str | None = None
+    connection_secret_arn: str | None = None
+    workflow_status: WorkflowStatus = WorkflowStatus.NOT_STARTED
+    workflow_started_at: datetime | None = None
+    workflow_finished_at: datetime | None = None
+    # Phase 9
+    risk_flags: list[dict[str, Any]] | None = None
+    compatibility_risk: CompatibilityRisk | None = None
+    requires_expand_contract: bool | None = None
+    requires_manual_review: bool | None = None
+    policy_decision: PolicyDecision | None = None
+    parsed_statement_types: list[str] | None = None
+    recommendation: dict[str, Any] | None = None
+    explainability: dict[str, Any] | None = None
+    prediction_scale_tier: str | None = None
+    # Phase 10
+    recommendation_outcome: dict[str, Any] | None = None
 
 
 class MigrationRunSummaryResponse(BaseModel):
@@ -51,16 +111,40 @@ class MigrationRunSummaryResponse(BaseModel):
     status: MigrationRunStatus
     created_at: datetime
     updated_at: datetime
+    owner_identity: str = "anonymous"
+    run_kind: str = "standard"
+    revises_run_id: uuid.UUID | None = None
     schema_discovered_at: datetime | None = None
     schema_discovery_duration_ms: float | None = None
     schema_database_engine: str | None = None
     schema_database_version: str | None = None
     schema_discovery_status: SchemaDiscoveryStatus | None = None
+    sfn_execution_arn: str | None = None
+    workflow_status: WorkflowStatus = WorkflowStatus.NOT_STARTED
+    workflow_started_at: datetime | None = None
+    workflow_finished_at: datetime | None = None
+    policy_decision: PolicyDecision | None = None
+    requires_manual_review: bool | None = None
+    prediction_scale_tier: str | None = None
 
     @computed_field
     @property
     def has_schema_snapshot(self) -> bool:
         return self.schema_discovery_status == SchemaDiscoveryStatus.SUCCEEDED
+
+    @computed_field
+    @property
+    def is_terminal(self) -> bool:
+        return self.status in {
+            MigrationRunStatus.COMPLETED,
+            MigrationRunStatus.FAILED,
+        }
+
+    @computed_field
+    @property
+    def sql_snippet(self) -> str:
+        one = " ".join((self.migration_sql or "").split())
+        return one if len(one) <= 96 else f"{one[:93]}..."
 
 
 class MigrationRunListResponse(BaseModel):

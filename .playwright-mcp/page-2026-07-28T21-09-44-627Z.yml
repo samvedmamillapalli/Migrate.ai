@@ -1,0 +1,62 @@
+- generic [active] [ref=f4e1]:
+  - generic [ref=f4e2]:
+    - generic [ref=f4e5]:
+      - list [ref=f4e7]:
+        - listitem [ref=f4e8]:
+          - button "Migration Oracle Workspace" [ref=f4e9]:
+            - generic [ref=f4e13]:
+              - generic [ref=f4e14]: Migration Oracle
+              - generic [ref=f4e15]: Workspace
+      - generic [ref=f4e19]:
+        - list [ref=f4e21]:
+          - listitem [ref=f4e22]:
+            - link "Overview" [ref=f4e23] [cursor=pointer]:
+              - /url: /dashboard
+        - generic [ref=f4e30]:
+          - generic [ref=f4e31]: Migrations
+          - list [ref=f4e32]:
+            - listitem [ref=f4e33]:
+              - link "Current Migration" [ref=f4e34] [cursor=pointer]:
+                - /url: /dashboard/migrations/current
+            - listitem [ref=f4e40]:
+              - link "Past Migrations" [ref=f4e41] [cursor=pointer]:
+                - /url: /dashboard/migrations/history
+        - generic [ref=f4e47]:
+          - generic [ref=f4e48]: Intelligence
+          - list [ref=f4e49]:
+            - listitem [ref=f4e50]:
+              - link "Agent Memory" [ref=f4e51] [cursor=pointer]:
+                - /url: /dashboard/memory
+      - generic [ref=f4e61]:
+        - generic [ref=f4e63]:
+          - generic [ref=f4e64]: Owner identity
+          - textbox "Owner identity" [ref=f4e65]:
+            - /placeholder: e.g. samved
+            - text: user_3H96IPMRcG0I2hX7AfeR1Htxq7L
+          - paragraph [ref=f4e66]: Scopes runs and memories. Set manually when auth is off.
+        - list [ref=f4e68]:
+          - listitem [ref=f4e69]:
+            - button "O Operator" [ref=f4e70]:
+              - generic [ref=f4e71]: O
+              - generic [ref=f4e73]: Operator
+        - list [ref=f4e79]:
+          - listitem [ref=f4e80]:
+            - button "Settings" [ref=f4e81]
+      - button "Toggle Sidebar" [ref=f4e86]
+    - main [ref=f4e87]:
+      - generic [ref=f4e88]:
+        - generic [ref=f4e89]:
+          - button "Toggle Sidebar" [ref=f4e90]
+          - separator [ref=f4e92]
+        - button "Sign out" [ref=f4e94]
+      - generic [ref=f4e95]:
+        - generic [ref=f4e96]:
+          - navigation "Breadcrumb" [ref=f4e97]:
+            - link "Current Migration" [ref=f4e98] [cursor=pointer]:
+              - /url: /dashboard/migrations/current
+            - generic [ref=f4e99]: /
+            - generic [ref=f4e100]: Shadow Execution
+          - heading "Shadow Execution" [level=1] [ref=f4e103]
+        - paragraph [ref=f4e105]: Loading shadow execution…
+  - button "Open Next.js Dev Tools" [ref=f4e111] [cursor=pointer]
+  - alert [ref=f4e115]
