@@ -19,6 +19,7 @@ _PUBLIC_PREFIXES = (
     "/docs",
     "/openapi.json",
     "/redoc",
+    "/api/slack/oauth/callback",
 )
 
 

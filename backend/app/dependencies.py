@@ -17,6 +17,7 @@ from app.repositories.migration_memory_repository import MigrationMemoryReposito
 from app.repositories.migration_run_repository import MigrationRunRepository
 from app.repositories.prediction_repository import PredictionRepository
 from app.repositories.shadow_cluster_repository import ShadowClusterRepository
+from app.repositories.slack_installation_repository import SlackInstallationRepository
 from app.services.approval_service import ApprovalService
 from app.services.closed_loop_service import ClosedLoopService
 from app.services.execution_service import ExecutionService
@@ -25,6 +26,8 @@ from app.services.migration_run_service import MigrationRunService
 from app.services.prediction_pipeline_service import PredictionPipelineService
 from app.services.schema_discovery_service import SchemaDiscoveryService
 from app.services.shadow_cluster_service import ShadowClusterService
+from app.services.slack_notification_service import SlackNotificationService
+from app.services.slack_oauth_service import SlackOAuthService
 from app.services.workflow_orchestration_service import WorkflowOrchestrationService
 from app.services.local_shadow_verify_service import LocalShadowVerifyService
 from app.memory.embedding_client import (
@@ -138,17 +141,63 @@ ShadowClusterSvc = Annotated[
 ]
 
 
+def get_slack_installation_repository(
+    session: DbSession,
+) -> SlackInstallationRepository:
+    return SlackInstallationRepository(session)
+
+
+SlackInstallationRepo = Annotated[
+    SlackInstallationRepository,
+    Depends(get_slack_installation_repository),
+]
+
+
+def get_slack_oauth_service(
+    session: DbSession,
+    repository: SlackInstallationRepo,
+) -> SlackOAuthService:
+    return SlackOAuthService(repository=repository, session=session)
+
+
+SlackOAuthSvc = Annotated[
+    SlackOAuthService,
+    Depends(get_slack_oauth_service),
+]
+
+
+def get_slack_notification_service(
+    session: DbSession,
+    repository: SlackInstallationRepo,
+    oauth_service: SlackOAuthSvc,
+) -> SlackNotificationService:
+    """Build the Slack notification service from shared dependencies."""
+    return SlackNotificationService(
+        repository=repository,
+        session=session,
+        oauth_service=oauth_service,
+    )
+
+
+SlackNotificationSvc = Annotated[
+    SlackNotificationService,
+    Depends(get_slack_notification_service),
+]
+
+
 def get_workflow_orchestration_service(
     session: DbSession,
     repository: MigrationRunRepo,
     aws_clients: AwsClients,
     aws_settings: AwsSettingsDep,
+    slack_notifications: SlackNotificationSvc,
 ) -> WorkflowOrchestrationService:
     return WorkflowOrchestrationService(
         repository=repository,
         session=session,
         aws_clients=aws_clients,
         aws_settings=aws_settings,
+        slack_notifications=slack_notifications,
     )
 
 
@@ -283,6 +332,7 @@ def get_prediction_pipeline_service(
     aws_settings: AwsSettingsDep,
     memory: MemoryRetrievalDep,
     skills: SkillsRetrievalDep,
+    slack_notifications: SlackNotificationSvc,
 ) -> PredictionPipelineService:
     model_id = aws_settings.bedrock_prediction_model_id
     if not model_id and not isinstance(bedrock, MockBedrockClient):
@@ -303,6 +353,7 @@ def get_prediction_pipeline_service(
         recommendation_model_id=aws_settings.bedrock_recommendation_model_id,
         memory_retrieval=memory,
         skills_retrieval=skills,
+        slack_notifications=slack_notifications,
     )
 
 
@@ -387,6 +438,7 @@ def get_approval_service(
     run_repo: MigrationRunRepo,
     approval_repo: ApprovalRepo,
     run_service: MigrationRunSvc,
+    slack_notifications: SlackNotificationSvc,
 ) -> ApprovalService:
     workflow = None
     try:
@@ -402,6 +454,7 @@ def get_approval_service(
                 session=session,
                 aws_clients=factory,
                 aws_settings=aws_settings,
+                slack_notifications=slack_notifications,
             )
     except Exception:  # noqa: BLE001
         workflow = None
@@ -424,6 +477,7 @@ def get_closed_loop_service(
     request: Request,
     session: DbSession,
     run_repo: MigrationRunRepo,
+    slack_notifications: SlackNotificationSvc,
 ) -> ClosedLoopService:
     workflow = None
     try:
@@ -439,6 +493,7 @@ def get_closed_loop_service(
                 session=session,
                 aws_clients=factory,
                 aws_settings=aws_settings,
+                slack_notifications=slack_notifications,
             )
     except Exception:  # noqa: BLE001
         workflow = None

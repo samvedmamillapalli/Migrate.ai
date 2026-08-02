@@ -22,12 +22,15 @@ from app.aws.workflow import (
     stop_workflow_execution,
 )
 from app.aws.workflow.models import WorkflowStatus as AwsWorkflowStatus
+from app.config import get_settings
 from app.core.exceptions import ConflictError, ValidationError
 from app.core.logging import get_logger
 from app.database.models import CCloudAuditEvent, MigrationRun, MigrationRunStatus, WorkflowStatus
 from app.database.retry import with_txn_retry
 from app.repositories.ccloud_audit_event_repository import CCloudAuditEventRepository
 from app.repositories.migration_run_repository import MigrationRunRepository
+from app.services.slack_helpers import derive_migration_name
+from app.services.slack_notification_service import SlackNotificationService
 from app.shadow.ccloud_cli_client import CCloudCliError, fetch_audit_events
 
 logger = get_logger(__name__)
@@ -71,11 +74,14 @@ class WorkflowOrchestrationService:
         session: AsyncSession,
         aws_clients: AwsClientFactory,
         aws_settings: AwsSettings,
+        slack_notifications: SlackNotificationService | None = None,
     ) -> None:
         self._repository = repository
         self._session = session
         self._aws_clients = aws_clients
         self._aws_settings = aws_settings
+        self._slack_notifications = slack_notifications
+        self._settings = get_settings()
 
     async def start_for_run(
         self,
@@ -201,6 +207,7 @@ class WorkflowOrchestrationService:
                 "workflow_status": updated.workflow_status.value,
             },
         )
+        await self._notify_shadow_started(updated)
         return updated
 
     async def sync_status(self, run_id: uuid.UUID) -> MigrationRun:
@@ -275,6 +282,9 @@ class WorkflowOrchestrationService:
                 "run_status": updated.status.value,
             },
         )
+
+        if just_became_terminal:
+            await self._notify_terminal(updated)
 
         if just_became_terminal and _CCLOUD_AUDIT_TRAIL_ENABLED:
             # ccloud CLI audit-trail corroboration (docs/cockroach_hookup.md §4):
@@ -355,6 +365,93 @@ class WorkflowOrchestrationService:
                 extra={"run_id": str(run_id), "error": f"{type(exc).__name__}: {exc}"},
             )
 
+    async def _notify_shadow_started(self, run: MigrationRun) -> None:
+        """Best-effort Slack notification after a fresh SFN start commits.
+
+        Fires only on the non-idempotent path in ``start_for_run`` — when a
+        run already has an execution ARN (idempotent re-entry), ``sync_status``
+        is called instead and no shadow_started notification is sent. Any
+        Slack lookup, token-decryption, network, or API failure is logged and
+        swallowed so notification issues never affect the caller.
+        """
+        if self._slack_notifications is None:
+            return
+        try:
+            await self._slack_notifications.send_shadow_started(
+                owner_identity=run.owner_identity or "",
+                channel=self._settings.slack_default_channel,
+                run_id=run.id,
+                migration_name=derive_migration_name(run.migration_sql),
+                status=run.status.value,
+                timestamp=run.workflow_started_at or datetime.now(tz=UTC),
+                description=(
+                    "Step Functions execution started. Shadow cluster "
+                    "provisioning is underway."
+                ),
+            )
+        except Exception:
+            logger.warning(
+                "Slack shadow_started notification failed",
+                extra={"run_id": str(run.id)},
+                exc_info=True,
+            )
+
+    async def _notify_terminal(
+        self,
+        run: MigrationRun,
+        *,
+        description_override: str | None = None,
+    ) -> None:
+        """Best-effort Slack notification when a run first becomes terminal.
+
+        Dispatches on the run's final status: COMPLETED → shadow_completed,
+        FAILED → shadow_failed. Guarded by ``just_became_terminal`` in
+        ``sync_status`` so a later sync of an already-terminal run does not
+        re-send. Any Slack failure is logged and swallowed.
+        """
+        if self._slack_notifications is None:
+            return
+        try:
+            if run.status == MigrationRunStatus.COMPLETED:
+                if description_override is None:
+                    description = (
+                        "Shadow migration executed and measured. Grading and "
+                        "learned memory persisted."
+                    )
+                else:
+                    description = description_override
+                await self._slack_notifications.send_shadow_completed(
+                    owner_identity=run.owner_identity or "",
+                    channel=self._settings.slack_default_channel,
+                    run_id=run.id,
+                    migration_name=derive_migration_name(run.migration_sql),
+                    status=run.status.value,
+                    timestamp=run.workflow_finished_at or datetime.now(tz=UTC),
+                    description=description,
+                )
+            elif run.status == MigrationRunStatus.FAILED:
+                if description_override is None:
+                    description = (
+                        f"Shadow workflow ended with {run.workflow_status.value}."
+                    )
+                else:
+                    description = description_override
+                await self._slack_notifications.send_shadow_failed(
+                    owner_identity=run.owner_identity or "",
+                    channel=self._settings.slack_default_channel,
+                    run_id=run.id,
+                    migration_name=derive_migration_name(run.migration_sql),
+                    status=run.status.value,
+                    timestamp=run.workflow_finished_at or datetime.now(tz=UTC),
+                    description=description,
+                )
+        except Exception:
+            logger.warning(
+                "Slack terminal notification failed",
+                extra={"run_id": str(run.id)},
+                exc_info=True,
+            )
+
     async def abort_for_run(
         self,
         run_id: uuid.UUID,
@@ -415,4 +512,10 @@ class WorkflowOrchestrationService:
             await self._session.refresh(updated)
             return updated
 
-        return await with_txn_retry(_commit, on_retry=self._session.rollback)
+        updated = await with_txn_retry(_commit, on_retry=self._session.rollback)
+        if updated.status == MigrationRunStatus.FAILED:
+            await self._notify_terminal(
+                updated,
+                description_override=f"Shadow workflow aborted by operator: {reason}",
+            )
+        return updated

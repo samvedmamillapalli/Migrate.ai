@@ -55,3 +55,11 @@ class SchemaNetworkError(SchemaConnectionError):
 
 class UnsupportedDatabaseError(SchemaConnectionError):
     """Database engine or URL scheme is not supported."""
+
+
+class SlackOAuthError(AppError):
+    """Raised when the Slack OAuth exchange or installation fails."""
+
+
+class SlackStateError(AppError):
+    """Raised when the Slack OAuth `state` parameter is invalid or expired."""

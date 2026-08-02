@@ -130,6 +130,70 @@ class Settings(BaseSettings):
         validation_alias="COCKROACH_MCP_URL",
     )
 
+    # --- Slack OAuth Integration ---
+    # Slack App OAuth v2 credentials and callback configuration. The bot
+    # access token is encrypted at rest with `slack_token_encryption_key`
+    # (a Fernet key) before persistence. `slack_state_secret` signs the
+    # OAuth `state` parameter so Slack's callback can be validated against
+    # CSRF / login-tampering.
+    slack_client_id: str | None = Field(
+        default=None,
+        validation_alias="SLACK_CLIENT_ID",
+    )
+    slack_client_secret: SecretStr | None = Field(
+        default=None,
+        validation_alias="SLACK_CLIENT_SECRET",
+    )
+    slack_redirect_uri: str | None = Field(
+        default=None,
+        validation_alias="SLACK_REDIRECT_URI",
+    )
+    # Fernet key (base64, 32 url-safe bytes) used to encrypt the bot token.
+    # When unset in non-production, tokens are stored plaintext with a warning.
+    slack_token_encryption_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="SLACK_TOKEN_ENCRYPTION_KEY",
+    )
+    # Secret used to sign/verify the OAuth `state` parameter (HMAC-SHA256).
+    slack_state_secret: str | None = Field(
+        default=None,
+        validation_alias="SLACK_STATE_SECRET",
+    )
+    # Minimum Slack OAuth v2 bot scopes requested during installation.
+    slack_bot_scope: str = Field(
+        default="chat:write",
+        validation_alias="SLACK_BOT_SCOPE",
+    )
+    # Where to send the browser after OAuth completes.
+    slack_install_success_redirect: str = Field(
+        default="/dashboard/settings?slack=connected",
+        validation_alias="SLACK_INSTALL_SUCCESS_REDIRECT",
+    )
+    slack_install_error_redirect: str = Field(
+        default="/dashboard/settings?slack=error",
+        validation_alias="SLACK_INSTALL_ERROR_REDIRECT",
+    )
+    # How long an issued `state` value is valid before it expires.
+    slack_state_ttl_seconds: int = Field(
+        default=600,
+        ge=60,
+        le=3600,
+        validation_alias="SLACK_STATE_TTL_SECONDS",
+    )
+    # Public base URL of the web app, used to build deep links in Slack
+    # notifications (e.g. the "Open in Migration Oracle" button).
+    frontend_url: str = Field(
+        default="http://localhost:3000",
+        validation_alias="FRONTEND_URL",
+    )
+    # Default Slack channel for lifecycle notifications. Temporary demo
+    # default — later replaced with a per-user preference when the
+    # SlackInstallation model gains a channel column.
+    slack_default_channel: str = Field(
+        default="general",
+        validation_alias="SLACK_DEFAULT_CHANNEL",
+    )
+
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, value: str) -> str:

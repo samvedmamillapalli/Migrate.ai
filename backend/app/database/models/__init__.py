@@ -17,6 +17,7 @@ from app.database.models.migration_run import (
     WorkflowStatus,
 )
 from app.database.models.prediction import Prediction, RollbackRisk
+from app.database.models.slack_installation import SlackInstallation
 from app.database.models.shadow_cluster import (
     ACTIVE_SHADOW_STATUSES,
     TERMINAL_SHADOW_STATUSES,
@@ -46,6 +47,7 @@ __all__ = [
     "SchemaDiscoveryStatus",
     "ShadowCluster",
     "ShadowClusterStatus",
+    "SlackInstallation",
     "TimestampMixin",
     "UUIDPrimaryKeyMixin",
     "WorkflowStatus",

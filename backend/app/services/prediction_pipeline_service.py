@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.exceptions import ConflictError, ValidationError
 from app.core.logging import get_logger
 from app.database.models import (
@@ -31,6 +33,8 @@ from app.repositories.prediction_repository import PredictionRepository
 from app.schema_analysis.models import DatabaseMetadata
 from app.services.migration_run_service import MigrationRunService
 from app.services.pipeline_progress import set_progress
+from app.services.slack_helpers import derive_migration_name
+from app.services.slack_notification_service import SlackNotificationService
 # clear_progress available for TTL cleanup if needed later.
 from app.shadow.models import ScaleTier, select_scale_tier
 from app.memory.retrieval import HybridMemoryRetrieval
@@ -62,6 +66,7 @@ class PredictionPipelineService:
         memory_retrieval: MemoryRetrieval | None = None,
         skills_retrieval: SkillsRetrieval | None = None,
         policy_engine: PolicyEngine | None = None,
+        slack_notifications: SlackNotificationService | None = None,
     ) -> None:
         self._session = session
         self._runs = migration_run_repository
@@ -75,6 +80,8 @@ class PredictionPipelineService:
         self._memory = memory_retrieval or StubMemoryRetrieval()
         self._skills = skills_retrieval or StubSkillsRetrieval()
         self._policy_engine = policy_engine or PolicyEngine()
+        self._slack_notifications = slack_notifications
+        self._settings = get_settings()
 
     async def run_prediction_pipeline(
         self,
@@ -288,6 +295,7 @@ class PredictionPipelineService:
                 explainability=explainability,
                 scale_tier=tier,
             )
+            await self._notify_prediction_ready(persisted)
             _prog(run_id, "done", "Prediction pipeline complete — awaiting approval", 100)
             return persisted
 
@@ -370,6 +378,36 @@ class PredictionPipelineService:
             },
         )
         return updated
+
+    async def _notify_prediction_ready(self, run: MigrationRun) -> None:
+        """Best-effort Slack notification after the prediction commits.
+
+        Fires only after ``_persist_success`` has committed the prediction and
+        the run is AWAITING_APPROVAL. Any Slack lookup, token-decryption,
+        network, or API failure is logged and swallowed so notification
+        issues never affect the pipeline caller.
+        """
+        if self._slack_notifications is None:
+            return
+        try:
+            await self._slack_notifications.send_prediction_ready(
+                owner_identity=run.owner_identity or "",
+                channel=self._settings.slack_default_channel,
+                run_id=run.id,
+                migration_name=derive_migration_name(run.migration_sql),
+                status=MigrationRunStatus.AWAITING_APPROVAL.value,
+                timestamp=datetime.now(UTC),
+                description=(
+                    "AI prediction and recommendation are ready for human "
+                    "review. Approve to start the shadow migration."
+                ),
+            )
+        except Exception:
+            logger.warning(
+                "Slack prediction_ready notification failed",
+                extra={"run_id": str(run.id)},
+                exc_info=True,
+            )
 
     async def _fail_run(self, run_id: uuid.UUID, reason: str) -> None:
         logger.error(

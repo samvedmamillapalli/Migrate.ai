@@ -22,6 +22,7 @@ _PUBLIC_PREFIXES = (
     "/auth/login",
     "/auth/register",
     "/auth/status",
+    "/api/slack/oauth/callback",
 )
 
 
