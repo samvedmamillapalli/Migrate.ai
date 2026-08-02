@@ -33,8 +33,11 @@ from app.memory.embedding_client import (
     MockEmbeddingClient,
 )
 from app.memory.retrieval import HybridMemoryRetrieval
+from app.memory.skills_retrieval import CockroachDBSkillsRetrieval
 from app.memory.writer import MemoryWriteService
 from app.prediction.memory import MemoryRetrieval
+from app.prediction.skills import SkillsRetrieval, StubSkillsRetrieval
+from app.repositories.skill_doc_repository import SkillDocRepository
 
 
 async def get_db_session(request: Request) -> AsyncGenerator[AsyncSession, None]:
@@ -243,6 +246,34 @@ def get_memory_retrieval(
 MemoryRetrievalDep = Annotated[MemoryRetrieval, Depends(get_memory_retrieval)]
 
 
+# CockroachDB Agent Skills Repo retrieval (docs/cockroach_hookup.md §5),
+# sidelined 2026-08-02 per user decision: proven live and functional, but
+# judged not impactful enough to a core feature to keep active. Flip this
+# back to True to re-enable — CockroachDBSkillsRetrieval below is untouched
+# and fully tested.
+_AGENT_SKILLS_ENABLED = False
+
+
+def get_skills_retrieval(
+    request: Request,
+    session: DbSession,
+    embedding: EmbeddingClientDep,
+) -> SkillsRetrieval:
+    override = getattr(request.app.state, "skills_retrieval", None)
+    if override is not None:
+        return override
+    if not _AGENT_SKILLS_ENABLED:
+        return StubSkillsRetrieval()
+    return CockroachDBSkillsRetrieval(
+        session=session,
+        embedding_client=embedding,
+        repository=SkillDocRepository(session),
+    )
+
+
+SkillsRetrievalDep = Annotated[SkillsRetrieval, Depends(get_skills_retrieval)]
+
+
 def get_prediction_pipeline_service(
     session: DbSession,
     run_repo: MigrationRunRepo,
@@ -251,6 +282,7 @@ def get_prediction_pipeline_service(
     bedrock: BedrockClientDep,
     aws_settings: AwsSettingsDep,
     memory: MemoryRetrievalDep,
+    skills: SkillsRetrievalDep,
 ) -> PredictionPipelineService:
     model_id = aws_settings.bedrock_prediction_model_id
     if not model_id and not isinstance(bedrock, MockBedrockClient):
@@ -270,6 +302,7 @@ def get_prediction_pipeline_service(
         prediction_model_id=model_id or "mock-model",
         recommendation_model_id=aws_settings.bedrock_recommendation_model_id,
         memory_retrieval=memory,
+        skills_retrieval=skills,
     )
 
 

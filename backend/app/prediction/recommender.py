@@ -14,6 +14,7 @@ from app.prediction.bedrock_client import BedrockClient, extract_json_object
 from app.prediction.memory import MemoryRetrievalResult
 from app.prediction.models import AdjustedPrediction, RecommendationOutput
 from app.prediction.prompts import RECOMMENDATION_PROMPT_VERSION, load_prompt
+from app.prediction.skills import SkillsRetrievalResult
 from app.prediction.trace import build_trace, timed_generate
 from app.schema_analysis.models import DatabaseMetadata
 from app.shadow.models import ScaleTier
@@ -60,6 +61,7 @@ class RecommendationEngine:
         memories: MemoryRetrievalResult,
         prediction: AdjustedPrediction,
         scale_tier: ScaleTier | str,
+        skills: SkillsRetrievalResult | None = None,
     ) -> RecommendationOutput:
         user_prompt = self._build_user_prompt(
             migration_sql=migration_sql,
@@ -68,6 +70,7 @@ class RecommendationEngine:
             memories=memories,
             prediction=prediction,
             scale_tier=scale_tier,
+            skills=skills,
         )
         raw_text, latency_ms, inp, out = timed_generate(
             self._client,
@@ -183,6 +186,7 @@ class RecommendationEngine:
         memories: MemoryRetrievalResult,
         prediction: AdjustedPrediction,
         scale_tier: ScaleTier | str,
+        skills: SkillsRetrievalResult | None = None,
     ) -> str:
         tier = scale_tier.value if isinstance(scale_tier, ScaleTier) else scale_tier
         snapshot_payload: dict[str, Any] | None = None
@@ -195,6 +199,9 @@ class RecommendationEngine:
             "schema_snapshot": snapshot_payload,
             "policy_analysis": policy.to_persistable(),
             "retrieved_memories": memories.to_prompt_context(),
+            "consulted_cockroachdb_skills": (
+                skills.to_prompt_context() if skills is not None else []
+            ),
             "validated_prediction": {
                 "estimated_duration_seconds": prediction.estimated_duration_seconds,
                 "estimated_storage_mb": prediction.estimated_storage_mb,

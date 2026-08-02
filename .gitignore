@@ -32,3 +32,9 @@ Thumbs.db
 # Playwright MCP session artefacts (console logs / page snapshots)
 .playwright-mcp/
 debug-*.log
+
+# `npx skills add` writes .claude/skills/* as ABSOLUTE symlinks into this
+# machine's checkout path, so they are broken for every other clone. The real
+# vendored content lives in .agents/skills/ (committed); regenerate the
+# symlinks locally with `npx skills add cockroachlabs/cockroachdb-skills`.
+.claude/

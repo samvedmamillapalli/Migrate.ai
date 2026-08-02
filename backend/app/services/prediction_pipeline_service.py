@@ -25,6 +25,7 @@ from app.prediction.memory import MemoryRetrieval, MemoryRetrievalResult, StubMe
 from app.prediction.models import AdjustedPrediction, ExplainabilityBundle, RecommendationOutput
 from app.prediction.predictor import PredictionEngine, PredictionValidationError
 from app.prediction.recommender import RecommendationEngine, RecommendationValidationError
+from app.prediction.skills import SkillsRetrieval, SkillsRetrievalResult, StubSkillsRetrieval
 from app.repositories.migration_run_repository import MigrationRunRepository
 from app.repositories.prediction_repository import PredictionRepository
 from app.schema_analysis.models import DatabaseMetadata
@@ -59,6 +60,7 @@ class PredictionPipelineService:
         prediction_model_id: str,
         recommendation_model_id: str | None = None,
         memory_retrieval: MemoryRetrieval | None = None,
+        skills_retrieval: SkillsRetrieval | None = None,
         policy_engine: PolicyEngine | None = None,
     ) -> None:
         self._session = session
@@ -71,6 +73,7 @@ class PredictionPipelineService:
             recommendation_model_id or prediction_model_id
         )
         self._memory = memory_retrieval or StubMemoryRetrieval()
+        self._skills = skills_retrieval or StubSkillsRetrieval()
         self._policy_engine = policy_engine or PolicyEngine()
 
     async def run_prediction_pipeline(
@@ -205,10 +208,34 @@ class PredictionPipelineService:
 
             recommendation: RecommendationOutput | None = None
             recommender: RecommendationEngine | None = None
+            skills: SkillsRetrievalResult = SkillsRetrievalResult(
+                skills=[],
+                query_summary="not attempted (run blocked before recommendation)",
+                retrieval_attempted=False,
+                retrieval_mode="skipped",
+            )
             if not (
                 policy.policy_decision.value == "block"
                 and run.status == MigrationRunStatus.FAILED
             ):
+                _prog(
+                    run_id,
+                    "skills",
+                    "Consulting CockroachDB Agent Skills (vector index)…",
+                    76,
+                )
+                skills = await self._skills.retrieve(
+                    migration_sql=run.migration_sql,
+                    risk_narrative=prediction.risk_explanation or "",
+                    limit=3,
+                )
+                _prog(
+                    run_id,
+                    "skills",
+                    f"Skills consulted · count={len(skills.skills)}",
+                    77,
+                )
+
                 recommender = RecommendationEngine(
                     self._bedrock,
                     model_id=self._recommendation_model_id,
@@ -228,6 +255,7 @@ class PredictionPipelineService:
                     memories=memories,
                     prediction=prediction,
                     scale_tier=tier,
+                    skills=skills,
                 )
                 _prog(
                     run_id,
@@ -244,6 +272,7 @@ class PredictionPipelineService:
                 prediction=prediction,
                 recommendation=recommendation,
                 memories=memories,
+                skills=skills,
                 scale_tier=tier,
                 prediction_trace=predictor.last_trace,
                 recommendation_trace=(
@@ -397,6 +426,7 @@ class PredictionPipelineService:
         prediction: AdjustedPrediction,
         recommendation: RecommendationOutput | None,
         memories: MemoryRetrievalResult,
+        skills: SkillsRetrievalResult,
         scale_tier: ScaleTier | str,
         prediction_trace: dict[str, Any] | None = None,
         recommendation_trace: dict[str, Any] | None = None,
@@ -438,6 +468,7 @@ class PredictionPipelineService:
                 recommendation.model_dump(mode="json") if recommendation else None
             ),
             memory=memories.to_explainability(),
+            cockroachdb_skills=skills.to_explainability(),
             confidence={
                 "raw_confidence_score": prediction.raw_confidence_score,
                 "confidence_score": prediction.confidence_score,

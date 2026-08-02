@@ -158,6 +158,21 @@ class MemorySearchResponse(BaseModel):
     results: list[MemorySearchHit]
 
 
+class CCloudAuditEventItem(BaseModel):
+    """One CockroachDB Cloud audit-log entry fetched via the ccloud CLI —
+    independent corroboration of the shadow cluster's lifecycle, sourced from
+    the Cloud control plane's own audit log rather than anything the
+    migration or the MCP investigation touches. See
+    docs/cockroach_hookup.md §4 "Feature 1"."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    event_type: str
+    actor: str | None = None
+    occurred_at: datetime | None = None
+    raw_payload: dict[str, Any]
+
+
 class ShadowClusterResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -187,9 +202,19 @@ class ShadowClusterResponse(BaseModel):
     # customer's rows — see app.shadow.schema_snapshot._capture_row_samples.
     row_sample_before: dict[str, Any] | None = None
     row_sample_after: dict[str, Any] | None = None
+    # ccloud CLI Feature 1 (docs/cockroach_hookup.md §4). Empty until the
+    # workflow reaches a terminal state and the audit-trail fetch runs; stays
+    # empty if ccloud isn't logged in on the backend host — never fails the
+    # run either way.
+    ccloud_audit_trail: list[CCloudAuditEventItem] = []
 
     @classmethod
-    def from_orm(cls, row: Any) -> ShadowClusterResponse:
+    def from_orm(
+        cls,
+        row: Any,
+        *,
+        ccloud_audit_trail: list[Any] | None = None,
+    ) -> ShadowClusterResponse:
         status = row.status.value if hasattr(row.status, "value") else str(row.status)
         return cls(
             id=row.id,
@@ -214,6 +239,9 @@ class ShadowClusterResponse(BaseModel):
             ),
             row_sample_before=row.row_sample_before,
             row_sample_after=row.row_sample_after,
+            ccloud_audit_trail=[
+                CCloudAuditEventItem.model_validate(e) for e in (ccloud_audit_trail or [])
+            ],
         )
 
 

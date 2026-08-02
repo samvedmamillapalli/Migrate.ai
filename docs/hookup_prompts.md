@@ -940,6 +940,24 @@ owner is known.
 `['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream']` — it had **none**
 before, which was audit §2's Blocker B.
 
+**Everything up to shadow provisioning works, verified on a real run**
+(`09665b3e-9ddc-4ac5-8010-5a8c48a98e1d`, driven over authenticated HTTP as the Clerk
+test user):
+
+| Stage | Result |
+| --- | --- |
+| Create run + attach real read-only DB + discover schema | `201`, `discovery=succeeded` |
+| Memory retrieval (CockroachDB vector index) | **5 memories retrieved**, `weak_retrieval=false` |
+| Bedrock prediction | **persisted** — 8.0 s / 2.0 MB / `rollback_risk=medium` / confidence 0.72, `model_version=bedrock:us.anthropic.claude-haiku-4-5-20251001-v1:0\|prompt:prediction_v3` |
+| Human approval gate (`proceed`) | `200` |
+| Start Step Functions | `200`, run enters `running` |
+| **Provision shadow cluster** | ❌ **fails** — see below |
+
+So the closed loop is intact right up to the point where it needs a *new* CockroachDB
+cluster. (Note: `GET /runs/{id}` does not eagerly load the prediction relationship, so
+the prediction reads as `null` there even when it exists — query the `predictions`
+table directly to confirm, as above. That cost one wrong conclusion during this work.)
+
 **Steps 2–5 could not be completed.** They require a real shadow migration, and shadow
 migrations provision a *new* CockroachDB Basic cluster. The Cloud API now refuses:
 

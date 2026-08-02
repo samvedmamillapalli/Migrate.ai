@@ -679,7 +679,7 @@ function RetrievalPanel({
 }
 
 function AssessmentPanel({ assessment }: { assessment: AssessmentView }) {
-  const { prediction, confidence, recommendation } = assessment
+  const { prediction, confidence, recommendation, consultedSkills } = assessment
   const [detailsOpen, setDetailsOpen] = React.useState(false)
   // Defensive: the model is asked for 3-4 plain sentences with no markdown,
   // but doesn't always comply — clamp what's always visible regardless, and
@@ -697,6 +697,7 @@ function AssessmentPanel({ assessment }: { assessment: AssessmentView }) {
     Boolean(confidence?.wasReduced) ||
     Boolean(riskClamp.overflow) ||
     Boolean(rationaleClamp.overflow) ||
+    Boolean(consultedSkills.length) ||
     assessment.riskFlags.length > 0
 
   return (
@@ -919,6 +920,39 @@ function AssessmentPanel({ assessment }: { assessment: AssessmentView }) {
                 <p className="text-muted-foreground text-sm leading-relaxed">
                   {recommendation.saferAlternativePlan}
                 </p>
+              ) : null}
+              {consultedSkills.length ? (
+                <div>
+                  <p className="text-muted-foreground/55 mb-1 font-mono text-[10px] tracking-[0.1em] uppercase">
+                    CockroachDB Agent Skills consulted
+                  </p>
+                  <ul className="space-y-1.5">
+                    {consultedSkills.map((skill) => (
+                      <li key={skill.slug} className="text-xs text-foreground/75">
+                        <a
+                          href={skill.sourceUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="font-medium text-[var(--oracle-reasoning-soft)] hover:underline"
+                        >
+                          {skill.title}
+                        </a>
+                        {skill.similarityScore != null ? (
+                          <span className="text-muted-foreground/50 ml-1.5 font-mono tabular-nums">
+                            {Math.round(skill.similarityScore * 100)}% match
+                          </span>
+                        ) : null}
+                        <p className="text-muted-foreground/70 mt-0.5">
+                          {skill.description}
+                        </p>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-muted-foreground/45 mt-1.5 font-mono text-[10px] tracking-tight">
+                    Retrieved via CockroachDB's distributed vector index from the
+                    open-source cockroachdb-skills repo.
+                  </p>
+                </div>
               ) : null}
             </div>
           ) : null}

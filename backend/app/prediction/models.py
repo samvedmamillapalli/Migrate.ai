@@ -131,6 +131,10 @@ class ExplainabilityBundle(BaseModel):
     prediction: dict[str, Any]
     recommendation: dict[str, Any] | None
     memory: dict[str, Any]
+    # CockroachDB Agent Skills consulted for the recommendation (RAG-style,
+    # via the same Distributed Vector Index used for `memory`). Optional with
+    # a default so older persisted runs deserialize without this key.
+    cockroachdb_skills: dict[str, Any] | None = None
     confidence: dict[str, Any]
     # Phase 11: durable Bedrock I/O traces (prompt, raw, parsed, latency, tokens).
     bedrock_traces: dict[str, Any] | None = None

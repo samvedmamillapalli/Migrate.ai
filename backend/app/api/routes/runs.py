@@ -614,12 +614,23 @@ async def get_memory(
 async def get_shadow_cluster(
     run_id: uuid.UUID,
     service: MigrationRunSvc,
+    session: AsyncSession = Depends(get_db_session),
 ) -> ShadowClusterResponse:
-    """Read-only shadow cluster lifecycle row (Phase 7 data; Phase 11 exposure)."""
+    """Read-only shadow cluster lifecycle row (Phase 7 data; Phase 11 exposure).
+
+    Includes ccloud_audit_trail (docs/cockroach_hookup.md §4 "Feature 1") —
+    empty until the workflow reaches a terminal state and the audit-trail
+    fetch runs, or if ccloud isn't logged in on the backend host.
+    """
+    from app.repositories.ccloud_audit_event_repository import CCloudAuditEventRepository
+
     run = await service.get_migration_run(run_id, load_children=True)
     if run.shadow_cluster is None:
         raise NotFoundError(f"No shadow cluster recorded for MigrationRun {run_id}")
-    return ShadowClusterResponse.from_orm(run.shadow_cluster)
+    audit_events = await CCloudAuditEventRepository(session).list_for_run(run_id)
+    return ShadowClusterResponse.from_orm(
+        run.shadow_cluster, ccloud_audit_trail=audit_events
+    )
 
 
 @router.post(

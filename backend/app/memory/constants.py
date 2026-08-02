@@ -26,6 +26,11 @@ EMBEDDING_STATUS_FAILED = "failed"
 VECTOR_INDEX_SCOPED = "ix_migration_memories_embedding_scoped"
 VECTOR_INDEX_READY = "ix_migration_memories_embedding_ready"
 
+# CockroachDB Agent Skills Repo (cockroachlabs/cockroachdb-skills), vendored via
+# `npx skills add` and embedded into cockroachdb_skill_docs. Same partial-index
+# pattern as the migration-memory indexes above.
+VECTOR_INDEX_SKILL_DOCS = "ix_skill_docs_embedding_ready"
+
 DEFAULT_TITAN_MODEL_ID = "amazon.titan-embed-text-v2:0"
 # Documented example value for BEDROCK_EMBEDDING_MODEL_ID (.env.example / SAM).
 # Prefer settings.bedrock_embedding_model_id at runtime — do not invent another id.

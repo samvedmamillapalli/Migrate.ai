@@ -38,9 +38,17 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-_PROMPT_VERSION = "blast_radius_investigation_v2"
+_PROMPT_VERSION = "blast_radius_investigation_v3"
 _PROMPT_PATH = Path(__file__).parent / "prompts" / f"{_PROMPT_VERSION}.txt"
 _MAX_TOOL_CALLS = 8
+
+# CockroachDB Agent Skills Repo tool (docs/cockroach_hookup.md §5), sidelined
+# 2026-08-02 per user decision: retrieval proven live and functional, but
+# judged not impactful enough to a core feature to keep active. Code stays
+# intact and tested — flip this back to True to re-enable, no other changes
+# needed. search_prior_migrations (a different feature, Distributed Vector
+# Indexing over this app's own history) is unaffected and stays on.
+_SKILLS_TOOL_ENABLED = False
 
 # Agent-facing semantic search over Migration Oracle's own graded history.
 MEMORY_TOOL_NAME = "search_prior_migrations"
@@ -79,6 +87,57 @@ _MEMORY_TOOL_SPEC: dict[str, Any] = {
                         "type": "integer",
                         "description": (
                             f"Max results (1-{_MEMORY_TOOL_MAX_LIMIT}, default 5)."
+                        ),
+                    },
+                },
+                "required": ["query"],
+            }
+        },
+    }
+}
+
+# Agent-facing semantic search over the vendored CockroachDB Agent Skills Repo
+# (cockroachlabs/cockroachdb-skills), embedded into cockroachdb_skill_docs and
+# retrieved via the same CockroachDB Distributed Vector Index mechanism as
+# search_prior_migrations — see docs/cockroach_hookup.md §5.
+SKILLS_TOOL_NAME = "search_cockroachdb_skills"
+
+_SKILLS_TOOL_MAX_LIMIT = 3
+_SKILLS_RESULT_MAX_CHARS = 4000
+_SKILLS_FIELD_MAX_CHARS = 600
+
+_SKILLS_TOOL_SPEC: dict[str, Any] = {
+    "toolSpec": {
+        "name": SKILLS_TOOL_NAME,
+        "description": (
+            "Semantic search over Cockroach Labs' own documented operational "
+            "expertise (the open-source CockroachDB Agent Skills Repo — "
+            "github.com/cockroachlabs/cockroachdb-skills), backed by "
+            "CockroachDB's distributed vector index. Use this when the "
+            "migration's mechanism touches something CockroachDB has "
+            "documented guidance for — storage/backfill risk on CREATE "
+            "INDEX / ADD COLUMN UNIQUE / ALTER PRIMARY KEY, privilege "
+            "hardening, cluster health, range distribution, table "
+            "statistics, or background job behavior. This is vendor "
+            "documentation, not institutional history — use "
+            "search_prior_migrations for our own graded runs instead."
+        ),
+        "inputSchema": {
+            "json": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Natural-language description of the operational "
+                            "concern, e.g. 'storage headroom needed for "
+                            "CREATE UNIQUE INDEX backfill'."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": (
+                            f"Max results (1-{_SKILLS_TOOL_MAX_LIMIT}, default 3)."
                         ),
                     },
                 },
@@ -218,6 +277,82 @@ async def _search_prior_migrations(
     return (_format_memory_hits(rows, index_used), False)
 
 
+def _format_skill_hits(rows: list[tuple[Any, float]], index_used: str | None) -> str:
+    """Compact plain-text rendering of skill search hits for the model's context."""
+    if not rows:
+        return (
+            "No CockroachDB Agent Skill matched that query closely. Proceed "
+            "using your own knowledge; do not fabricate a citation."
+        )
+
+    lines: list[str] = []
+    for rank, (doc, similarity) in enumerate(rows, start=1):
+        body = " ".join(str(doc.body or "").split())
+        excerpt = body if len(body) <= _SKILLS_FIELD_MAX_CHARS else body[: _SKILLS_FIELD_MAX_CHARS - 1] + "…"
+        lines.append(
+            f"[{rank}] similarity {similarity:.2f} | {doc.title} ({doc.category})\n"
+            f"    source: {doc.source_url}\n"
+            f"    excerpt: {excerpt}"
+        )
+
+    header = f"{len(rows)} CockroachDB Agent Skill(s) via CockroachDB vector index"
+    if index_used:
+        header += f" ({index_used})"
+    body_text = header + ":\n" + "\n".join(lines)
+    if len(body_text) > _SKILLS_RESULT_MAX_CHARS:
+        body_text = body_text[: _SKILLS_RESULT_MAX_CHARS - 1] + "…"
+    return body_text
+
+
+async def _search_cockroachdb_skills(
+    *,
+    session: AsyncSession,
+    embedding_client: EmbeddingClient,
+    arguments: dict[str, Any],
+) -> tuple[str, bool]:
+    """Run the agent's CockroachDB Agent Skills search. Returns (result_text, is_error).
+
+    Never raises, same contract as _search_prior_migrations: a failed search
+    is a finding the model can reason about, not a crash.
+    """
+    from app.memory.embedding_client import vector_to_literal
+    from app.repositories.skill_doc_repository import SkillDocRepository
+
+    query = str(arguments.get("query") or "").strip()
+    if not query:
+        return (f"{SKILLS_TOOL_NAME} requires a non-empty 'query'.", True)
+
+    try:
+        raw_limit = int(arguments.get("limit") or _SKILLS_TOOL_MAX_LIMIT)
+    except (TypeError, ValueError):
+        raw_limit = _SKILLS_TOOL_MAX_LIMIT
+    limit = max(1, min(_SKILLS_TOOL_MAX_LIMIT, raw_limit))
+
+    try:
+        vector = embedding_client.embed(query)
+        rows, index_used = await SkillDocRepository(session).semantic_search(
+            query_vector_literal=vector_to_literal(vector),
+            limit=limit,
+        )
+    except Exception as exc:  # noqa: BLE001 - a failed search is a finding, not a crash
+        logger.warning(
+            "search_cockroachdb_skills failed",
+            extra={"error": f"{type(exc).__name__}: {exc}"},
+        )
+        return (
+            f"CockroachDB Agent Skills search unavailable ({type(exc).__name__}). "
+            "Proceed using only the live shadow-cluster evidence and your own "
+            "knowledge; do not fabricate a citation.",
+            True,
+        )
+
+    logger.info(
+        "search_cockroachdb_skills served",
+        extra={"query": query[:120], "hits": len(rows), "index_used": index_used},
+    )
+    return (_format_skill_hits(rows, index_used), False)
+
+
 async def investigate(
     *,
     bedrock_client: BedrockClient,
@@ -281,16 +416,20 @@ async def investigate(
             for t in tool_defs
         ]
 
-        # Offer the memory search only when it can actually be served. Adding
-        # the toolSpec without a session/embedder would advertise a tool that
-        # errors on every call and burns the model's budget doing it.
-        memory_tool_available = session is not None and embedding_client is not None
-        if memory_tool_available:
+        # Offer the memory/skills searches only when they can actually be
+        # served. Adding a toolSpec without a session/embedder would
+        # advertise a tool that errors on every call and burns the model's
+        # budget doing it.
+        local_tools_available = session is not None and embedding_client is not None
+        if local_tools_available:
             tools.append(_MEMORY_TOOL_SPEC)
+            if _SKILLS_TOOL_ENABLED:
+                tools.append(_SKILLS_TOOL_SPEC)
         else:
             logger.info(
-                "search_prior_migrations not offered (no DB session or embedding "
-                "client passed); investigation will use MCP tools only"
+                "search_prior_migrations / search_cockroachdb_skills not "
+                "offered (no DB session or embedding client passed); "
+                "investigation will use MCP tools only"
             )
 
         async def tool_executor(name: str, arguments: dict[str, Any]) -> tuple[str, bool]:
@@ -301,6 +440,15 @@ async def investigate(
                 # regardless of which tool served it.
                 assert session is not None and embedding_client is not None
                 return await _search_prior_migrations(
+                    session=session,
+                    embedding_client=embedding_client,
+                    arguments=arguments,
+                )
+            if name == SKILLS_TOOL_NAME:
+                # Also local, not MCP — queries the vendored CockroachDB
+                # Agent Skills Repo content, not the shadow cluster.
+                assert session is not None and embedding_client is not None
+                return await _search_cockroachdb_skills(
                     session=session,
                     embedding_client=embedding_client,
                     arguments=arguments,

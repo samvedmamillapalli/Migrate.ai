@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from time import perf_counter
 from typing import Any
 
@@ -13,6 +14,7 @@ from app.lambdas.runtime import get_runtime, run_async, with_session
 from app.repositories.migration_run_repository import MigrationRunRepository
 from app.repositories.shadow_cluster_repository import ShadowClusterRepository
 from app.services.shadow_cluster_service import ShadowClusterService
+from app.shadow.changefeed_watch import read_changefeed_events
 from app.shadow.migration_runner import run_migration
 from app.shadow.schema_snapshot import build_schema_diff
 
@@ -23,6 +25,12 @@ logger = get_logger(__name__)
 # session (schema-analysis connection logs report `"database": "defaultdb"`
 # for every ccloud_api run).
 _CCLOUD_API_SHADOW_DATABASE = "defaultdb"
+
+# CockroachDB Changefeed live event stream (docs/cockroach_hookup.md
+# §Changefeeds). On by default — flip to False to disable without touching
+# the rest of this handler, same convention as the sidelined ccloud CLI /
+# Agent Skills flags elsewhere in this codebase.
+_CHANGEFEED_ENABLED = True
 
 
 async def _run_blast_radius_investigation(
@@ -177,18 +185,37 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
             connection_url,
             run.migration_sql,
             statement_timeout_ms=int(settings.shadow_migrate_timeout_seconds * 1000),
+            run_id=str(run_id),
+            changefeed_s3_bucket=os.environ.get("CHANGEFEED_S3_BUCKET") if _CHANGEFEED_ENABLED else None,
+            changefeed_access_key_id=os.environ.get("CHANGEFEED_S3_ACCESS_KEY_ID") if _CHANGEFEED_ENABLED else None,
+            changefeed_secret_access_key=os.environ.get("CHANGEFEED_S3_SECRET_ACCESS_KEY") if _CHANGEFEED_ENABLED else None,
         )
         migrate_ms = (
             outcome.duration_seconds * 1000.0
             if outcome.duration_seconds is not None
             else (perf_counter() - t0) * 1000.0
         )
+
+        # CockroachDB Changefeed events (docs/cockroach_hookup.md §Changefeeds) —
+        # augments job_watch, doesn't replace it; empty for migration types
+        # (e.g. CREATE INDEX) that don't rewrite the base table, or when no
+        # changefeed was created at all.
+        changefeed_events: list[dict[str, Any]] = []
+        if outcome.changefeed_job_id is not None:
+            bucket = os.environ.get("CHANGEFEED_S3_BUCKET")
+            if bucket:
+                changefeed_events = read_changefeed_events(
+                    runtime.aws_clients.s3(), bucket=bucket, run_id=str(run_id)
+                )
+
         await shadow_service.merge_timings(
             shadow.id,
             migrate_ms=round(migrate_ms, 1),
             job_watch=outcome.job_watch or [],
             job_ids=outcome.job_ids or [],
             job_progress=outcome.job_progress or [],
+            changefeed_events=changefeed_events,
+            changefeed_tables=outcome.changefeed_tables or [],
         )
         if (
             outcome.schema_snapshot_before is not None
@@ -261,8 +288,23 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
     except LambdaValidationError:
         raise
     except Exception as exc:
+        # Log the real cause before re-raising. `raise ... from exc` preserves
+        # __cause__ in Python, but AWS Lambda's error serialization only walks
+        # the outermost traceback, so CloudWatch/Step Functions show a
+        # LambdaHandlerError whose stack stops at this very line — the actual
+        # failure is invisible. That cost a long diagnosis on 2026-08-02;
+        # logger.exception() here keeps the root cause in the log stream.
+        logger.exception(
+            "ExecuteMigration failed — root cause",
+            extra={
+                "run_id": str(run_id),
+                "error_type": type(exc).__name__,
+                "error": str(exc)[:2000],
+            },
+        )
         raise LambdaHandlerError(
-            f"ExecuteMigration failed for run_id={run_id}"
+            f"ExecuteMigration failed for run_id={run_id}: "
+            f"{type(exc).__name__}: {exc}"[:900]
         ) from exc
 
     logger.info(

@@ -141,6 +141,18 @@ export type RecommendationView = {
   suggestedDeploymentWindow: string | null
 }
 
+/** One CockroachDB Agent Skill (cockroachlabs/cockroachdb-skills) consulted
+ * for the recommendation, retrieved via CockroachDB's Distributed Vector
+ * Index — see docs/cockroach_hookup.md §5. */
+export type ConsultedSkillView = {
+  slug: string
+  title: string
+  category: string
+  description: string
+  sourceUrl: string
+  similarityScore: number | null
+}
+
 export type AssessmentView = {
   policyDecision: string | null
   compatibilityRisk: string | null
@@ -151,6 +163,7 @@ export type AssessmentView = {
   confidence: ConfidenceView | null
   recommendation: RecommendationView | null
   retrieval: RetrievalView
+  consultedSkills: ConsultedSkillView[]
   parsedStatementTypes: string[]
 }
 
@@ -610,6 +623,25 @@ function mapRecommendation(
   }
 }
 
+function mapConsultedSkills(
+  explainability: Record<string, unknown> | null
+): ConsultedSkillView[] {
+  const skills = asRecord(explainability?.cockroachdb_skills)
+  const rawSkills = Array.isArray(skills?.skills) ? skills!.skills : []
+  return rawSkills.map((item) => {
+    const s = asRecord(item) || {}
+    return {
+      slug: String(s.skill_slug ?? ""),
+      title: String(s.title ?? s.skill_slug ?? ""),
+      category: String(s.category ?? ""),
+      description: String(s.description ?? ""),
+      sourceUrl: String(s.source_url ?? ""),
+      similarityScore:
+        s.similarity_score == null ? null : Number(s.similarity_score),
+    }
+  })
+}
+
 export function mapAssessment(run: MigrationRun): AssessmentView {
   const explainability = asRecord(run.explainability)
   return {
@@ -622,6 +654,7 @@ export function mapAssessment(run: MigrationRun): AssessmentView {
     confidence: mapConfidence(explainability),
     recommendation: mapRecommendation(run, explainability),
     retrieval: mapRetrieval(explainability),
+    consultedSkills: mapConsultedSkills(explainability),
     parsedStatementTypes: run.parsed_statement_types ?? [],
   }
 }

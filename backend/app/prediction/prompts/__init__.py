@@ -7,7 +7,7 @@ from pathlib import Path
 PROMPTS_DIR = Path(__file__).resolve().parent
 
 PREDICTION_PROMPT_VERSION = "prediction_v3"
-RECOMMENDATION_PROMPT_VERSION = "recommendation_v3"
+RECOMMENDATION_PROMPT_VERSION = "recommendation_v4"
 
 
 def load_prompt(version: str) -> str:

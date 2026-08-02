@@ -24,11 +24,19 @@ from app.aws.workflow import (
 from app.aws.workflow.models import WorkflowStatus as AwsWorkflowStatus
 from app.core.exceptions import ConflictError, ValidationError
 from app.core.logging import get_logger
-from app.database.models import MigrationRun, MigrationRunStatus, WorkflowStatus
+from app.database.models import CCloudAuditEvent, MigrationRun, MigrationRunStatus, WorkflowStatus
 from app.database.retry import with_txn_retry
+from app.repositories.ccloud_audit_event_repository import CCloudAuditEventRepository
 from app.repositories.migration_run_repository import MigrationRunRepository
+from app.shadow.ccloud_cli_client import CCloudCliError, fetch_audit_events
 
 logger = get_logger(__name__)
+
+# ccloud CLI audit-trail corroboration (docs/cockroach_hookup.md §4), sidelined
+# 2026-08-02 per user decision: real, tested to fail safely, but judged not
+# impactful enough to a core feature to keep active. Code stays intact and
+# tested — flip this back to True to re-enable, no other changes needed.
+_CCLOUD_AUDIT_TRAIL_ENABLED = False
 
 _TERMINAL_WORKFLOW = frozenset(
     {
@@ -219,9 +227,15 @@ class WorkflowOrchestrationService:
             raise
 
         db_status = _to_db_status(execution.status)
+        just_became_terminal = False
 
         async def _commit() -> MigrationRun:
+            nonlocal just_became_terminal
             current = await self._repository.get_by_id_or_raise(run_id)
+            just_became_terminal = (
+                db_status in _TERMINAL_WORKFLOW
+                and current.workflow_status not in _TERMINAL_WORKFLOW
+            )
             current.workflow_status = db_status
             if execution.start_date and current.workflow_started_at is None:
                 current.workflow_started_at = _parse_iso(execution.start_date)
@@ -261,7 +275,85 @@ class WorkflowOrchestrationService:
                 "run_status": updated.status.value,
             },
         )
+
+        if just_became_terminal and _CCLOUD_AUDIT_TRAIL_ENABLED:
+            # ccloud CLI audit-trail corroboration (docs/cockroach_hookup.md §4):
+            # fetch the Cloud control plane's own audit-log corroboration for
+            # this run's shadow cluster, exactly once, right as the run
+            # finishes. Sidelined — see _CCLOUD_AUDIT_TRAIL_ENABLED above.
+            await self._fetch_ccloud_audit_trail(run_id)
+
         return updated
+
+    async def _fetch_ccloud_audit_trail(self, run_id: uuid.UUID) -> None:
+        try:
+            full = await self._repository.get_by_id_or_raise(
+                run_id, load_children=True
+            )
+            cluster = full.shadow_cluster
+            if cluster is None:
+                logger.info(
+                    "Skipping ccloud audit-trail fetch: no shadow cluster on run",
+                    extra={"run_id": str(run_id)},
+                )
+                return
+
+            events = fetch_audit_events(
+                starting_from=full.created_at,
+                limit=50,
+            )
+            # The audit log is org-wide, not per-cluster; ccloud's exact JSON
+            # shape for `audit list` isn't documented in --help, so match on
+            # the cluster's own identifiers appearing anywhere in the raw
+            # event payload rather than assuming a specific field name.
+            needles = [v for v in (cluster.cluster_id, cluster.cluster_name) if v]
+            matched = [
+                e
+                for e in events
+                if any(needle in str(e) for needle in needles)
+            ] if needles else events
+
+            if not matched:
+                logger.info(
+                    "ccloud audit-trail fetch found no matching events",
+                    extra={"run_id": str(run_id), "total_events": len(events)},
+                )
+                return
+
+            rows = [
+                CCloudAuditEvent(
+                    migration_run_id=run_id,
+                    event_type=str(
+                        e.get("action") or e.get("eventType") or e.get("type") or "unknown"
+                    ),
+                    actor=(
+                        str(e.get("actor") or e.get("principal") or e.get("user"))
+                        if (e.get("actor") or e.get("principal") or e.get("user"))
+                        else None
+                    ),
+                    occurred_at=_parse_iso(
+                        e.get("timestamp") or e.get("occurredAt") or e.get("createdAt")
+                    ),
+                    raw_payload=e,
+                )
+                for e in matched
+            ]
+            await CCloudAuditEventRepository(self._session).bulk_create(rows)
+            await self._session.commit()
+            logger.info(
+                "ccloud audit-trail persisted",
+                extra={"run_id": str(run_id), "count": len(rows)},
+            )
+        except CCloudCliError as exc:
+            logger.warning(
+                "ccloud audit-trail fetch unavailable (non-fatal)",
+                extra={"run_id": str(run_id), "error": f"{type(exc).__name__}: {exc}"},
+            )
+        except Exception as exc:  # noqa: BLE001 - enrichment, never fails the run
+            logger.warning(
+                "ccloud audit-trail fetch failed unexpectedly (non-fatal)",
+                extra={"run_id": str(run_id), "error": f"{type(exc).__name__}: {exc}"},
+            )
 
     async def abort_for_run(
         self,

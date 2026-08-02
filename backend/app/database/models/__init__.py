@@ -2,6 +2,8 @@ from app.database.base import Base
 from app.database.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 from app.database.models.app_user import AppUser
 from app.database.models.approval import Approval, ApprovalDecision
+from app.database.models.ccloud_audit_event import CCloudAuditEvent
+from app.database.models.cockroachdb_skill_doc import CockroachDBSkillDoc
 from app.database.models.execution_result import ExecutionResult
 from app.database.models.grade import Grade
 from app.database.models.learned_outcome import LearnedOutcome
@@ -29,6 +31,8 @@ __all__ = [
     "Approval",
     "ApprovalDecision",
     "Base",
+    "CCloudAuditEvent",
+    "CockroachDBSkillDoc",
     "CompatibilityRisk",
     "ExecutionResult",
     "Grade",

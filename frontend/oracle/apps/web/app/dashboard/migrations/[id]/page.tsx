@@ -489,9 +489,26 @@ export default function MigrationRunDetailPage() {
           Boolean(row) && typeof row === "object" && !Array.isArray(row)
       )
     : []
+  // CockroachDB Changefeed events (docs/cockroach_hookup.md §Changefeeds) —
+  // augments job_watch above with real row-level change events for
+  // backfill-heavy migrations; empty for migration types (e.g. CREATE INDEX)
+  // that don't rewrite the base table, which is expected, not an error.
+  const changefeedEventRows = Array.isArray(stageTimings?.changefeed_events)
+    ? (stageTimings.changefeed_events as unknown[]).filter(
+        (row): row is Record<string, unknown> =>
+          Boolean(row) && typeof row === "object" && !Array.isArray(row)
+      )
+    : []
+  const changefeedTables = Array.isArray(stageTimings?.changefeed_tables)
+    ? (stageTimings.changefeed_tables as unknown[]).map(String)
+    : []
   const timingEntries = stageTimings
     ? Object.entries(stageTimings).filter(
-        ([key]) => key !== "job_watch" && key !== "cockroachdb_tools"
+        ([key]) =>
+          key !== "job_watch" &&
+          key !== "cockroachdb_tools" &&
+          key !== "changefeed_events" &&
+          key !== "changefeed_tables"
       )
     : []
   const predictionTrace = traces ? asRecord(traces.traces)?.prediction : null
@@ -675,6 +692,96 @@ export default function MigrationRunDetailPage() {
               finished instantly).
             </p>
           )}
+        </Section>
+      ) : null}
+
+      {changefeedEventRows.length > 0 ? (
+        <Section title="Live Change Events">
+          <p className="text-muted-foreground mb-3 max-w-2xl text-sm leading-relaxed">
+            A real CockroachDB Changefeed watching{" "}
+            {changefeedTables.length > 0 ? (
+              <span className="text-foreground/85 font-mono text-xs">
+                {changefeedTables.join(", ")}
+              </span>
+            ) : (
+              "the migration's target table"
+            )}{" "}
+            during ExecuteMigration — row-level change events streamed out via
+            CockroachDB's Enterprise changefeed (S3 sink), not polling. This
+            augments the job status above; migrations that don't rewrite the
+            base table (e.g. a plain{" "}
+            <span className="text-foreground/85 font-mono text-xs">
+              CREATE INDEX
+            </span>
+            ) may show nothing here even though the migration itself
+            succeeded — that's expected, not a failure.
+          </p>
+          <ul className="divide-border/60 divide-y rounded-md border border-border/60">
+            {changefeedEventRows.slice(0, 20).map((row, idx) => {
+              const after = row.after as Record<string, unknown> | null | undefined
+              const isDelete = after === null
+              return (
+                <li
+                  key={idx}
+                  className="grid gap-1 px-3 py-2 font-mono text-[11px] tracking-tight sm:grid-cols-[6rem_1fr]"
+                >
+                  <span
+                    className={cn(
+                      "shrink-0",
+                      isDelete
+                        ? "text-[var(--oracle-risk)]"
+                        : "text-[var(--oracle-verified)]"
+                    )}
+                  >
+                    {isDelete ? "delete" : "update"}
+                  </span>
+                  <span className="text-foreground/80 truncate">
+                    {after
+                      ? Object.entries(after)
+                          .slice(0, 4)
+                          .map(([k, v]) => `${k}=${String(v)}`)
+                          .join(" · ")
+                      : String(row.key ?? "—")}
+                  </span>
+                </li>
+              )
+            })}
+          </ul>
+          {changefeedEventRows.length > 20 ? (
+            <p className="text-muted-foreground/60 mt-2 font-mono text-[10px] tracking-tight">
+              +{changefeedEventRows.length - 20} more events (showing first 20)
+            </p>
+          ) : null}
+        </Section>
+      ) : null}
+
+      {shadow && shadow.ccloud_audit_trail.length > 0 ? (
+        <Section title="CockroachDB Cloud Audit Trail">
+          <p className="text-muted-foreground mb-3 max-w-2xl text-sm leading-relaxed">
+            Independent corroboration from the CockroachDB Cloud control
+            plane's own audit log, fetched via the ccloud CLI — a separate
+            source from the MCP investigation above, since it reflects what
+            the Cloud API recorded happening to the cluster itself rather
+            than what SQL observed inside it.
+          </p>
+          <ul className="divide-border/60 divide-y rounded-md border border-border/60">
+            {shadow.ccloud_audit_trail.map((event, idx) => (
+              <li
+                key={idx}
+                className="grid gap-1 px-3 py-2 font-mono text-[11px] tracking-tight sm:grid-cols-[10rem_1fr_8rem]"
+              >
+                <span className="text-muted-foreground/70">
+                  {event.event_type}
+                </span>
+                <span className="text-foreground/85 truncate">
+                  {event.actor || "—"}
+                </span>
+                <span className="text-muted-foreground/70 sm:text-right">
+                  {event.occurred_at ? formatRelativeTime(event.occurred_at) : "—"}
+                </span>
+              </li>
+            ))}
+          </ul>
         </Section>
       ) : null}
 

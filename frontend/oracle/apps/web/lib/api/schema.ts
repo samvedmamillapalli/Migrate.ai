@@ -231,9 +231,10 @@ export interface paths {
          * Create Debug Demo With Db
          * @description Developer helper: real customer_demo RO DB + sample migration SQL.
          *
-         *     Reads the URL from env ``DEMO_READONLY_DATABASE_URL`` or repo file
-         *     ``.judge_ro_database_url`` (server-side only). Creates the run, stores a
-         *     connection secret, and runs schema discovery so predict/shadow can proceed.
+         *     Reads the URL from env ``DEMO_READONLY_DATABASE_URL`` or the gitignored
+         *     ``.local_secrets/.judge_ro_database_url`` (server-side only). Creates the
+         *     run, stores a connection secret, and runs schema discovery so
+         *     predict/shadow can proceed.
          *
          *     Easy to remove: delete this route + the frontend Developer mode button.
          */
@@ -544,6 +545,10 @@ export interface paths {
         /**
          * Get Shadow Cluster
          * @description Read-only shadow cluster lifecycle row (Phase 7 data; Phase 11 exposure).
+         *
+         *     Includes ccloud_audit_trail (docs/cockroach_hookup.md §4 "Feature 1") —
+         *     empty until the workflow reaches a terminal state and the audit-trail
+         *     fetch runs, or if ccloud isn't logged in on the backend host.
          */
         get: operations["get_shadow_cluster_runs__run_id__shadow_cluster_get"];
         put?: never;
@@ -838,6 +843,26 @@ export interface components {
             owner_identity: string;
             /** Expires In Seconds */
             expires_in_seconds: number;
+        };
+        /**
+         * CCloudAuditEventItem
+         * @description One CockroachDB Cloud audit-log entry fetched via the ccloud CLI —
+         *     independent corroboration of the shadow cluster's lifecycle, sourced from
+         *     the Cloud control plane's own audit log rather than anything the
+         *     migration or the MCP investigation touches. See
+         *     docs/cockroach_hookup.md §4 "Feature 1".
+         */
+        CCloudAuditEventItem: {
+            /** Event Type */
+            event_type: string;
+            /** Actor */
+            actor?: string | null;
+            /** Occurred At */
+            occurred_at?: string | null;
+            /** Raw Payload */
+            raw_payload: {
+                [key: string]: unknown;
+            };
         };
         /**
          * ClosedLoopRequest
@@ -1566,6 +1591,11 @@ export interface components {
             row_sample_after?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * Ccloud Audit Trail
+             * @default []
+             */
+            ccloud_audit_trail: components["schemas"]["CCloudAuditEventItem"][];
         };
         /** StartWorkflowRequest */
         StartWorkflowRequest: {
