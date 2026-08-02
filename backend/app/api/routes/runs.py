@@ -86,6 +86,28 @@ async def list_runs(
         default=None,
         description="Comma-separated run_kind values to exclude, e.g. chaos,debug",
     ),
+    q: str | None = Query(
+        default=None,
+        max_length=200,
+        description="Case-insensitive substring match on the migration SQL.",
+    ),
+    risk: str | None = Query(
+        default=None,
+        description="Filter by compatibility_risk: low | medium | high",
+    ),
+    decision: str | None = Query(
+        default=None,
+        description=(
+            "Filter by recorded approval decision: proceed | accept_recommended "
+            "| cancel, or 'none' for runs with no decision yet."
+        ),
+    ),
+    approver: str | None = Query(default=None, max_length=256),
+    order_by: str = Query(
+        default="created_at",
+        description="created_at | updated_at | status | compatibility_risk",
+    ),
+    order_dir: str = Query(default="desc", pattern="^(asc|desc)$"),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> MigrationRunListResponse:
@@ -98,22 +120,38 @@ async def list_runs(
         if exclude_kinds
         else None
     )
+    if risk is not None and risk not in {"low", "medium", "high"}:
+        raise ValidationError("risk must be one of: low, medium, high")
+    if decision is not None and decision not in {
+        "proceed",
+        "accept_recommended",
+        "cancel",
+        "none",
+    }:
+        raise ValidationError(
+            "decision must be one of: proceed, accept_recommended, cancel, none"
+        )
+
+    filters = {
+        "status": status_filter,
+        "owner_identity": owner_identity,
+        "run_kind": run_kind,
+        "exclude_kinds": excluded,
+        "search": (q or "").strip() or None,
+        "compatibility_risk": risk,
+        "approval_decision": decision,
+        "approver_identity": (approver or "").strip() or None,
+    }
     runs = await service.list_migration_runs(
         offset=offset,
         limit=limit,
-        status=status_filter,
-        owner_identity=owner_identity,
-        run_kind=run_kind,
-        exclude_kinds=excluded,
+        order_by=order_by,
+        order_dir=order_dir,
+        **filters,
     )
-    total = await service.count_migration_runs(
-        status=status_filter,
-        owner_identity=owner_identity,
-        run_kind=run_kind,
-        exclude_kinds=excluded,
-    )
+    total = await service.count_migration_runs(**filters)
     return MigrationRunListResponse(
-        items=[MigrationRunSummaryResponse.model_validate(run) for run in runs],
+        items=[MigrationRunSummaryResponse.from_orm_run(run) for run in runs],
         total=total,
         limit=limit,
         offset=offset,
@@ -138,6 +176,71 @@ async def get_accuracy_metrics(
     return await fetch_accuracy_metrics(session, owner_identity=owner_identity)
 
 
+@router.get("/approvers")
+async def list_approvers(
+    request: Request,
+    service: MigrationRunSvc,
+    owner_identity: str | None = Query(default=None, min_length=1, max_length=256),
+) -> dict[str, Any]:
+    """Distinct approver identities, for the history page's filter dropdown."""
+    if auth_enforced():
+        owner_identity = session_owner(request) if request else None
+    approvers = await service.list_approvers(
+        owner_identity=owner_identity,
+        exclude_kinds=["chaos", "debug"],
+    )
+    return {"approvers": sorted(approvers)}
+
+
+@router.get("/volume")
+async def get_run_volume(
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+    owner_identity: str | None = Query(default=None, min_length=1, max_length=256),
+    days: int = Query(default=7, ge=1, le=90),
+) -> dict[str, Any]:
+    """Daily run counts over the whole history, not just one page.
+
+    Splits each day into runs that succeeded and runs that failed or were
+    cancelled, so the chart's two series mean something specific. Days with no
+    runs are returned as explicit zeroes rather than omitted, so the caller
+    doesn't have to reconstruct the calendar.
+    """
+    from app.services.activity_feed import fetch_run_volume
+
+    if auth_enforced():
+        owner_identity = session_owner(request) if request else None
+    return await fetch_run_volume(
+        session, owner_identity=owner_identity, days=days
+    )
+
+
+@router.get("/activity")
+async def get_activity_feed(
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),
+    owner_identity: str | None = Query(default=None, min_length=1, max_length=256),
+    limit: int = Query(default=25, ge=1, le=200),
+) -> dict[str, Any]:
+    """Merged, reverse-chronological stream of what actually happened.
+
+    Every entry is derived from a persisted timestamp (run created, prediction
+    written, approval recorded, shadow started/measured, grade written, memory
+    stored). Nothing is synthesized. Scoped to the same owner as the Recent
+    list so the Overview never mixes two populations.
+    """
+    from app.services.activity_feed import fetch_activity_feed
+
+    scoped = session_owner(request) if request else None
+    if auth_enforced():
+        owner_identity = scoped
+    return await fetch_activity_feed(
+        session,
+        owner_identity=owner_identity,
+        limit=limit,
+    )
+
+
 @router.post(
     "/debug/demo-with-db",
     response_model=MigrationRunResponse,
@@ -151,26 +254,25 @@ async def create_debug_demo_with_db(
 ) -> MigrationRunResponse:
     """Developer helper: real customer_demo RO DB + sample migration SQL.
 
-    Reads the URL from env ``DEMO_READONLY_DATABASE_URL`` or repo file
-    ``.judge_ro_database_url`` (server-side only). Creates the run, stores a
-    connection secret, and runs schema discovery so predict/shadow can proceed.
+    Reads the URL from env ``DEMO_READONLY_DATABASE_URL`` or the gitignored
+    ``.local_secrets/.judge_ro_database_url`` (server-side only). Creates the
+    run, stores a connection secret, and runs schema discovery so
+    predict/shadow can proceed.
 
     Easy to remove: delete this route + the frontend Developer mode button.
     """
     import os
-    from pathlib import Path
+
+    from app.demo_secrets import JUDGE_RO_DATABASE_URL_FILE, read_demo_secret
 
     url = (os.environ.get("DEMO_READONLY_DATABASE_URL") or "").strip()
     if not url:
-        # backend/app/api/routes/runs.py → parents[4] = repo root
-        root = Path(__file__).resolve().parents[4]
-        judge_file = root / ".judge_ro_database_url"
-        if judge_file.is_file():
-            url = judge_file.read_text(encoding="utf-8").strip()
+        url = read_demo_secret(JUDGE_RO_DATABASE_URL_FILE) or ""
     if not url:
         raise ValidationError(
-            "Developer demo DB not configured. Set DEMO_READONLY_DATABASE_URL "
-            "or create .judge_ro_database_url at the repo root."
+            "Developer demo DB not configured. Set DEMO_READONLY_DATABASE_URL, "
+            "or run `python scripts/prepare_judge_demo_db.py` to create "
+            ".local_secrets/.judge_ro_database_url."
         )
 
     run = await service.create_migration_run(
@@ -222,6 +324,24 @@ async def get_run(
     run = await service.get_migration_run(run_id)
     assert_run_access(request, run)
     return MigrationRunResponse.model_validate(run)
+
+
+@router.delete("/{run_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def discard_run(
+    run_id: uuid.UUID,
+    service: MigrationRunSvc,
+    request: Request,
+) -> None:
+    """Discard a run abandoned during setup.
+
+    Only a ``pending`` run with no approval, grade, execution result, shadow
+    cluster or memory can be removed — see
+    MigrationRunService.discard_abandoned_run. Anything further along is part
+    of the audit record and returns 409 instead.
+    """
+    existing = await service.get_migration_run(run_id)
+    assert_run_access(request, existing)
+    await service.discard_abandoned_run(run_id)
 
 
 @router.patch("/{run_id}", response_model=MigrationRunResponse)

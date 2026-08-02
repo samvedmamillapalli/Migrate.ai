@@ -1,14 +1,14 @@
 "use client"
 
 import * as React from "react"
-import { useTheme } from "next-themes"
 
+import { useThemePreference } from "@/components/theme-provider"
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler"
 import { buttonVariants } from "@workspace/ui/components/button"
 import { cn } from "@workspace/ui/lib/utils"
 
 export function ThemeToggle({ className }: { className?: string }) {
-  const { resolvedTheme, setTheme } = useTheme()
+  const { theme, setTheme } = useThemePreference()
   const [mounted, setMounted] = React.useState(false)
 
   React.useEffect(() => {
@@ -38,7 +38,7 @@ export function ThemeToggle({ className }: { className?: string }) {
     <AnimatedThemeToggler
       variant="circle"
       duration={550}
-      theme={resolvedTheme === "light" ? "light" : "dark"}
+      theme={theme}
       onThemeChange={setTheme}
       className={buttonClass}
       aria-label="Toggle theme"

@@ -18,12 +18,13 @@ class ShadowClusterProvider(abc.ABC):
 
     Two implementations exist:
 
-    * ``CCloudShadowProvider`` — the real backend. Shells out to the ``ccloud``
-      CLI to create/destroy CockroachDB Basic clusters and parses the JSON that
-      every command emits.
+    * ``CCloudApiShadowProvider`` — the real backend, and the default
+      (``SHADOW_PROVIDER=ccloud_api``). Creates/destroys CockroachDB Basic
+      clusters through the CockroachDB Cloud REST API using a service-account
+      Bearer token, which — unlike the ccloud CLI — works headlessly.
     * ``MockShadowProvider`` — provisions an isolated scratch database on the
       control-plane cluster so the full seed -> migrate -> destroy path can be
-      exercised offline, with no ccloud install or API key.
+      exercised offline, with no Cloud API key.
 
     Contract notes:
 

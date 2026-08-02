@@ -57,100 +57,171 @@
 }
 
 /*
- * Dream / Framer light theme (source: framer-to-next-dream-main).
- * Warm parchment surface + terracotta primary. Dark tokens remain for dashboard.
+ * Migration Oracle theme.
+ *
+ * Light values are ported verbatim from the pixel-perfect design source
+ * (pixel-perfect-clone-64427-main/src/styles.css): warm off-white surface,
+ * burnt-orange primary. The design ships no dark variant, so the .dark block
+ * below is authored here — same hues, inverted lightness, primary lifted so
+ * it still reads as the brand against a dark surface.
+ *
+ * Semantic --tone-* tokens exist because the design uses raw Tailwind palette
+ * classes (emerald-50, amber-200, red-600 …) for pass/warn/fail/shadow/model.
+ * Those are fixed light-mode colours; routing them through tokens is what lets
+ * one component render correctly in both themes. --oracle-* are kept as
+ * aliases so the existing dashboard code that references them keeps working.
  */
 :root {
-    --radius: 0.625rem;
-    --background: oklch(0.968 0.008 85);
-    --foreground: oklch(0.245 0.008 40);
+    --radius: 8px;
+    --background: oklch(0.9845 0.0026 106.45);
+    --foreground: oklch(0.2161 0.0061 56.04);
     --card: oklch(1 0 0);
-    --card-foreground: oklch(0.245 0.008 40);
+    --card-foreground: oklch(0.2161 0.0061 56.04);
     --popover: oklch(1 0 0);
-    --popover-foreground: oklch(0.245 0.008 40);
-    --primary: oklch(0.4 0.135 25.8);
-    --primary-foreground: oklch(0.985 0.006 85);
-    --secondary: oklch(0.985 0.005 85);
-    --secondary-foreground: oklch(0.245 0.008 40);
-    --muted: oklch(0.955 0.008 80);
-    --muted-foreground: oklch(0.55 0.012 50);
-    --accent: oklch(0.4 0.135 25.8);
-    --accent-foreground: oklch(0.985 0.006 85);
-    --ink: oklch(0.22 0.006 40);
-    --ink-foreground: oklch(0.985 0.006 85);
-    --surface: oklch(0.985 0.005 85);
-    --surface-tint: oklch(0.975 0.012 60);
-    --destructive: oklch(0.577 0.245 27.325);
-    --border: oklch(0.905 0.012 70);
-    --input: oklch(0.905 0.012 70);
-    --ring: oklch(0.38 0.135 27);
-    --chart-1: oklch(0.646 0.222 41.116);
-    --chart-2: oklch(0.6 0.118 184.704);
-    --chart-3: oklch(0.398 0.07 227.392);
-    --chart-4: oklch(0.828 0.189 84.429);
-    --chart-5: oklch(0.769 0.188 70.08);
-    --sidebar: oklch(0.984 0.003 247.858);
-    --sidebar-foreground: oklch(0.129 0.042 264.695);
-    --sidebar-primary: oklch(0.208 0.042 265.755);
-    --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
-    --sidebar-accent: oklch(0.968 0.007 247.896);
-    --sidebar-accent-foreground: oklch(0.208 0.042 265.755);
-    --sidebar-border: oklch(0.929 0.013 255.508);
-    --sidebar-ring: oklch(0.704 0.04 256.788);
+    --popover-foreground: oklch(0.2161 0.0061 56.04);
+    --primary: oklch(0.5534 0.1739 38.4);
+    --primary-foreground: oklch(1 0 0);
+    --secondary: oklch(0.9668 0.0054 95.1);
+    --secondary-foreground: oklch(0.3741 0.0087 67.56);
+    --muted: oklch(0.9512 0.008 98.88);
+    --muted-foreground: oklch(0.5534 0.0116 58.07);
+    --accent: oklch(0.6461 0.1943 41.12);
+    --accent-foreground: oklch(1 0 0);
+    --ink: oklch(0.2161 0.0061 56.04);
+    --ink-foreground: oklch(0.9845 0.0026 106.45);
+    --surface: oklch(0.9668 0.0054 95.1);
+    --surface-tint: oklch(0.9512 0.008 98.88);
+    --destructive: oklch(0.5771 0.2152 27.33);
+    --destructive-foreground: oklch(1 0 0);
+    --border: oklch(0.9218 0.0083 91.49);
+    --input: oklch(0.9218 0.0083 91.49);
+    --ring: oklch(0.5534 0.1739 38.4);
+    --chart-1: oklch(0.5534 0.1739 38.4);
+    --chart-2: oklch(0.6461 0.1943 41.12);
+    --chart-3: oklch(0.7 0.14 55);
+    --chart-4: oklch(0.78 0.1 70);
+    --chart-5: oklch(0.85 0.06 85);
+    --sidebar: oklch(0.9845 0.0026 106.45);
+    --sidebar-foreground: oklch(0.2161 0.0061 56.04);
+    --sidebar-primary: oklch(0.5534 0.1739 38.4);
+    --sidebar-primary-foreground: oklch(1 0 0);
+    --sidebar-accent: oklch(0.9512 0.008 98.88);
+    --sidebar-accent-foreground: oklch(0.2161 0.0061 56.04);
+    --sidebar-border: oklch(0.9218 0.0083 91.49);
+    --sidebar-ring: oklch(0.5534 0.1739 38.4);
 
-    /* Migration Oracle semantic tokens */
-    --oracle-structure: oklch(0.82 0 0);
-    --oracle-content: oklch(0.2 0 0);
-    --oracle-reasoning: #6d5fad;
-    --oracle-reasoning-soft: #8b7ec8;
-    --oracle-verified: #059669;
-    --oracle-risk: #dc2626;
+    /* Semantic tones: pass / warn / fail / shadow activity / model activity */
+    --tone-pass-fg: oklch(0.5216 0.1179 162.3);
+    --tone-pass-bg: oklch(0.9761 0.0206 166.1);
+    --tone-pass-border: oklch(0.9046 0.0533 164.2);
+    --tone-pass-dot: oklch(0.6959 0.1491 162.5);
+
+    --tone-warn-fg: oklch(0.5553 0.1455 68.6);
+    --tone-warn-bg: oklch(0.9761 0.0362 92.2);
+    --tone-warn-border: oklch(0.9243 0.0721 87.1);
+    --tone-warn-dot: oklch(0.7686 0.1647 70.1);
+
+    --tone-fail-fg: oklch(0.5771 0.2152 27.33);
+    --tone-fail-bg: oklch(0.9705 0.0208 17.4);
+    --tone-fail-border: oklch(0.8853 0.0602 18.3);
+    --tone-fail-dot: oklch(0.6368 0.2078 25.3);
+
+    --tone-info-fg: oklch(0.5461 0.2152 262.9);
+    --tone-info-bg: oklch(0.9705 0.0142 254.6);
+    --tone-info-border: oklch(0.8823 0.0592 254.1);
+    --tone-info-dot: oklch(0.6231 0.188 259.8);
+
+    --tone-model-fg: oklch(0.5413 0.2466 293.0);
+    --tone-model-bg: oklch(0.9691 0.0161 293.8);
+    --tone-model-border: oklch(0.8942 0.0575 293.3);
+    --tone-model-dot: oklch(0.6056 0.2189 292.7);
+
+    --tone-neutral-dot: oklch(0.7 0.008 60);
+
+    /* Migration Oracle semantic tokens (aliases over the tones above) */
+    --oracle-structure: oklch(0.9218 0.0083 91.49);
+    --oracle-content: oklch(0.2161 0.0061 56.04);
+    --oracle-reasoning: var(--tone-model-fg);
+    --oracle-reasoning-soft: var(--tone-model-dot);
+    --oracle-verified: var(--tone-pass-fg);
+    --oracle-risk: var(--tone-fail-fg);
+    --oracle-warning: var(--tone-warn-fg);
 }
 
 .dark {
-    --background: oklch(0.145 0 0);
-    --foreground: oklch(0.985 0 0);
-    --card: oklch(0.205 0 0);
-    --card-foreground: oklch(0.985 0 0);
-    --popover: oklch(0.205 0 0);
-    --popover-foreground: oklch(0.985 0 0);
-    --primary: oklch(0.922 0 0);
-    --primary-foreground: oklch(0.205 0 0);
-    --secondary: oklch(0.269 0 0);
-    --secondary-foreground: oklch(0.985 0 0);
-    --muted: oklch(0.269 0 0);
-    --muted-foreground: oklch(0.708 0 0);
-    --accent: oklch(0.269 0 0);
-    --accent-foreground: oklch(0.985 0 0);
-    --ink: oklch(0.985 0 0);
-    --ink-foreground: oklch(0.205 0 0);
-    --surface: oklch(0.205 0 0);
-    --surface-tint: oklch(0.269 0 0);
-    --destructive: oklch(0.704 0.191 22.216);
-    --border: oklch(1 0 0 / 10%);
-    --input: oklch(1 0 0 / 15%);
-    --ring: oklch(0.556 0 0);
-    --chart-1: oklch(0.87 0 0);
-    --chart-2: oklch(0.556 0 0);
-    --chart-3: oklch(0.439 0 0);
-    --chart-4: oklch(0.371 0 0);
-    --chart-5: oklch(0.269 0 0);
-    --sidebar: oklch(0.205 0 0);
-    --sidebar-foreground: oklch(0.985 0 0);
-    --sidebar-primary: oklch(0.488 0.243 264.376);
-    --sidebar-primary-foreground: oklch(0.985 0 0);
-    --sidebar-accent: oklch(0.269 0 0);
-    --sidebar-accent-foreground: oklch(0.985 0 0);
-    --sidebar-border: oklch(1 0 0 / 10%);
-    --sidebar-ring: oklch(0.556 0 0);
+    --background: oklch(0.1830 0.0040 106.45);
+    --foreground: oklch(0.9500 0.0030 106.45);
+    --card: oklch(0.2230 0.0048 96);
+    --card-foreground: oklch(0.9500 0.0030 106.45);
+    --popover: oklch(0.2230 0.0048 96);
+    --popover-foreground: oklch(0.9500 0.0030 106.45);
+    --primary: oklch(0.6800 0.1660 40.5);
+    --primary-foreground: oklch(0.1830 0.0040 106.45);
+    --secondary: oklch(0.2620 0.0052 96);
+    --secondary-foreground: oklch(0.8300 0.0060 96);
+    --muted: oklch(0.2500 0.0050 96);
+    --muted-foreground: oklch(0.6800 0.0090 96);
+    --accent: oklch(0.7200 0.1700 43);
+    --accent-foreground: oklch(0.1830 0.0040 106.45);
+    --ink: oklch(0.9500 0.0030 106.45);
+    --ink-foreground: oklch(0.1830 0.0040 106.45);
+    --surface: oklch(0.2230 0.0048 96);
+    --surface-tint: oklch(0.2620 0.0052 96);
+    --destructive: oklch(0.6600 0.1980 25.5);
+    --destructive-foreground: oklch(0.1830 0.0040 106.45);
+    --border: oklch(0.3080 0.0058 96);
+    --input: oklch(0.3080 0.0058 96);
+    --ring: oklch(0.6800 0.1660 40.5);
+    --chart-1: oklch(0.6800 0.1660 40.5);
+    --chart-2: oklch(0.7200 0.1700 43);
+    --chart-3: oklch(0.77 0.13 58);
+    --chart-4: oklch(0.82 0.1 72);
+    --chart-5: oklch(0.87 0.06 86);
+    --sidebar: oklch(0.2020 0.0044 106.45);
+    --sidebar-foreground: oklch(0.9500 0.0030 106.45);
+    --sidebar-primary: oklch(0.6800 0.1660 40.5);
+    --sidebar-primary-foreground: oklch(0.1830 0.0040 106.45);
+    --sidebar-accent: oklch(0.2620 0.0052 96);
+    --sidebar-accent-foreground: oklch(0.9500 0.0030 106.45);
+    --sidebar-border: oklch(0.3080 0.0058 96);
+    --sidebar-ring: oklch(0.6800 0.1660 40.5);
 
-    /* Migration Oracle semantic tokens */
-    --oracle-structure: oklch(0.35 0 0);
-    --oracle-content: oklch(0.98 0 0);
-    --oracle-reasoning: #8b7ec8;
-    --oracle-reasoning-soft: #c4b5fd;
-    --oracle-verified: #34d399;
-    --oracle-risk: #f87171;
+    /* Semantic tones — same hues, lifted for contrast on a dark surface */
+    --tone-pass-fg: oklch(0.7845 0.1325 163.2);
+    --tone-pass-bg: oklch(0.2680 0.0330 165.0);
+    --tone-pass-border: oklch(0.3720 0.0570 164.0);
+    --tone-pass-dot: oklch(0.7237 0.1420 162.9);
+
+    --tone-warn-fg: oklch(0.8369 0.1644 84.4);
+    --tone-warn-bg: oklch(0.2790 0.0380 80.0);
+    --tone-warn-border: oklch(0.3850 0.0640 80.0);
+    --tone-warn-dot: oklch(0.7686 0.1647 70.1);
+
+    --tone-fail-fg: oklch(0.7118 0.1698 22.2);
+    --tone-fail-bg: oklch(0.2740 0.0430 20.0);
+    --tone-fail-border: oklch(0.3820 0.0740 21.0);
+    --tone-fail-dot: oklch(0.6368 0.2078 25.3);
+
+    --tone-info-fg: oklch(0.7137 0.1434 254.6);
+    --tone-info-bg: oklch(0.2700 0.0400 258.0);
+    --tone-info-border: oklch(0.3760 0.0680 257.0);
+    --tone-info-dot: oklch(0.6231 0.188 259.8);
+
+    --tone-model-fg: oklch(0.7845 0.1325 293.5);
+    --tone-model-bg: oklch(0.2740 0.0450 293.0);
+    --tone-model-border: oklch(0.3820 0.0770 293.0);
+    --tone-model-dot: oklch(0.7062 0.1652 293.0);
+
+    --tone-neutral-dot: oklch(0.48 0.006 96);
+
+    /* Migration Oracle semantic tokens (aliases over the tones above) */
+    --oracle-structure: oklch(0.3080 0.0058 96);
+    --oracle-content: oklch(0.9500 0.0030 106.45);
+    --oracle-reasoning: var(--tone-model-fg);
+    --oracle-reasoning-soft: var(--tone-model-dot);
+    --oracle-verified: var(--tone-pass-fg);
+    --oracle-risk: var(--tone-fail-fg);
+    --oracle-warning: var(--tone-warn-fg);
 }
 
 @layer base {
@@ -176,6 +247,17 @@
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
+}
+
+/* Ported verbatim from the design source — the small uppercase caption that
+ * labels nearly every panel in the workspace. */
+@utility section-label {
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
 }
 
 @utility dotted-rule {

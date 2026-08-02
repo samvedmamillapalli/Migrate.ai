@@ -3,7 +3,6 @@ from __future__ import annotations
 from app.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.shadow.ccloud_api_provider import CCloudApiShadowProvider
-from app.shadow.ccloud_provider import CCloudShadowProvider
 from app.shadow.mock_provider import MockShadowProvider
 from app.shadow.provider import ShadowClusterProvider, ShadowProviderError
 
@@ -19,10 +18,16 @@ logger = get_logger(__name__)
 # (which forces SHADOW_PROVIDER=mock only for its own duration) followed by a
 # real ccloud_api run, or in this dev environment where both get exercised in
 # the same process across different requests.
+#
+# The retired ccloud-CLI provider's name ("cockroachdb_cloud") is deliberately
+# absent: the CLI provider is gone, so there is nothing left to reconstruct for
+# such a row. Verified 2026-08-02 that `shadow_clusters` holds zero rows with
+# that provider before removing it. `provider_choice_for_name` returns None for
+# unknown names and callers already fall back to the current setting, so even a
+# stray legacy row degrades gracefully rather than raising.
 _PROVIDER_NAME_TO_CHOICE: dict[str, str] = {
     "mock_local": "mock",
     "cockroachdb_cloud_api": "ccloud_api",
-    "cockroachdb_cloud": "ccloud",
 }
 
 
@@ -76,7 +81,6 @@ def create_shadow_provider(
 
     * ``mock``       — offline scratch-database provider on the control-plane cluster.
     * ``ccloud_api`` — real CockroachDB Cloud provisioning via the REST API.
-    * ``ccloud``     — ccloud CLI (interactive browser auth only; not headless).
 
     Defaults to ``settings.SHADOW_PROVIDER`` (the normal "what should new
     clusters use" case). Pass ``provider_choice`` explicitly when
@@ -100,24 +104,6 @@ def create_shadow_provider(
             timeout_seconds=settings.ccloud_api_timeout_seconds,
             max_retries=settings.ccloud_api_max_retries,
             backoff_base_seconds=settings.ccloud_api_backoff_base_seconds,
-        )
-
-    if choice == "ccloud":
-        if settings.ccloud_api_key is None:
-            raise ShadowProviderError(
-                "SHADOW_PROVIDER=ccloud requires CCLOUD_API_KEY to be set"
-            )
-        api_key = settings.ccloud_api_key.get_secret_value()
-        if not api_key or api_key.startswith("dummy"):
-            raise ShadowProviderError(
-                "CCLOUD_API_KEY looks like a placeholder; set a real "
-                "service-account API key before using the ccloud provider"
-            )
-        return CCloudShadowProvider(
-            binary=settings.ccloud_binary,
-            api_key=api_key,
-            cloud=settings.shadow_cluster_cloud,
-            region=settings.shadow_cluster_region,
         )
 
     raise ShadowProviderError(f"Unknown SHADOW_PROVIDER: {settings.shadow_provider!r}")

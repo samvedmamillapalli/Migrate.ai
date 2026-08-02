@@ -23,7 +23,18 @@ from sqlalchemy import create_engine, text
 ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(ROOT / ".env")
 
-PASSWORD_FILE = ROOT / ".judge_ro_password"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from app.demo_secrets import (  # noqa: E402
+    JUDGE_RO_DATABASE_URL_FILE,
+    JUDGE_RO_PASSWORD_FILE,
+    demo_secret_path,
+    demo_secret_write_path,
+)
+
+# Written under .local_secrets/ (gitignored) rather than the repo root.
+PASSWORD_FILE = demo_secret_path(JUDGE_RO_PASSWORD_FILE) or demo_secret_write_path(
+    JUDGE_RO_PASSWORD_FILE
+)
 TABLE = "customers"
 ROLE = "judge_ro"
 ROW_TARGET = 5000
@@ -144,7 +155,7 @@ def main() -> None:
         final_count = conn.execute(text(f"SELECT count(*) FROM {TABLE}")).scalar()
 
     ro_url = _build_ro_url(admin, password)
-    url_file = ROOT / ".judge_ro_database_url"
+    url_file = demo_secret_write_path(JUDGE_RO_DATABASE_URL_FILE)
     url_file.write_text(ro_url + "\n", encoding="utf-8")
     print(f"customers_row_count={final_count}")
     print(f"JUDGE_RO_DATABASE_URL={ro_url}")

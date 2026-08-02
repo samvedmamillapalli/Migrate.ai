@@ -44,7 +44,10 @@ class Settings(BaseSettings):
     #   "mock"       - isolated scratch database on the control-plane cluster.
     #                  Offline-only, kept for optional local demos; not used by
     #                  default and not exercised by the Phase 7 verification.
-    #   "ccloud"     - ccloud CLI (interactive browser auth only; not headless).
+    # (A third "ccloud" CLI provider was removed 2026-08-02: it never ran —
+    #  ccloud_api is the default in .env and hardcoded in the SAM template's
+    #  Globals — and its command surface was never verified against a real CLI.
+    #  See docs/HACKATHON_INTEGRATION_AUDIT.md §6.4.)
     shadow_provider: str = Field(default="ccloud_api")
     # Tag/name prefix applied to every shadow cluster so the sweeper can find
     # orphans that belong to this application.
@@ -75,8 +78,6 @@ class Settings(BaseSettings):
     # After schema load, insert tier-capped synthetic rows so storage/runtime
     # metrics are meaningful (default on for demo/hackathon).
     shadow_seed_synthetic_rows: bool = Field(default=True)
-    # ccloud CLI executable (interactive-auth path only; kept for optional demos).
-    ccloud_binary: str = Field(default="ccloud")
     # CockroachDB Cloud service-account credential. ``ccloud_api_secret`` is the
     # Bearer token used by the REST provider; ``ccloud_api_key`` is the key id.
     # Secrets: never logged, never committed. Later phases move to Secrets Manager.

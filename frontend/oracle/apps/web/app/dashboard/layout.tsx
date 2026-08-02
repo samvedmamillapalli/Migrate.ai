@@ -27,9 +27,9 @@ export default async function DashboardLayout({
         <ShadowWatchProvider>
           <SidebarProvider>
             <AppSidebar />
-            <SidebarInset>
-            <DashboardHeader />
-            {children}
+            <SidebarInset className="bg-background">
+              <DashboardHeader />
+              <div className="flex flex-1 flex-col py-8">{children}</div>
             </SidebarInset>
           </SidebarProvider>
           <ShadowExecutionWindow />

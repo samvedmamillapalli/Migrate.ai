@@ -10,6 +10,9 @@ from starlette.responses import JSONResponse
 
 from app.auth.tokens import verify_token
 from app.config import get_settings
+from app.core.logging import get_logger
+
+logger = get_logger(__name__)
 
 _PUBLIC_PREFIXES = (
     "/health",
@@ -85,9 +88,15 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
                     request.state.clerk_user = user_info
                     request.state.auth_method = "clerk"
                     return await call_next(request)
-            except Exception:
-                # Fall through to custom auth if Clerk verification fails
-                pass
+            except Exception as exc:
+                # Fall through to custom auth if Clerk verification fails, but
+                # log it — an unexpected failure here (JWKS unreachable, a bad
+                # CLERK_FRONTEND_API_URL, ...) previously vanished silently and
+                # surfaced only as a generic 401 with no way to tell it apart
+                # from an ordinary expired/invalid token.
+                logger.debug(
+                    "Clerk token verification raised", extra={"error": str(exc)}
+                )
 
         # Try custom HMAC token verification (if configured)
         if custom_auth_enabled:

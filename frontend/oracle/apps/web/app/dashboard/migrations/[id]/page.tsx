@@ -35,6 +35,10 @@ import {
   CollapsibleTrigger,
 } from "@workspace/ui/components/collapsible"
 import { buttonVariants } from "@workspace/ui/components/button"
+import {
+  Label,
+  Panel,
+} from "@workspace/ui/components/ui-kit"
 import { cn } from "@workspace/ui/lib/utils"
 
 import { SqlCodePanel } from "../current/sql-panel"
@@ -75,21 +79,16 @@ function Section({
   action?: React.ReactNode
 }) {
   return (
-    <section
+    <Panel
       aria-label={title}
-      className={cn(
-        "border-border flex w-full flex-col gap-4 rounded-lg border p-4",
-        className
-      )}
+      className={cn("flex w-full flex-col gap-4 px-6 py-5", className)}
     >
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-muted-foreground text-[11px] font-medium tracking-[0.16em] uppercase">
-          {title}
-        </h2>
+        <Label>{title}</Label>
         {action}
       </div>
       {children}
-    </section>
+    </Panel>
   )
 }
 
@@ -106,17 +105,15 @@ function Field({
 }) {
   return (
     <div className="space-y-0.5">
-      <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
-        {label}
-      </p>
+      <p className="section-label">{label}</p>
       <p
         className={cn(
-          "text-xs tracking-tight",
+          "text-[13px] tracking-tight",
           mono && "font-mono",
-          tone === "risk" && "text-[var(--oracle-risk)]",
-          tone === "verified" && "text-[var(--oracle-verified)]",
+          tone === "risk" && "text-[var(--tone-fail-fg)]",
+          tone === "verified" && "text-[var(--tone-pass-fg)]",
           tone === "muted" && "text-muted-foreground",
-          !tone && "text-foreground/85"
+          !tone && "text-foreground font-medium"
         )}
       >
         {value}
@@ -126,16 +123,16 @@ function Field({
 }
 
 function stageDotClass(state: LifecycleStage["state"]): string {
-  if (state === "complete") return "bg-[var(--oracle-verified)]"
-  if (state === "current") return "bg-[var(--oracle-reasoning-soft)]"
-  if (state === "failed") return "bg-[var(--oracle-risk)]"
+  if (state === "complete") return "bg-[var(--tone-pass-dot)]"
+  if (state === "current") return "bg-[var(--tone-info-dot)]"
+  if (state === "failed") return "bg-[var(--tone-fail-dot)]"
   return "bg-border"
 }
 
 function stageTextClass(state: LifecycleStage["state"]): string {
-  if (state === "complete") return "text-foreground/80"
-  if (state === "current") return "text-[var(--oracle-reasoning-soft)]"
-  if (state === "failed") return "text-[var(--oracle-risk)]"
+  if (state === "complete") return "text-foreground"
+  if (state === "current") return "text-[var(--tone-info-fg)]"
+  if (state === "failed") return "text-[var(--tone-fail-fg)]"
   return "text-muted-foreground/45"
 }
 

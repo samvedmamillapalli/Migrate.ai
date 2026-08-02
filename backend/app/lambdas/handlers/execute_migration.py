@@ -32,6 +32,7 @@ async def _run_blast_radius_investigation(
     schema_snapshot_before: dict[str, Any] | None,
     schema_snapshot_after: dict[str, Any] | None,
     row_sample_after: dict[str, Any] | None,
+    session: Any = None,
 ) -> dict[str, Any] | None:
     """Best-effort: returns a ModelTrace-shaped dict, or None. Never raises —
     see app.shadow.blast_radius_investigator's own module docstring for why.
@@ -81,6 +82,34 @@ async def _run_blast_radius_investigation(
         api_secret = resolve_ccloud_api_bearer_token(settings)
         schema_diff = build_schema_diff(schema_snapshot_before, schema_snapshot_after)
 
+        # Embedding client for the agent's search_prior_migrations tool. Same
+        # mock-outside-dev posture as the Bedrock client above: if Titan isn't
+        # reachable we simply don't offer the tool rather than advertising one
+        # that errors on every call.
+        embedding_client = None
+        if session is not None:
+            from app.memory.embedding_client import (
+                AwsTitanEmbeddingClient,
+                MockEmbeddingClient,
+            )
+
+            try:
+                if aws.aws_enabled and aws.bedrock_embedding_model_id:
+                    embedding_client = AwsTitanEmbeddingClient(settings=aws)
+                elif settings.environment.strip().lower() in {
+                    "development",
+                    "dev",
+                    "local",
+                    "test",
+                }:
+                    embedding_client = MockEmbeddingClient()
+            except Exception as exc:  # noqa: BLE001 - tool is optional enrichment
+                logger.warning(
+                    "Embedding client unavailable; search_prior_migrations "
+                    "will not be offered",
+                    extra={"error": f"{type(exc).__name__}: {exc}"},
+                )
+
         return await investigate(
             bedrock_client=bedrock_client,
             model_id=model_id,
@@ -91,6 +120,8 @@ async def _run_blast_radius_investigation(
             migration_sql=migration_sql,
             schema_diff=schema_diff,
             row_sample_after=row_sample_after,
+            session=session,
+            embedding_client=embedding_client,
         )
     except Exception as exc:  # noqa: BLE001 - enrichment, never blocks the migration
         logger.warning(
@@ -182,6 +213,9 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
             schema_snapshot_before=outcome.schema_snapshot_before,
             schema_snapshot_after=outcome.schema_snapshot_after,
             row_sample_after=outcome.row_sample_after,
+            # Reuse this handler's existing session rather than opening a
+            # second one — it backs the agent's search_prior_migrations tool.
+            session=session,
         )
         cockroachdb_tools_summary = (
             "MCP investigation unavailable for this run "

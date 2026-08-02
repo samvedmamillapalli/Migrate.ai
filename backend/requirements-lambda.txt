@@ -1,7 +1,11 @@
 # Runtime dependencies for AWS Lambda packages (sam build Makefile).
 # Keep aligned with backend/pyproject.toml runtime deps (exclude FastAPI/uvicorn).
 boto3>=1.35.0
-pydantic>=2.0
+# Floor is 2.12.0 (not 2.0) because mcp==2.0.0 requires pydantic>=2.12.0 and is
+# installed with --no-deps below, which hides that constraint from the resolver.
+# Without this the resolver could legally pick an older pydantic and mcp would
+# fail at import time in Lambda instead of at build time here.
+pydantic>=2.12.0
 pydantic-settings>=2.6.0
 sqlalchemy[asyncio]>=2.0.36
 sqlalchemy-cockroachdb>=2.0.2
@@ -9,3 +13,42 @@ psycopg[binary]>=3.2.0
 httpx>=0.28.0
 sqlglot>=26.0.0
 PyYAML>=6.0.0
+#
+# --- CockroachDB Managed MCP Server client dependencies ---
+#
+# Without these, ExecuteMigrationFunction logs "mcp package not installed;
+# skipping MCP investigation" and app/shadow/blast_radius_investigator.py never
+# runs in production. See docs/HACKATHON_INTEGRATION_AUDIT.md §2.
+#
+# `mcp` itself is deliberately NOT listed here. Its wheel metadata declares
+# `pywin32>=311; sys_platform == "win32"`, and pip's cross-platform
+# `--platform manylinux2014_x86_64` install evaluates environment markers
+# against the PACKAGING machine's interpreter, not the target platform (a
+# documented pip limitation, not a version-specific bug). Because this project
+# packages Lambdas from Windows by design (see package_lambda_for_sam.py's
+# docstring), listing `mcp` here makes every `sam build` fail with:
+#   ERROR: Could not find a version that satisfies the requirement pywin32>=311
+# ...since pywin32 has no manylinux wheel. Verified by direct reproduction.
+#
+# Instead, package_lambda_for_sam.py installs `mcp` separately with --no-deps
+# (pywin32 is never needed on Lambda's Linux runtime), and its real runtime
+# dependencies are listed below so they resolve normally with full conflict
+# checking against the rest of this file.
+#
+# This list is mcp==2.0.0's Requires-Dist minus: pywin32 (win32-only) and the
+# `cli`/`rich` extras (not installed). Re-derive if mcp is upgraded:
+#   pip download "mcp>=X" --no-deps -d /tmp/m
+#   python -c "import zipfile,glob;z=zipfile.ZipFile(glob.glob('/tmp/m/mcp-*.whl')[0]);\
+#   print(z.read([n for n in z.namelist() if n.endswith('METADATA')][0]).decode())" | grep Requires-Dist
+anyio>=4.9
+httpx2>=2.5.0
+jsonschema>=4.20.0
+mcp-types==2.0.0
+opentelemetry-api>=1.28.0
+pyjwt[crypto]>=2.10.1
+python-multipart>=0.0.9
+sse-starlette>=3.0.0
+starlette>=0.27
+typing-extensions>=4.13.0
+typing-inspection>=0.4.1
+uvicorn>=0.31.1

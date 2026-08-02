@@ -9,12 +9,22 @@ import time
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
+import pathlib
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _judge_ro_url_path():
+    """Path to the RO demo URL file (.local_secrets/, legacy root fallback)."""
+    import sys as _sys
+    _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+    from app.demo_secrets import JUDGE_RO_DATABASE_URL_FILE, demo_secret_path
+    return demo_secret_path(JUDGE_RO_DATABASE_URL_FILE)
+
 load_dotenv(ROOT / ".env")
 API = os.environ.get("JUDGE_API_BASE", "http://127.0.0.1:8002").rstrip("/")
 OWNER = "judge-chaos"
@@ -140,7 +150,7 @@ def prepare_approved(migration_sql: str, ro: str, label: str) -> str | None:
 
 def main() -> int:
     health_or_die()
-    ro = (ROOT / ".judge_ro_database_url").read_text(encoding="utf-8").strip()
+    ro = (_judge_ro_url_path() or ROOT / ".judge_ro_database_url").read_text(encoding="utf-8").strip()
     skip_dual = os.environ.get("JUDGE_SKIP_DUAL", "").lower() in ("1", "true", "yes")
 
     # 1) Missing table after discover → policy block

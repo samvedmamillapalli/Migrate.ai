@@ -3,14 +3,13 @@
 import * as React from "react"
 
 import { cn } from "@workspace/ui/lib/utils"
+import { Label, ToneDot, toneText, type Tone } from "@workspace/ui/components/ui-kit"
 
 import {
   formatDuration,
   formatRelativeTime,
   mapCostStrip,
   mapExecutePanel,
-  mapRowSamplePanel,
-  mapSchemaDiff,
   mapShadowEventLog,
   mapShadowHold,
   mapShadowLifecycleRail,
@@ -19,9 +18,15 @@ import {
   type ComparisonRow,
   type LifecycleRailStage,
   type MigrationRun,
-  type RowSampleTableView,
   type RunExtras,
 } from "@/lib/api"
+
+const STAGE_TONE: Record<"pending" | "current" | "complete" | "failed", Tone> = {
+  pending: "neutral",
+  current: "warn",
+  complete: "pass",
+  failed: "fail",
+}
 
 function StageDot({
   state,
@@ -29,16 +34,11 @@ function StageDot({
   state: "pending" | "current" | "complete" | "failed"
 }) {
   return (
-    <span
-      aria-hidden
+    <ToneDot
+      tone={STAGE_TONE[state]}
       className={cn(
-        "size-2.5 shrink-0 rounded-full border",
-        state === "complete" &&
-          "border-[var(--oracle-verified)] bg-[var(--oracle-verified)]",
-        state === "current" &&
-          "border-amber-400 bg-amber-400/90 animate-pulse shadow-[0_0_0_3px_rgba(251,191,36,0.2)]",
-        state === "failed" && "border-[var(--oracle-risk)] bg-[var(--oracle-risk)]",
-        state === "pending" && "border-muted-foreground/30 bg-transparent"
+        "size-2.5 ring-2 ring-transparent",
+        state === "current" && "animate-pulse"
       )}
     />
   )
@@ -63,7 +63,7 @@ function LifecycleRail({
                 aria-hidden
                 className={cn(
                   "h-px flex-1",
-                  stage.state === "complete" ? "bg-[var(--oracle-verified)]/50" : "bg-border"
+                  stage.state === "complete" ? "bg-[var(--tone-pass-border)]" : "bg-border"
                 )}
               />
             ) : null}
@@ -71,16 +71,14 @@ function LifecycleRail({
           <div>
             <p
               className={cn(
-                "font-mono text-[10px] tracking-[0.1em] uppercase",
+                "section-label",
                 stage.state === "current" && "text-foreground",
-                stage.state === "complete" && "text-muted-foreground/70",
-                stage.state === "failed" && "text-[var(--oracle-risk)]",
-                stage.state === "pending" && "text-muted-foreground/35"
+                stage.state === "failed" && toneText("fail")
               )}
             >
               {stage.label}
             </p>
-            <p className="text-muted-foreground/60 font-mono text-[10px] tabular-nums">
+            <p className="text-muted-foreground/70 text-[11px] tabular-nums">
               {stage.state === "current"
                 ? elapsedLabel || "…"
                 : stage.durationLabel || (stage.state === "pending" ? "—" : "")}
@@ -97,14 +95,16 @@ function StagePanel({
   currentStageId,
   shadow,
   costStrip,
+  showHoldDeleteButton = true,
 }: {
   currentStageId: string | null
   shadow: RunExtras["shadow"]
   costStrip: ReturnType<typeof mapCostStrip>
+  showHoldDeleteButton?: boolean
 }) {
   if (!shadow) {
     return (
-      <p className="text-muted-foreground font-mono text-xs tracking-tight">
+      <p className="text-muted-foreground text-[13px]">
         Waiting for the shadow cluster to be created…
       </p>
     )
@@ -112,11 +112,11 @@ function StagePanel({
 
   if (currentStageId === "provision") {
     return (
-      <div className="space-y-1.5 font-mono text-xs tracking-tight">
-        <p className="text-foreground/85">
+      <div className="space-y-1.5 text-[13px]">
+        <p className="text-foreground font-mono">
           {shadow.cluster_name || "Provisioning cluster identity…"}
         </p>
-        <p className="text-muted-foreground/70">
+        <p className="text-muted-foreground font-mono text-[12px]">
           region: {shadow.region || "…"} · tier: {shadow.scale_tier || "…"} ·
           provider: {shadow.provider || "…"}
         </p>
@@ -126,11 +126,11 @@ function StagePanel({
 
   if (currentStageId === "seed") {
     return (
-      <div className="space-y-1 font-mono text-xs tracking-tight">
-        <p className="text-foreground/85">
+      <div className="space-y-1.5 text-[13px]">
+        <p className="text-foreground">
           Seeding tables from your discovered schema onto {shadow.cluster_name || "the shadow cluster"}…
         </p>
-        <p className="text-muted-foreground/60 text-[11px] leading-relaxed">
+        <p className="text-muted-foreground text-[12px] leading-relaxed">
           Rows are synthetic and tier-capped — this measures schema-load
           time, not your production data volume.
         </p>
@@ -143,45 +143,45 @@ function StagePanel({
     return (
       <div className="space-y-2">
         {exec.jobId ? (
-          <p className="font-mono text-[10px] tracking-tight text-muted-foreground/70">
+          <p className="text-muted-foreground font-mono text-[11px] tracking-tight">
             job {exec.jobId}
           </p>
         ) : null}
         {exec.description ? (
-          <pre className="border-border/50 bg-muted/20 max-h-20 overflow-auto rounded-md border p-2 font-mono text-[10px] leading-relaxed whitespace-pre-wrap">
+          <pre className="border-border bg-muted/40 max-h-20 overflow-auto rounded-md border p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap">
             {exec.description}
           </pre>
         ) : null}
-        <p className="text-foreground/90 font-mono text-sm tracking-tight">
+        <p className="text-foreground text-sm font-medium tracking-tight">
           {exec.runningStatus || "Running your migration SQL…"}
         </p>
         {exec.fractionCompleted != null ? (
           <div className="space-y-1">
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+            <div className="bg-muted h-1.5 w-full overflow-hidden rounded-full">
               <div
-                className="h-full rounded-full bg-amber-400/90 transition-all"
+                className="h-full rounded-full bg-[var(--tone-warn-dot)] transition-all"
                 style={{
                   width: `${Math.max(0, Math.min(100, exec.fractionCompleted * 100))}%`,
                 }}
               />
             </div>
-            <p className="text-muted-foreground/60 font-mono text-[10px] tabular-nums">
+            <p className="text-muted-foreground text-[11px] tabular-nums">
               {Math.round(exec.fractionCompleted * 100)}% — reported directly by
               CockroachDB (`fraction_completed`)
             </p>
           </div>
         ) : !exec.observedLive ? (
-          <p className="text-muted-foreground/55 text-[11px] leading-relaxed">
+          <p className="text-muted-foreground text-[12px] leading-relaxed">
             No live job progress observed for this run — showing the
             post-execution job snapshot only, never a fabricated bar.
           </p>
         ) : null}
         {!exec.observedLive && exec.fallbackJobs.length > 0 ? (
-          <ul className="space-y-1 border-t border-border/40 pt-2">
+          <ul className="border-border space-y-1 border-t pt-2">
             {exec.fallbackJobs.slice(0, 5).map((j, idx) => (
               <li
                 key={`${j.jobId}-${idx}`}
-                className="font-mono text-[10px] tracking-tight text-muted-foreground/70"
+                className="text-muted-foreground font-mono text-[11px] tracking-tight"
               >
                 {j.jobType || "job"} · {j.status || "?"} —{" "}
                 {j.description || "no description"}
@@ -195,13 +195,13 @@ function StagePanel({
 
   if (currentStageId === "measure") {
     return (
-      <div className="space-y-2 font-mono text-xs tracking-tight">
-        <p className="text-foreground/85">
+      <div className="space-y-2 text-[13px]">
+        <p className="text-foreground">
           Migration finished — measuring storage delta and diffing the
           schema before collecting results.
         </p>
         {costStrip ? (
-          <p className="text-muted-foreground/70">
+          <p className="text-muted-foreground">
             {costStrip.durationLabel} · {costStrip.storageLabel} ·{" "}
             {costStrip.jobsRun} job{costStrip.jobsRun === 1 ? "" : "s"} run
           </p>
@@ -212,23 +212,23 @@ function StagePanel({
 
   // teardown
   if (shadow.status === "holding") {
-    return <HoldingPanel shadow={shadow} />
+    return <HoldingPanel shadow={shadow} showDeleteButton={showHoldDeleteButton} />
   }
   const isDone = shadow.status === "destroyed"
   return (
-    <div className="space-y-1 font-mono text-xs tracking-tight">
-      <p className="text-foreground/85">
+    <div className="space-y-1.5 text-[13px]">
+      <p className="text-foreground">
         {isDone
           ? `Cluster destroyed — ${shadow.cluster_name || "the shadow cluster"} no longer exists.`
           : `Tearing down ${shadow.cluster_name || "the shadow cluster"}…`}
       </p>
       {isDone && shadow.destroyed_at ? (
-        <p className="text-muted-foreground/60">
+        <p className="text-muted-foreground">
           torn down {formatRelativeTime(shadow.destroyed_at)} — no ongoing cost.
         </p>
       ) : null}
       {shadow.error_message ? (
-        <p className="text-[var(--oracle-risk)]">{shadow.error_message}</p>
+        <p className={toneText("fail")}>{shadow.error_message}</p>
       ) : null}
     </div>
   )
@@ -238,7 +238,15 @@ function StagePanel({
  * down) so the row-sample/schema-diff data stays inspectable — see
  * ShadowClusterStatus.HOLDING. Ticks its own countdown locally (no extra
  * polling needed) and lets the user end the hold immediately. */
-function HoldingPanel({ shadow }: { shadow: NonNullable<RunExtras["shadow"]> }) {
+function HoldingPanel({
+  shadow,
+  showDeleteButton = true,
+}: {
+  shadow: NonNullable<RunExtras["shadow"]>
+  /** False where the host page already renders its own teardown control, so
+   * the same action isn't offered twice on one screen. */
+  showDeleteButton?: boolean
+}) {
   const [now, setNow] = React.useState(() => Date.now())
   const [deleting, setDeleting] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -271,47 +279,52 @@ function HoldingPanel({ shadow }: { shadow: NonNullable<RunExtras["shadow"]> }) 
         : `${hold.secondsRemaining}s`
 
   return (
-    <div className="space-y-2 font-mono text-xs tracking-tight">
-      <p className="text-foreground/85">
+    <div className="space-y-2.5 text-[13px]">
+      <p className="text-foreground">
         {shadow.cluster_name || "The shadow cluster"} is still live — held for
         inspection.
       </p>
-      <p className="text-muted-foreground/70">
-        Auto-deletes in {label}. Look over the row samples and schema diff
-        above, then delete it early if you are done looking — no need to wait.
+      <p className="text-muted-foreground">
+        Auto-deletes in {label}. Look over the Data columns comparison above,
+        then delete it early if you are done looking — no need to wait.
       </p>
-      <button
-        type="button"
-        onClick={handleDeleteNow}
-        disabled={deleting}
-        className={cn(
-          "rounded-md border px-2.5 py-1 text-[11px] transition-colors",
-          "border-[var(--oracle-risk)]/40 text-[var(--oracle-risk)]",
-          "hover:bg-[var(--oracle-risk)]/10 disabled:opacity-50"
-        )}
-      >
-        {deleting ? "Deleting…" : "Delete now"}
-      </button>
-      {error ? <p className="text-[var(--oracle-risk)]">{error}</p> : null}
+      {showDeleteButton ? (
+        <button
+          type="button"
+          onClick={handleDeleteNow}
+          disabled={deleting}
+          className={cn(
+            "rounded-md border px-2.5 py-1.5 text-[12px] font-semibold transition-colors",
+            "border-[var(--tone-fail-border)]",
+            toneText("fail"),
+            "hover:bg-[var(--tone-fail-bg)] disabled:opacity-50"
+          )}
+        >
+          {deleting ? "Deleting…" : "Delete now"}
+        </button>
+      ) : null}
+      {error ? <p className={toneText("fail")}>{error}</p> : null}
     </div>
   )
 }
 
 /** Band 3 — append-only event log. Never stops producing output. */
-function EventLog({ shadow }: { shadow: RunExtras["shadow"] }) {
+/** Exported for reuse by `ShadowClusterComparison`'s "Event log" accordion on
+ * the standalone Shadow Execution page. */
+export function EventLog({ shadow }: { shadow: RunExtras["shadow"] }) {
   const lines = mapShadowEventLog(shadow)
   if (lines.length === 0) {
     return (
-      <p className="text-muted-foreground/60 font-mono text-[10px] tracking-tight">
+      <p className="text-muted-foreground text-[12px]">
         No events recorded yet.
       </p>
     )
   }
   return (
-    <div className="max-h-40 space-y-0.5 overflow-y-auto font-mono text-[10px] leading-relaxed tracking-tight">
+    <div className="max-h-40 space-y-1 overflow-y-auto font-mono text-[11px] leading-relaxed tracking-tight">
       {lines.map((line, idx) => (
-        <p key={idx} className="text-muted-foreground/75">
-          <span className="text-muted-foreground/45">
+        <p key={idx} className="text-muted-foreground">
+          <span className="text-muted-foreground/60">
             {line.at ? new Date(line.at).toLocaleTimeString() : "…"}
           </span>{" "}
           {line.text}
@@ -321,10 +334,12 @@ function EventLog({ shadow }: { shadow: RunExtras["shadow"] }) {
   )
 }
 
-function ComparisonsBlock({ rows }: { rows: ComparisonRow[] }) {
+/** Exported for reuse by `ShadowClusterComparison`'s "Prediction vs. actual"
+ * accordion on the standalone Shadow Execution page. */
+export function ComparisonsBlock({ rows }: { rows: ComparisonRow[] }) {
   if (rows.length === 0) {
     return (
-      <p className="text-muted-foreground/70 font-mono text-[11px] tracking-tight">
+      <p className="text-muted-foreground text-[12px]">
         Pred → actual appears after measurement.
       </p>
     )
@@ -334,23 +349,21 @@ function ComparisonsBlock({ rows }: { rows: ComparisonRow[] }) {
       {rows.map((row) => (
         <div
           key={row.label}
-          className="grid gap-1 border-b border-border/40 pb-2 last:border-b-0 last:pb-0 sm:grid-cols-[6rem_1fr_auto] sm:items-baseline sm:gap-3"
+          className="border-border grid gap-1 border-b pb-2 last:border-b-0 last:pb-0 sm:grid-cols-[6rem_1fr_auto] sm:items-baseline sm:gap-3"
         >
-          <dt className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.1em] uppercase">
-            {row.label}
-          </dt>
-          <dd className="text-foreground/85 font-mono text-xs tracking-tight">
-            <span className="text-muted-foreground/55">pred </span>
+          <dt className="section-label">{row.label}</dt>
+          <dd className="text-foreground font-mono text-[12.5px] tracking-tight">
+            <span className="text-muted-foreground">pred </span>
             {row.predicted}
-            <span className="text-muted-foreground/40 mx-1.5">→</span>
-            <span className="text-muted-foreground/55">actual </span>
+            <span className="text-muted-foreground/50 mx-1.5">→</span>
+            <span className="text-muted-foreground">actual </span>
             {row.actual}
           </dd>
           {row.withinBand != null ? (
             <span
               className={cn(
-                "font-mono text-[10px] tracking-tight sm:text-right",
-                row.withinBand ? "text-[var(--oracle-verified)]" : "text-[var(--oracle-risk)]"
+                "text-[11px] tracking-tight sm:text-right",
+                row.withinBand ? toneText("pass") : toneText("fail")
               )}
             >
               {row.withinBand ? "within band" : "outside band"}
@@ -362,209 +375,38 @@ function ComparisonsBlock({ rows }: { rows: ComparisonRow[] }) {
   )
 }
 
-const DIFF_COLOR: Record<string, string> = {
-  added: "text-[var(--oracle-verified)]",
-  removed: "text-[var(--oracle-risk)]",
-  changed: "text-amber-400/90",
-  unchanged: "text-muted-foreground/45",
-}
-
-/** Schema diff — color means structural change, never quality. */
-function SchemaDiffPanel({ shadow }: { shadow: RunExtras["shadow"] }) {
-  const tables = mapSchemaDiff(shadow)
-  const changedTables = tables.filter((t) => t.kind !== "unchanged")
-  if (tables.length === 0) {
-    return (
-      <p className="text-muted-foreground/60 font-mono text-[11px] tracking-tight">
-        Schema diff appears once before/after snapshots are captured (measure
-        stage).
-      </p>
-    )
-  }
-  const toShow = changedTables.length > 0 ? changedTables : tables.slice(0, 3)
-  return (
-    <div className="space-y-3">
-      {toShow.map((table) => (
-        <div key={table.name} className="border-border/40 rounded-md border p-2.5">
-          <p className={cn("font-mono text-xs tracking-tight", DIFF_COLOR[table.kind])}>
-            {table.name}{" "}
-            <span className="text-muted-foreground/50 text-[10px] uppercase">
-              {table.kind}
-            </span>
-          </p>
-          <ul className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1">
-            {table.columns
-              .filter((c) => c.kind !== "unchanged")
-              .map((c) => (
-                <li
-                  key={c.name}
-                  className={cn("font-mono text-[10px] tracking-tight", DIFF_COLOR[c.kind])}
-                >
-                  {c.name}
-                  {c.kind === "changed"
-                    ? ` (${c.beforeType} → ${c.afterType})`
-                    : c.type
-                      ? `: ${c.type}`
-                      : ""}
-                </li>
-              ))}
-            {table.indexesAdded.map((name) => (
-              <li key={`idx-add-${name}`} className="text-[var(--oracle-verified)] font-mono text-[10px]">
-                +index {name}
-              </li>
-            ))}
-            {table.indexesRemoved.map((name) => (
-              <li key={`idx-rm-${name}`} className="text-[var(--oracle-risk)] font-mono text-[10px]">
-                -index {name}
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
-      <p className="text-muted-foreground/55 text-[10px] leading-relaxed">
-        Schema shape changes are real and match what would happen to your
-        production database. Row counts and duration above are shadow-tier
-        measurements, not production scale.
-      </p>
-    </div>
-  )
-}
-
-/** Reuses the row-sample tables (real column list + real row counts) but
- * never touches `.rows` — this panel exists specifically to show table shape
- * without exposing any value, sampled or otherwise. */
-function tableShapesFromShadow(shadow: RunExtras["shadow"]): RowSampleTableView[] {
-  const panel = mapRowSamplePanel(shadow)
-  const byName = new Map<string, RowSampleTableView>()
-  for (const t of panel.before) byName.set(t.requestedName, t)
-  for (const t of panel.after) byName.set(t.requestedName, t) // after wins once ready
-  return Array.from(byName.values())
-}
-
-const SHAPE_ROWS_SHOWN = 6
-
-/** One table, rendered as a column header row + a row-number column with
- * every interior cell masked — real shape, no values, forming the visible
- * "header row + row-index column" outline of the table. */
-function TableShapeCard({ table }: { table: RowSampleTableView }) {
-  const label = table.tableName ?? table.requestedName
-  const total = table.totalRowCount ?? table.sampledCount
-  const shown = Math.min(SHAPE_ROWS_SHOWN, Math.max(total, 0))
-  const hasMore = total > shown
-
-  return (
-    <div className="border-border/50 rounded-md border p-3">
-      <div className="mb-2 flex flex-wrap items-baseline justify-between gap-2">
-        <p className="font-mono text-xs text-foreground/90">{label}</p>
-        <span className="text-muted-foreground/60 font-mono text-[10px] tabular-nums">
-          {total} row{total === 1 ? "" : "s"} × {table.columns.length} column
-          {table.columns.length === 1 ? "" : "s"}
-        </span>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-max border-collapse font-mono text-[10.5px]">
-          <thead>
-            <tr>
-              <th className="border-border/40 text-muted-foreground/50 border-b px-2 py-1 text-left align-bottom font-normal">
-                #
-              </th>
-              {table.columns.map((c) => (
-                <th
-                  key={c.name}
-                  className="border-border/40 text-foreground/85 border-b px-2 py-1 text-left align-bottom whitespace-nowrap"
-                >
-                  {c.name}
-                  <span className="text-muted-foreground/45 block font-normal">
-                    {c.type || "?"}
-                    {c.nullable === false ? " · not null" : ""}
-                  </span>
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {shown === 0 ? (
-              <tr>
-                <td
-                  colSpan={table.columns.length + 1}
-                  className="text-muted-foreground/60 px-2 py-2"
-                >
-                  No rows.
-                </td>
-              </tr>
-            ) : (
-              Array.from({ length: shown }, (_, idx) => (
-                <tr key={idx} className="border-border/20 border-b last:border-b-0">
-                  <td className="text-muted-foreground/50 px-2 py-1 tabular-nums">
-                    {idx + 1}
-                  </td>
-                  {table.columns.map((c) => (
-                    <td key={c.name} className="text-muted-foreground/25 px-2 py-1">
-                      ·
-                    </td>
-                  ))}
-                </tr>
-              ))
-            )}
-            {hasMore ? (
-              <tr>
-                <td className="text-muted-foreground/40 px-2 py-1">…</td>
-                {table.columns.map((c) => (
-                  <td key={c.name} className="text-muted-foreground/25 px-2 py-1">
-                    ·
-                  </td>
-                ))}
-              </tr>
-            ) : null}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  )
-}
-
-/** Table shape — real column names and real row counts, never a real value.
- * Distinct from the full row-samples panel (which shows real shadow-tier
- * values with its own disclaimer): this is a quick "what does this table
- * actually look like" glance that shows no data at all, not even synthetic. */
-function TableShapePanel({ shadow }: { shadow: RunExtras["shadow"] }) {
-  const tables = tableShapesFromShadow(shadow).filter(
-    (t) => !t.error && t.columns.length > 0
-  )
-  if (tables.length === 0) {
-    return (
-      <p className="text-muted-foreground/60 font-mono text-[11px] tracking-tight">
-        Table shape appears once a schema snapshot is captured.
-      </p>
-    )
-  }
-  return (
-    <div className="space-y-3">
-      {tables.map((t) => (
-        <TableShapeCard key={t.requestedName} table={t} />
-      ))}
-      <p className="text-muted-foreground/55 text-[10px] leading-relaxed">
-        Real column names and real row counts from the shadow cluster. Cell
-        values are never shown here.
-      </p>
-    </div>
-  )
-}
-
 export type ShadowLiveViewProps = {
   run: MigrationRun
   extras: RunExtras
   comparisons: ComparisonRow[]
   isLive?: boolean
   awaitingStart?: boolean
+  /** False where the host page renders its own teardown control instead. */
+  showHoldDeleteButton?: boolean
+  /** False where the host page renders its own measured/pred-vs-actual/event
+   * log presentation instead (the standalone Shadow Execution page groups
+   * these into its own "Technical details" accordions). Default true so the
+   * other three embeds of this component (Current Migration workspace,
+   * migrations/[id], the execution overlay window) keep their existing,
+   * always-visible layout unchanged. */
+  showCostStrip?: boolean
+  showComparisons?: boolean
+  showEventLog?: boolean
+  /**
+   * Receives the shadow row this view actually resolved to (SSE frame when
+   * live, polled `extras.shadow` otherwise). Lets a host page render off the
+   * same live value without opening a second EventSource to the same stream.
+   */
+  onShadowResolved?: (shadow: RunExtras["shadow"]) => void
   children?: React.ReactNode
 }
 
 /**
- * The shadow-execution live view: lifecycle rail, stage-dependent panel,
- * event log, schema diff, cost strip. Driven by SSE when live; falls back to
+ * The shadow-execution live view: lifecycle rail, stage-dependent panel, cost
+ * strip, pred-vs-actual, event log. Driven by SSE when live; falls back to
  * whatever `extras.shadow` the parent already polled otherwise (and doubles
  * as the replay view for a finished run — same component, no live stream).
+ * Schema/column detail lives in `ShadowClusterComparison` instead, not here.
  */
 export function ShadowLiveView({
   run,
@@ -572,10 +414,19 @@ export function ShadowLiveView({
   comparisons,
   isLive = false,
   awaitingStart = false,
+  showHoldDeleteButton = true,
+  showCostStrip = true,
+  showComparisons = true,
+  showEventLog = true,
+  onShadowResolved,
   children,
 }: ShadowLiveViewProps) {
   const stream = useShadowStream(run.id, { enabled: isLive })
   const shadow = (isLive ? stream.shadow : null) ?? extras.shadow
+
+  React.useEffect(() => {
+    onShadowResolved?.(shadow)
+  }, [shadow, onShadowResolved])
 
   const stages = mapShadowLifecycleRail(shadow, { workflowRunning: isLive, awaitingStart })
   const current = stages.find((s) => s.state === "current")
@@ -607,7 +458,7 @@ export function ShadowLiveView({
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-muted-foreground font-mono text-[11px] tracking-tight">
+        <p className="text-muted-foreground text-[13px]">
           {isLive
             ? stream.connected
               ? "Live"
@@ -620,7 +471,7 @@ export function ShadowLiveView({
                   ? "Shadow steps"
                   : "Waiting"}
         </p>
-        <p className="text-muted-foreground/70 font-mono text-[10px] tabular-nums tracking-tight">
+        <p className="text-muted-foreground text-[11px] tabular-nums">
           {doneCount}/{stages.length}
           {current ? ` · ${current.label}` : null}
         </p>
@@ -633,29 +484,24 @@ export function ShadowLiveView({
         }
       />
 
-      <div className="border-border/60 rounded-lg border p-3.5">
+      <div className="border-border bg-card rounded-lg border p-4">
         <StagePanel
           currentStageId={currentStageId}
           shadow={shadow}
           costStrip={costStrip}
+          showHoldDeleteButton={showHoldDeleteButton}
         />
       </div>
 
-      {costStrip ? (
-        <div className="border-border/60 flex flex-wrap items-baseline gap-x-5 gap-y-1 rounded-lg border p-3 font-mono text-[11px] tracking-tight">
-          <span className="text-muted-foreground/55 uppercase">Measured</span>
-          <span className="text-foreground/85">{costStrip.durationLabel}</span>
-          <span className="text-foreground/85">{costStrip.storageLabel}</span>
-          <span className="text-foreground/85">
+      {showCostStrip && costStrip ? (
+        <div className="border-border bg-card flex flex-wrap items-baseline gap-x-5 gap-y-1 rounded-lg border p-3.5 text-[12.5px]">
+          <span className="section-label">Measured</span>
+          <span className="text-foreground">{costStrip.durationLabel}</span>
+          <span className="text-foreground">{costStrip.storageLabel}</span>
+          <span className="text-foreground">
             {costStrip.jobsRun} job{costStrip.jobsRun === 1 ? "" : "s"}
           </span>
-          <span
-            className={cn(
-              costStrip.success
-                ? "text-[var(--oracle-verified)]"
-                : "text-[var(--oracle-risk)]"
-            )}
-          >
+          <span className={costStrip.success ? toneText("pass") : toneText("fail")}>
             {costStrip.timedOut
               ? "timed out"
               : costStrip.success
@@ -665,33 +511,19 @@ export function ShadowLiveView({
         </div>
       ) : null}
 
-      <div className="space-y-2 border-t border-border/60 pt-4">
-        <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-          Pred → actual
-        </p>
-        <ComparisonsBlock rows={comparisons} />
-      </div>
+      {showComparisons ? (
+        <div className="border-border space-y-2.5 border-t pt-4">
+          <Label>Pred → actual</Label>
+          <ComparisonsBlock rows={comparisons} />
+        </div>
+      ) : null}
 
-      <div className="space-y-2">
-        <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-          Schema diff
-        </p>
-        <SchemaDiffPanel shadow={shadow} />
-      </div>
-
-      <div className="space-y-2 border-t border-border/60 pt-4">
-        <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-          Table shape
-        </p>
-        <TableShapePanel shadow={shadow} />
-      </div>
-
-      <div className="space-y-2 border-t border-border/60 pt-4">
-        <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-          Event log
-        </p>
-        <EventLog shadow={shadow} />
-      </div>
+      {showEventLog ? (
+        <div className="border-border space-y-2.5 border-t pt-4">
+          <Label>Event log</Label>
+          <EventLog shadow={shadow} />
+        </div>
+      ) : null}
 
       {children}
     </div>

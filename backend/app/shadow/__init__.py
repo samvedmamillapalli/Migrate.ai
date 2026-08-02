@@ -1,5 +1,4 @@
 from app.shadow.ccloud_api_provider import CCloudApiShadowProvider
-from app.shadow.ccloud_provider import CCloudShadowProvider
 from app.shadow.concurrency import SlotAcquisitionTimeout, acquire_slot
 from app.shadow.factory import create_shadow_provider
 from app.shadow.mock_provider import MockShadowProvider
@@ -29,7 +28,6 @@ from app.shadow.sweeper import ShadowClusterSweeper
 __all__ = [
     "TIER_ROW_CAPS",
     "CCloudApiShadowProvider",
-    "CCloudShadowProvider",
     "ComparisonReport",
     "ExecutionOutcome",
     "LifecycleReport",

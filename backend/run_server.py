@@ -5,12 +5,19 @@ is often missing from PATH; use ``python run_server.py`` instead.
 
 Usage (from backend/):
 
-  python run_server.py
+  python run_server.py            # 127.0.0.1:8000
+  python run_server.py 8003       # explicit port
+  API_PORT=8003 python run_server.py
+
+The port matters because the web app reads NEXT_PUBLIC_API_BASE_URL from
+frontend/oracle/apps/web/.env.local — start this on whatever port that names,
+or the UI will talk to a different (possibly stale) server.
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 import selectors
 import sys
 
@@ -32,10 +39,16 @@ def main() -> None:
     else:
         loop = "asyncio"
 
+    port = 8000
+    if len(sys.argv) > 1:
+        port = int(sys.argv[1])
+    elif os.environ.get("API_PORT"):
+        port = int(os.environ["API_PORT"])
+
     uvicorn.run(
         "app.main:app",
         host="127.0.0.1",
-        port=8000,
+        port=port,
         reload=False,
         loop=loop,  # type: ignore[arg-type]
     )

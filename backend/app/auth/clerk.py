@@ -23,6 +23,17 @@ _CLERK_JWKS_CACHE_TTL = 3600  # 1 hour
 _CLERK_JWKS_CACHE_TIMESTAMP: float = 0
 
 
+def _normalize_clerk_domain(value: str) -> str:
+    """Normalize Clerk domain strings to a valid hostname."""
+    domain = (value or "").strip()
+    domain = domain.replace("https://", "").replace("http://", "")
+    domain = domain.rstrip("/")
+    # Some Clerk key encodings include a trailing marker; strip it so the
+    # JWKS URL hostname remains valid.
+    domain = domain.rstrip("$")
+    return domain
+
+
 def _get_clerk_jwks_client(publishable_key: str) -> PyJWKClient:
     """Get or create a cached JWKS client for Clerk."""
     global _CLERK_JWKS_CACHE, _CLERK_JWKS_CACHE_TIMESTAMP
@@ -47,7 +58,7 @@ def _extract_clerk_domain(publishable_key: str) -> str:
 
     settings = get_settings()
     if settings.clerk_frontend_api_url:
-        return settings.clerk_frontend_api_url.rstrip("/").replace("https://", "")
+        return _normalize_clerk_domain(settings.clerk_frontend_api_url)
 
     key = publishable_key.strip()
     for prefix in ("pk_live_", "pk_test_"):
@@ -62,12 +73,12 @@ def _extract_clerk_domain(publishable_key: str) -> str:
                     encoded += "=" * padding
                 decoded = base64.urlsafe_b64decode(encoded).decode("utf-8")
                 if decoded:
-                    return decoded
+                    return _normalize_clerk_domain(decoded)
             except Exception:
                 pass
-            return f"{encoded}.clerk.accounts.dev"
+                return _normalize_clerk_domain(f"{encoded}.clerk.accounts.dev")
 
-    return "clerk.accounts.dev"
+            return _normalize_clerk_domain("clerk.accounts.dev")
 
 
 class ClerkTokenError(Exception):
@@ -93,7 +104,8 @@ class ClerkJwtValidator:
     def _jwks(self) -> PyJWKClient:
         if self._jwks_client is None:
             if self._frontend_api_url:
-                jwks_url = f"https://{self._frontend_api_url.rstrip('/').replace('https://', '')}/.well-known/jwks.json"
+                normalized = _normalize_clerk_domain(self._frontend_api_url)
+                jwks_url = f"https://{normalized}/.well-known/jwks.json"
                 self._jwks_client = PyJWKClient(jwks_url, cache_keys=True)
             else:
                 self._jwks_client = _get_clerk_jwks_client(self._publishable_key)
@@ -191,5 +203,9 @@ async def verify_clerk_token(token: str) -> dict[str, Any] | None:
         payload = validator.verify_token(token)
         return validator.extract_user_info(payload)
     except ClerkTokenError as exc:
-        logger.debug("Clerk token verification failed: %s", exc)
+        # WARNING, not debug: every environment running this app defaults its
+        # log level above DEBUG, so a debug-level line here is invisible in
+        # practice — this is the one message that explains *why* a request
+        # got a generic 401, and it must not require flipping log levels to see.
+        logger.warning("Clerk token verification failed: %s", exc)
         return None

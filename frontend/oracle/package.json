@@ -24,8 +24,5 @@
   "workspaces": [
     "apps/*",
     "packages/*"
-  ],
-  "dependencies": {
-    "@clerk/nextjs": "^7.6.1"
-  }
+  ]
 }

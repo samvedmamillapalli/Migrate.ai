@@ -1,22 +1,13 @@
-"use client"
-
 import * as React from "react"
 
 /**
- * Visually force the marketing page into light/cream mode without
- * persisting a theme preference that would affect the dashboard.
+ * Marker wrapper for marketing/auth routes. Theme resolution actually
+ * happens in ThemeProvider — these routes just default to light for
+ * signed-out visitors and users with no explicit preference yet. A
+ * signed-in user's chosen theme (Settings → Appearance) still applies here
+ * too. This component exists so call sites stay self-documenting about
+ * which pages are light-by-default.
  */
 export function LandingTheme({ children }: { children: React.ReactNode }) {
-  React.useEffect(() => {
-    const root = document.documentElement
-    const hadDark = root.classList.contains("dark")
-    root.classList.remove("dark")
-    root.classList.add("light")
-    return () => {
-      root.classList.remove("light")
-      if (hadDark) root.classList.add("dark")
-    }
-  }, [])
-
   return <>{children}</>
 }

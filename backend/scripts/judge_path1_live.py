@@ -23,12 +23,22 @@ import time
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
+import pathlib
 from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _judge_ro_url_path():
+    """Path to the RO demo URL file (.local_secrets/, legacy root fallback)."""
+    import sys as _sys
+    _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+    from app.demo_secrets import JUDGE_RO_DATABASE_URL_FILE, demo_secret_path
+    return demo_secret_path(JUDGE_RO_DATABASE_URL_FILE)
+
 load_dotenv(ROOT / ".env")
 
 API = os.environ.get("JUDGE_API_BASE", "http://127.0.0.1:8001").rstrip("/")
@@ -237,7 +247,7 @@ def wait_run_terminal(run_id: str, t0: float, max_s: int = 2400) -> dict[str, An
 
 
 def main() -> None:
-    ro_path = ROOT / ".judge_ro_database_url"
+    ro_path = _judge_ro_url_path() or ROOT / ".judge_ro_database_url"
     if not ro_path.exists():
         raise SystemExit("missing .judge_ro_database_url")
     ro_url = ro_path.read_text(encoding="utf-8").strip()

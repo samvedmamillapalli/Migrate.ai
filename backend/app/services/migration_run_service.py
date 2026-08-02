@@ -230,6 +230,13 @@ class MigrationRunService:
         owner_identity: str | None = None,
         run_kind: str | None = None,
         exclude_kinds: list[str] | None = None,
+        search: str | None = None,
+        compatibility_risk: str | None = None,
+        approval_decision: str | None = None,
+        approver_identity: str | None = None,
+        order_by: str = "created_at",
+        order_dir: str = "desc",
+        load_summary_children: bool = True,
     ) -> list[MigrationRun]:
         if offset < 0:
             raise ValidationError("offset must be >= 0")
@@ -243,6 +250,13 @@ class MigrationRunService:
             owner_identity=owner_identity,
             run_kind=run_kind,
             exclude_kinds=exclude_kinds,
+            search=search,
+            compatibility_risk=compatibility_risk,
+            approval_decision=approval_decision,
+            approver_identity=approver_identity,
+            order_by=order_by,
+            order_dir=order_dir,
+            load_summary_children=load_summary_children,
         )
 
     async def count_migration_runs(
@@ -252,13 +266,69 @@ class MigrationRunService:
         owner_identity: str | None = None,
         run_kind: str | None = None,
         exclude_kinds: list[str] | None = None,
+        search: str | None = None,
+        compatibility_risk: str | None = None,
+        approval_decision: str | None = None,
+        approver_identity: str | None = None,
     ) -> int:
         return await self._repository.count(
             status=status,
             owner_identity=owner_identity,
             run_kind=run_kind,
             exclude_kinds=exclude_kinds,
+            search=search,
+            compatibility_risk=compatibility_risk,
+            approval_decision=approval_decision,
+            approver_identity=approver_identity,
         )
+
+    async def list_approvers(
+        self,
+        *,
+        owner_identity: str | None = None,
+        exclude_kinds: list[str] | None = None,
+    ) -> list[str]:
+        return await self._repository.distinct_approvers(
+            owner_identity=owner_identity,
+            exclude_kinds=exclude_kinds,
+        )
+
+    async def discard_abandoned_run(self, run_id: uuid.UUID) -> None:
+        """Delete a run the user never got past setup.
+
+        Deliberately narrow: only a ``pending`` run with no approval, grade,
+        execution result or shadow cluster can be removed. Anything that has
+        been predicted, decided on or executed is part of the audit record and
+        is never deletable — the corpus and accuracy metrics depend on it.
+        """
+        run = await self._repository.get_by_id_or_raise(run_id, load_children=True)
+        if run.status != MigrationRunStatus.PENDING:
+            raise ConflictError(
+                "Only a pending run can be discarded. This run has already "
+                f"reached status '{run.status.value}' and is part of the audit record."
+            )
+        blocking = [
+            name
+            for name, child in (
+                ("approval", run.approval),
+                ("grade", run.grade),
+                ("execution result", run.execution_result),
+                ("shadow cluster", run.shadow_cluster),
+                ("memory", run.memory),
+            )
+            if child is not None
+        ]
+        if blocking:
+            raise ConflictError(
+                f"Run has a recorded {', '.join(blocking)} and cannot be discarded."
+            )
+
+        async def _commit() -> None:
+            await self._repository.delete_by_id(run_id)
+            await self._session.commit()
+
+        await with_txn_retry(_commit, on_retry=self._session.rollback)
+        logger.info("Discarded abandoned migration run", extra={"run_id": str(run_id)})
 
     async def update_status(
         self,

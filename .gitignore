@@ -28,3 +28,7 @@ infra/sam/.aws-sam/
 Thumbs.db
 .tmp_schema.json
 .tmp_*.json
+
+# Playwright MCP session artefacts (console logs / page snapshots)
+.playwright-mcp/
+debug-*.log

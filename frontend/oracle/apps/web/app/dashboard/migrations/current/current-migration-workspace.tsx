@@ -2,6 +2,8 @@
 
 import * as React from "react"
 import Link from "next/link"
+import { motion } from "motion/react"
+import { AlertTriangle, Check, ClipboardCheck, X } from "lucide-react"
 
 import { Button, buttonVariants } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
@@ -18,6 +20,7 @@ import {
   createFakeMigration,
   createDemoWithDb,
   createRun,
+  decisionHeadline,
   discoverErrorHint,
   discoverSchema,
   formatDuration,
@@ -40,10 +43,13 @@ import {
   sfnNotReadyMessage,
   mapAssessment,
   mapComparisons,
+  mapLifecycle,
   mapProcessStages,
+  mapShadowChecks,
   mapSchema,
   policyLabel,
   predictRun,
+  primaryTableName,
   requireOwnerIdentity,
   riskTone,
   setConnectionSecretArn,
@@ -63,11 +69,25 @@ import {
   type Memory,
   type MigrationRun,
   type PipelineProgress,
+  type LifecycleStage,
   type RetrievedMemoryView,
   type RunExtras,
+  type ShadowCheck,
   type SchemaView,
   type ShadowCluster,
 } from "@/lib/api"
+
+import {
+  EmptyNote,
+  Label,
+  PageHeader,
+  Panel,
+  SkeletonLines,
+  StatusPill,
+  ToneDot,
+  toneText,
+  type Tone,
+} from "@workspace/ui/components/ui-kit"
 
 import { SqlCodePanel } from "./sql-panel"
 
@@ -125,28 +145,26 @@ function Section({
   children,
   className,
   right,
+  delay,
 }: {
   title: string
   children: React.ReactNode
   className?: string
   right?: React.ReactNode
+  delay?: number
 }) {
   return (
-    <section
+    <Panel
       aria-label={title}
-      className={cn(
-        "border-border flex w-full flex-col gap-4 rounded-lg border p-4",
-        className
-      )}
+      delay={delay}
+      className={cn("flex w-full flex-col gap-4 px-6 py-5", className)}
     >
       <div className="flex items-center justify-between gap-3">
-        <h2 className="text-muted-foreground text-[11px] font-medium tracking-[0.16em] uppercase">
-          {title}
-        </h2>
+        <Label>{title}</Label>
         {right}
       </div>
       {children}
-    </section>
+    </Panel>
   )
 }
 
@@ -178,7 +196,7 @@ function FieldRow({
 
 function riskClass(tone: "low" | "medium" | "high" | "unknown"): string {
   if (tone === "low") return "text-[var(--oracle-verified)]"
-  if (tone === "medium") return "text-amber-400/90"
+  if (tone === "medium") return "text-[var(--oracle-warning)]"
   if (tone === "high") return "text-[var(--oracle-risk)]"
   return "text-muted-foreground"
 }
@@ -190,7 +208,7 @@ function StatusDot({ tone }: { tone: "ok" | "warn" | "bad" | "muted" }) {
       className={cn(
         "size-1.5 shrink-0 rounded-full",
         tone === "ok" && "bg-[var(--oracle-verified)]",
-        tone === "warn" && "bg-amber-400/90",
+        tone === "warn" && "bg-[var(--oracle-warning)]",
         tone === "bad" && "bg-[var(--oracle-risk)]",
         tone === "muted" && "bg-muted-foreground/60"
       )}
@@ -352,7 +370,7 @@ function ConnectDatabaseFields({
             </p>
             <p className="text-muted-foreground/80 text-xs leading-relaxed">
               Connect a prepared demo database instead —{" "}
-              <span className="text-amber-400/90">not your data</span>, always
+              <span className="text-[var(--oracle-warning)]">not your data</span>, always
               available, real read-only discovery.
             </p>
           </div>
@@ -563,7 +581,7 @@ function MemoryCard({ memory }: { memory: RetrievedMemoryView }) {
           {memory.notAGradedRun ? (
             <>
               <span className="text-muted-foreground/35 mx-1.5">·</span>
-              <span className="text-amber-400/80">corpus (not graded)</span>
+              <span className="text-[var(--oracle-warning)]">corpus (not graded)</span>
             </>
           ) : (
             <>
@@ -688,7 +706,7 @@ function AssessmentPanel({ assessment }: { assessment: AssessmentView }) {
           <p className="text-muted-foreground/55 font-mono text-[10px] tracking-[0.1em] uppercase">
             Policy
           </p>
-          <p className="font-mono text-xs tracking-[0.08em] text-amber-400/90 uppercase">
+          <p className="font-mono text-xs tracking-[0.08em] text-[var(--oracle-warning)] uppercase">
             {policyLabel(assessment.policyDecision)}
           </p>
         </div>
@@ -733,7 +751,7 @@ function AssessmentPanel({ assessment }: { assessment: AssessmentView }) {
                 key={`${adj.reasonCode}-${idx}`}
                 className="flex gap-2 text-xs text-foreground/75"
               >
-                <span className="text-amber-400/80 shrink-0 font-mono tabular-nums">
+                <span className="text-[var(--oracle-warning)] shrink-0 font-mono tabular-nums">
                   {adj.amount > 0 ? "+" : ""}
                   {adj.amount}
                 </span>
@@ -973,6 +991,227 @@ function ComparisonsPanel({ rows }: { rows: ComparisonRow[] }) {
   )
 }
 
+/**
+ * Migration Details grid.
+ *
+ * The design's grid included "Index Type" and "Lock Mode"; neither is
+ * produced anywhere in this system, so they are replaced by fields that are:
+ * estimated storage, parsed statement types, scale tier and policy decision.
+ * Every cell reads a real column or an explicit dash.
+ */
+function MigrationDetails({
+  run,
+  assessment,
+  schema,
+}: {
+  run: MigrationRun
+  assessment: AssessmentView | null
+  schema: SchemaView | null
+}) {
+  const table = primaryTableName(run.migration_sql)
+  const matched = table
+    ? schema?.tables.find((t) => t.name.toLowerCase() === table)
+    : undefined
+  const statementTypes = (run.parsed_statement_types ?? []).join(", ")
+
+  const rows: Array<[string, React.ReactNode]> = [
+    ["Stage", statusLabel(run.status)],
+    [
+      "Risk Level",
+      assessment?.compatibilityRisk ? (
+        <span
+          className={cn(
+            "capitalize",
+            riskClass(riskTone(assessment.compatibilityRisk))
+          )}
+        >
+          {assessment.compatibilityRisk}
+        </span>
+      ) : (
+        "—"
+      ),
+    ],
+    ["AI Confidence", assessment?.confidence?.percentLabel ?? "—"],
+    [
+      "Est. Duration",
+      assessment?.prediction
+        ? formatDuration(assessment.prediction.estimatedDurationSeconds)
+        : "—",
+    ],
+    [
+      "Est. Storage",
+      assessment?.prediction
+        ? formatStorage(assessment.prediction.estimatedStorageMb)
+        : "—",
+    ],
+    ["Target Table", table ?? "—"],
+    [
+      "Estimated Rows",
+      matched?.estimatedRowCount != null
+        ? matched.estimatedRowCount.toLocaleString()
+        : "—",
+    ],
+    ["Statement Types", statementTypes || "—"],
+    ["Scale Tier", run.prediction_scale_tier ?? "—"],
+    ["Policy", assessment?.policyDecision ? policyLabel(assessment.policyDecision) : "—"],
+  ]
+
+  return (
+    <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3 lg:grid-cols-5">
+      {rows.map(([k, v]) => (
+        <div key={k}>
+          <div className="section-label">{k}</div>
+          <div className="text-foreground mt-1 text-[14px] font-semibold">
+            {v}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
+/**
+ * Shadow evidence checks. Renders nothing until a shadow execution has
+ * actually produced something to check — see mapShadowChecks, which derives
+ * every row from a measured value and omits the design's four invented ones.
+ */
+function ShadowChecksPanel({ checks }: { checks: ShadowCheck[] }) {
+  if (checks.length === 0) return null
+  const failed = checks.filter((c) => c.state === "fail").length
+  const warned = checks.filter((c) => c.state === "warn").length
+  const summary =
+    failed > 0
+      ? `${failed} check${failed === 1 ? "" : "s"} failed`
+      : warned > 0
+        ? `${warned} check${warned === 1 ? "" : "s"} need attention`
+        : "All checks passed"
+  const summaryTone: Tone = failed > 0 ? "fail" : warned > 0 ? "warn" : "pass"
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <span
+          className={cn(
+            "inline-flex items-center gap-1.5 text-[13px] font-semibold",
+            toneText(summaryTone)
+          )}
+        >
+          <ToneDot tone={summaryTone} />
+          {summary}
+        </span>
+        <span className="text-muted-foreground text-[12px]">
+          {checks.length} measured
+        </span>
+      </div>
+      <div className="space-y-2">
+        {checks.map((c) => (
+          <div
+            key={c.id}
+            className={cn(
+              "flex items-start justify-between gap-3 rounded-lg border px-4 py-3",
+              c.state === "pass"
+                ? "border-border bg-card"
+                : c.state === "warn"
+                  ? "border-[var(--tone-warn-border)] bg-[var(--tone-warn-bg)]"
+                  : "border-[var(--tone-fail-border)] bg-[var(--tone-fail-bg)]"
+            )}
+          >
+            <div className="flex gap-3">
+              {c.state === "pass" ? (
+                <Check className="mt-0.5 size-4 shrink-0 text-[var(--tone-pass-fg)]" />
+              ) : c.state === "warn" ? (
+                <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--tone-warn-fg)]" />
+              ) : (
+                <X className="mt-0.5 size-4 shrink-0 text-[var(--tone-fail-fg)]" />
+              )}
+              <div>
+                <div className="text-foreground text-[13px] font-semibold">
+                  {c.name}
+                </div>
+                <div className="text-muted-foreground mt-0.5 text-[13px]">
+                  {c.detail}
+                </div>
+              </div>
+            </div>
+            <span
+              className={cn(
+                "rounded px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase",
+                c.state === "pass"
+                  ? "bg-[var(--tone-pass-bg)] text-[var(--tone-pass-fg)]"
+                  : c.state === "warn"
+                    ? "bg-[var(--tone-warn-bg)] text-[var(--tone-warn-fg)]"
+                    : "bg-[var(--tone-fail-bg)] text-[var(--tone-fail-fg)]"
+              )}
+            >
+              {c.state}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Activity timeline. Built from mapLifecycle, which reads the shadow
+ * cluster's append-only event_log and stage_timings plus the run's own
+ * timestamps — so each entry is something that actually happened, with the
+ * time it actually happened at.
+ */
+function ActivityTimeline({ stages }: { stages: LifecycleStage[] }) {
+  const seen = stages.filter((s) => s.state !== "pending" || s.at)
+  if (seen.length === 0) {
+    return <EmptyNote>No activity recorded for this run yet.</EmptyNote>
+  }
+  return (
+    <ol className="space-y-4">
+      {seen.map((stage) => (
+        <li key={stage.id} className="flex gap-3">
+          <ToneDot
+            tone={
+              stage.state === "failed"
+                ? "fail"
+                : stage.state === "complete"
+                  ? "pass"
+                  : stage.state === "current"
+                    ? "info"
+                    : "neutral"
+            }
+            className="mt-1.5 size-2 ring-4 ring-[var(--muted)]"
+          />
+          <div className="min-w-0 text-[13px]">
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <span className="text-foreground font-semibold">
+                {stage.label}
+              </span>
+              {stage.durationLabel ? (
+                <span className="text-muted-foreground font-mono text-[11px]">
+                  {stage.durationLabel}
+                </span>
+              ) : null}
+            </div>
+            {stage.outcome ? (
+              <div className="text-muted-foreground mt-0.5">
+                {stage.outcome}
+              </div>
+            ) : null}
+            {stage.error ? (
+              <div className="mt-0.5 text-[var(--tone-fail-fg)]">
+                {stage.error}
+              </div>
+            ) : null}
+            {stage.at ? (
+              <div className="text-muted-foreground/70 mt-0.5 text-[12px]">
+                {formatRelativeTime(stage.at)}
+              </div>
+            ) : null}
+          </div>
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 export function CurrentMigrationWorkspace() {
   const { openWatch } = useShadowWatch()
   const [initializing, setInitializing] = React.useState(true)
@@ -1021,11 +1260,23 @@ export function CurrentMigrationWorkspace() {
       setExtras(EMPTY_EXTRAS)
       return
     }
+    // Only ask for children that can plausibly exist yet. Grade and memory
+    // are written by the grading step at the very end, and a shadow cluster
+    // only exists once the workflow has started — probing for them earlier
+    // just produces a row of 404s in the network log on every poll.
+    const workflowStarted = target.workflow_status !== "not_started"
+    const graded =
+      target.status === "completed" || target.status === "failed"
+
     const [grade, memory, execution, shadow] = await Promise.all([
-      safeGet(() => getGrade(target.id)),
-      safeGet(() => getMemory(target.id)),
-      safeGet(() => getExecutionResult(target.id)),
-      safeGet(() => getShadowCluster(target.id)),
+      graded ? safeGet(() => getGrade(target.id)) : Promise.resolve(null),
+      graded ? safeGet(() => getMemory(target.id)) : Promise.resolve(null),
+      workflowStarted
+        ? safeGet(() => getExecutionResult(target.id))
+        : Promise.resolve(null),
+      workflowStarted
+        ? safeGet(() => getShadowCluster(target.id))
+        : Promise.resolve(null),
     ])
     setExtras({ grade, memory, execution, shadow })
   }, [])
@@ -1036,6 +1287,9 @@ export function CurrentMigrationWorkspace() {
       try {
         const r = await getRun(runId)
         setRun(r)
+        // Reflect the run we actually loaded — otherwise the header keeps
+        // showing the "waiting for a migration" placeholder over a live run.
+        setStatusMessage(decisionHeadline(r))
         await refreshExtras(r)
         const approval = await safeGet(() => getApproval(r.id))
         setRecordedApproval(approval)
@@ -1043,7 +1297,16 @@ export function CurrentMigrationWorkspace() {
           setOverrideRationale(approval.override_rationale)
         }
       } catch (err) {
-        if (err instanceof ApiError && err.status === 404) {
+        // A pinned run can outlive its usefulness in more ways than "it was
+        // deleted" (404): it can also belong to a different owner than the
+        // one now signed in — a shared browser, a switched account, or (as
+        // happened during development) a Clerk test instance reset. Treat
+        // that the same way as gone: drop the pin instead of showing an
+        // error for a run this session can never load.
+        if (
+          err instanceof ApiError &&
+          (err.status === 404 || err.status === 401 || err.status === 403)
+        ) {
           setCurrentRunId(null)
           setRun(null)
           setExtras(EMPTY_EXTRAS)
@@ -1437,6 +1700,8 @@ export function CurrentMigrationWorkspace() {
   const assessment = run ? mapAssessment(run) : null
   const schema = run ? mapSchema(run) : null
   const comparisons = run ? mapComparisons(run, extras) : []
+  const shadowChecks = mapShadowChecks(extras)
+  const lifecycleStages = run ? mapLifecycle(run, extras) : []
   const hasPrediction = Boolean(
     assessment && (assessment.policyDecision != null || assessment.prediction)
   )
@@ -1477,88 +1742,72 @@ export function CurrentMigrationWorkspace() {
   )
 
   return (
-    <div className="flex flex-1 flex-col gap-5 px-4 pb-8 md:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <Link
-          href="/dashboard"
-          className={cn(
-            buttonVariants({ variant: "ghost", size: "sm" }),
-            "text-muted-foreground hover:text-foreground -ml-2 font-mono text-[11px] tracking-tight"
-          )}
-        >
-          ← Back to Overview
-        </Link>
-        <Link
-          href="/dashboard/migrations/history"
-          className="text-muted-foreground hover:text-foreground font-mono text-[11px] tracking-tight transition-colors"
-        >
-          Past Migrations →
-        </Link>
-      </div>
-
-      <header className="space-y-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 space-y-1">
-            <h1 className="text-foreground text-2xl font-medium tracking-tight">
-              Current Migration
-            </h1>
-            <p className="text-muted-foreground font-mono text-xs tracking-tight">
+    <div className="mx-auto flex w-full max-w-[1500px] flex-1 flex-col gap-5 px-6 pb-10 lg:px-10">
+      <PageHeader
+        title="Current Migration"
+        subtitle={
+          <>
+            <span className="font-mono text-xs tracking-tight">
               {statusMessage}
-            </p>
+            </span>
             {error ? (
-              <p className="font-mono text-xs tracking-tight text-[var(--oracle-risk)]">
+              <span className="mt-1 block font-mono text-xs tracking-tight text-[var(--tone-fail-fg)]">
                 {error}
-              </p>
+              </span>
             ) : null}
-          </div>
-          {run ? (
-            <div className="flex flex-col items-start gap-1 sm:items-end">
-              <div className="flex items-center gap-2">
-                <StatusDot tone={statusTone(run.status)} />
-                <span className="text-muted-foreground font-mono text-[11px] tracking-[0.14em] uppercase">
-                  {statusLabel(run.status)}
-                </span>
-              </div>
-              <p className="text-muted-foreground/55 font-mono text-[10px] tracking-tight">
+          </>
+        }
+        action={
+          run ? (
+            <div className="flex flex-col items-start gap-1.5 sm:items-end">
+              <StatusPill status={run.status} />
+              <p className="text-muted-foreground/70 font-mono text-[10px] tracking-tight">
                 {formatRelativeTime(run.created_at)}
               </p>
             </div>
-          ) : null}
-        </div>
+          ) : null
+        }
+      />
 
-        {run ? (
-          <div className="border-border/70 flex flex-col gap-3 border-t pt-3 sm:flex-row sm:items-center sm:justify-between">
-            <ProcessStages run={run} />
-            <div className="flex flex-wrap gap-2">
-              <Link
-                href={`/dashboard/migrations/${run.id}`}
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "sm" }),
-                  "shrink-0"
-                )}
-              >
-                Full detail &amp; model traces
-              </Link>
-              <Link
-                href="/dashboard/migrations/current/shadow"
-                className={cn(
-                  buttonVariants({ variant: "outline", size: "sm" }),
-                  "shrink-0"
-                )}
-              >
-                Shadow execution
-              </Link>
-            </div>
+      {run ? (
+        <Panel className="flex flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <ProcessStages run={run} />
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={`/dashboard/migrations/${run.id}`}
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "shrink-0"
+              )}
+            >
+              Full detail &amp; model traces
+            </Link>
+            <Link
+              href="/dashboard/migrations/current/shadow"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "shrink-0"
+              )}
+            >
+              Shadow execution
+            </Link>
+            <Link
+              href="/dashboard/migrations/current/memory"
+              className={cn(
+                buttonVariants({ variant: "outline", size: "sm" }),
+                "shrink-0"
+              )}
+            >
+              Why this confidence
+            </Link>
           </div>
-        ) : null}
-      </header>
+        </Panel>
+      ) : null}
 
       {initializing ? (
-        <section className="border-border rounded-lg border p-4">
-          <p className="text-muted-foreground font-mono text-xs tracking-tight">
-            Loading current run…
-          </p>
-        </section>
+        <Panel className="px-6 py-5">
+          <SkeletonLines lines={5} />
+        </Panel>
       ) : !run ? (
         <>
           <Section title="1. Connect your database">
@@ -1636,8 +1885,8 @@ export function CurrentMigrationWorkspace() {
             </div>
 
             {process.env.NEXT_PUBLIC_ENABLE_DEBUG_TOOLS === "true" ? (
-              <div className="border-amber-500/30 bg-amber-500/5 mt-4 space-y-3 rounded-lg border p-4">
-                <p className="font-mono text-[10px] tracking-[0.14em] text-amber-400/90 uppercase">
+              <div className="border-[var(--oracle-warning)]/30 bg-[var(--oracle-warning)]/5 mt-4 space-y-3 rounded-lg border p-4">
+                <p className="font-mono text-[10px] tracking-[0.14em] text-[var(--oracle-warning)] uppercase">
                   Developer tools
                 </p>
                 <Button
@@ -1661,7 +1910,7 @@ export function CurrentMigrationWorkspace() {
                   "rounded-md border px-3 py-2 font-mono text-[11px] tracking-tight",
                   dbAttached
                     ? "border-[var(--oracle-verified)]/40 bg-[var(--oracle-verified)]/5 text-[var(--oracle-verified)]"
-                    : "border-amber-500/30 bg-amber-500/5 text-amber-200/90"
+                    : "border-[var(--oracle-warning)]/40 bg-[var(--oracle-warning)]/10 text-[var(--oracle-warning)] font-medium"
                 )}
               >
                 {dbAttached
@@ -1731,7 +1980,7 @@ export function CurrentMigrationWorkspace() {
                         {schema.isSynthetic ? (
                           <>
                             <span className="text-muted-foreground/35 mx-1.5">·</span>
-                            <span className="text-amber-400/80">synthetic (debug)</span>
+                            <span className="text-[var(--oracle-warning)]">synthetic (debug)</span>
                           </>
                         ) : null}
                       </p>
@@ -1835,6 +2084,16 @@ export function CurrentMigrationWorkspace() {
           ) : null}
 
           {hasPrediction && assessment ? (
+            <Section title="Migration Details" delay={0.02}>
+              <MigrationDetails
+                run={run}
+                assessment={assessment}
+                schema={schema}
+              />
+            </Section>
+          ) : null}
+
+          {hasPrediction && assessment ? (
             <Section title="Assessment">
               <AssessmentPanel assessment={assessment} />
             </Section>
@@ -1857,7 +2116,7 @@ export function CurrentMigrationWorkspace() {
 
                   {assessment.policyDecision === "block" ? (
                     <div className="flex flex-col gap-2">
-                      <p className="font-mono text-xs leading-relaxed text-amber-400/90">
+                      <p className="font-mono text-xs leading-relaxed text-[var(--oracle-warning)]">
                         Policy blocked this migration — type a short reason to
                         proceed anyway.
                       </p>
@@ -1882,37 +2141,48 @@ export function CurrentMigrationWorkspace() {
                     </div>
                   ) : null}
 
-                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                    <Button
+                  <div className="flex flex-wrap items-center gap-3">
+                    <motion.button
+                      type="button"
+                      whileTap={{ scale: 0.97 }}
                       disabled={approving != null}
                       onClick={() => void handleApprove("proceed")}
-                      className="sm:min-w-44"
+                      className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-2 rounded-lg px-5 py-2.5 text-sm font-semibold transition-colors disabled:opacity-60"
                     >
+                      <Check className="size-4" />
                       {approving === "proceed"
                         ? "Saving…"
-                        : "Proceed to shadow test"}
-                    </Button>
+                        : "Approve — run shadow test"}
+                    </motion.button>
                     {assessment.recommendation ? (
-                      <Button
-                        variant="secondary"
+                      <motion.button
+                        type="button"
+                        whileTap={{ scale: 0.97 }}
                         disabled={approving != null}
                         onClick={() => void handleApprove("accept_recommended")}
-                        className="sm:min-w-40"
+                        className="border-border bg-secondary text-foreground hover:bg-muted inline-flex items-center gap-2 rounded-lg border px-5 py-2.5 text-sm font-semibold transition-colors disabled:opacity-60"
                       >
+                        <ClipboardCheck className="text-muted-foreground size-4" />
                         {approving === "accept_recommended"
                           ? "Saving…"
-                          : "Skip shadow (keep plan)"}
-                      </Button>
+                          : "Accept plan — skip shadow"}
+                      </motion.button>
                     ) : null}
-                    <Button
-                      variant="outline"
+                    <motion.button
+                      type="button"
+                      whileTap={{ scale: 0.97 }}
                       disabled={approving != null}
                       onClick={() => void handleApprove("cancel")}
-                      className="sm:min-w-28"
+                      className="border-border bg-card text-foreground hover:bg-muted inline-flex items-center gap-2 rounded-lg border px-5 py-2.5 text-sm font-semibold transition-colors disabled:opacity-60"
                     >
-                      {approving === "cancel" ? "Saving…" : "Cancel run"}
-                    </Button>
+                      <X className="text-muted-foreground size-4" />
+                      {approving === "cancel" ? "Saving…" : "Reject — cancel run"}
+                    </motion.button>
                   </div>
+                  <p className="text-muted-foreground text-[13px]">
+                    This decision is recorded against your account and cannot be
+                    changed afterwards.
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -2029,6 +2299,18 @@ export function CurrentMigrationWorkspace() {
                   </div>
                 </ShadowLiveView>
               )}
+            </Section>
+          ) : null}
+
+          {shadowChecks.length > 0 ? (
+            <Section title="Shadow Execution Evidence" delay={0.02}>
+              <ShadowChecksPanel checks={shadowChecks} />
+            </Section>
+          ) : null}
+
+          {run.status !== "pending" ? (
+            <Section title="Activity Timeline" delay={0.04}>
+              <ActivityTimeline stages={lifecycleStages} />
             </Section>
           ) : null}
 

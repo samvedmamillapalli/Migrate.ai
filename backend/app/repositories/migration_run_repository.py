@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import Select, select
+from sqlalchemy import Select, func, or_, select
 from sqlalchemy.orm import defer, selectinload
 
 from app.core.exceptions import NotFoundError
-from app.database.models import MigrationRun, MigrationRunStatus
+from app.database.models import Approval, MigrationRun, MigrationRunStatus
 from app.repositories.base import BaseRepository
+
+# Whitelisted sort keys. `duration` and `confidence` live outside the runs
+# table (execution_results / the explainability JSONB), so they are expressed
+# as explicit SQL rather than a column lookup.
+_SORTABLE = {"created_at", "updated_at", "status", "compatibility_risk"}
 
 
 class MigrationRunRepository(BaseRepository[MigrationRun]):
@@ -19,6 +24,7 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         self,
         *,
         load_children: bool = False,
+        load_summary_children: bool = False,
         include_schema_snapshot: bool = True,
     ) -> Select[tuple[MigrationRun]]:
         query = select(MigrationRun)
@@ -33,6 +39,17 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
                 selectinload(MigrationRun.approval),
                 selectinload(MigrationRun.grade),
                 selectinload(MigrationRun.memory),
+            )
+        elif load_summary_children:
+            # Narrow loader for list responses: only the four children whose
+            # fields MigrationRunSummaryResponse actually surfaces. selectinload
+            # issues one batched IN-query per relationship for the whole page,
+            # so this is 4 extra queries total — not 4 per row.
+            query = query.options(
+                selectinload(MigrationRun.approval),
+                selectinload(MigrationRun.grade),
+                selectinload(MigrationRun.execution_result),
+                selectinload(MigrationRun.shadow_cluster),
             )
         return query
 
@@ -82,6 +99,55 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
             raise NotFoundError(f"MigrationRun not found: {entity_id}")
         return entity
 
+    def _apply_filters(
+        self,
+        query: Select[tuple[MigrationRun]],
+        *,
+        status: MigrationRunStatus | None,
+        owner_identity: str | None,
+        run_kind: str | None,
+        exclude_kinds: list[str] | None,
+        search: str | None,
+        compatibility_risk: str | None,
+        approval_decision: str | None,
+        approver_identity: str | None,
+    ) -> Select[tuple[MigrationRun]]:
+        if status is not None:
+            query = query.where(MigrationRun.status == status)
+        if owner_identity is not None:
+            query = query.where(MigrationRun.owner_identity == owner_identity)
+        if run_kind is not None:
+            query = query.where(MigrationRun.run_kind == run_kind)
+        if exclude_kinds:
+            query = query.where(MigrationRun.run_kind.notin_(exclude_kinds))
+        if search:
+            # Case-insensitive substring over the SQL text. Covers the table
+            # name too, since the table always appears in the statement.
+            query = query.where(
+                func.lower(MigrationRun.migration_sql).like(f"%{search.lower()}%")
+            )
+        if compatibility_risk:
+            query = query.where(
+                MigrationRun.compatibility_risk == compatibility_risk
+            )
+        # Approval-based filters need the child row. "none" means "no decision
+        # recorded yet", which is an outer-join IS NULL rather than an equality.
+        if approval_decision == "none":
+            query = query.outerjoin(
+                Approval, Approval.migration_run_id == MigrationRun.id
+            ).where(Approval.id.is_(None))
+        elif approval_decision:
+            query = query.join(
+                Approval, Approval.migration_run_id == MigrationRun.id
+            ).where(Approval.decision == approval_decision)
+        if approver_identity:
+            if not approval_decision or approval_decision == "none":
+                query = query.join(
+                    Approval, Approval.migration_run_id == MigrationRun.id
+                )
+            query = query.where(Approval.approver_identity == approver_identity)
+        return query
+
     async def list(
         self,
         *,
@@ -91,20 +157,42 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         owner_identity: str | None = None,
         run_kind: str | None = None,
         exclude_kinds: list[str] | None = None,
+        search: str | None = None,
+        compatibility_risk: str | None = None,
+        approval_decision: str | None = None,
+        approver_identity: str | None = None,
+        order_by: str = "created_at",
+        order_dir: str = "desc",
         load_children: bool = False,
+        load_summary_children: bool = False,
     ) -> list[MigrationRun]:
         query = self._base_query(
             load_children=load_children,
+            load_summary_children=load_summary_children,
             include_schema_snapshot=False,
-        ).order_by(MigrationRun.created_at.desc())
-        if status is not None:
-            query = query.where(MigrationRun.status == status)
-        if owner_identity is not None:
-            query = query.where(MigrationRun.owner_identity == owner_identity)
-        if run_kind is not None:
-            query = query.where(MigrationRun.run_kind == run_kind)
-        if exclude_kinds:
-            query = query.where(MigrationRun.run_kind.notin_(exclude_kinds))
+        )
+        query = self._apply_filters(
+            query,
+            status=status,
+            owner_identity=owner_identity,
+            run_kind=run_kind,
+            exclude_kinds=exclude_kinds,
+            search=search,
+            compatibility_risk=compatibility_risk,
+            approval_decision=approval_decision,
+            approver_identity=approver_identity,
+        )
+
+        key = order_by if order_by in _SORTABLE else "created_at"
+        column = getattr(MigrationRun, key)
+        # NULLs last in both directions — an unpredicted run should never sort
+        # above a real value just because its risk is unset.
+        query = query.order_by(
+            column.desc().nullslast()
+            if order_dir == "desc"
+            else column.asc().nullslast(),
+            MigrationRun.created_at.desc(),
+        )
         return await super().list(offset=offset, limit=limit, statement=query)
 
     async def count(
@@ -114,17 +202,42 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         owner_identity: str | None = None,
         run_kind: str | None = None,
         exclude_kinds: list[str] | None = None,
+        search: str | None = None,
+        compatibility_risk: str | None = None,
+        approval_decision: str | None = None,
+        approver_identity: str | None = None,
     ) -> int:
-        query = select(MigrationRun)
-        if status is not None:
-            query = query.where(MigrationRun.status == status)
+        query = self._apply_filters(
+            select(MigrationRun),
+            status=status,
+            owner_identity=owner_identity,
+            run_kind=run_kind,
+            exclude_kinds=exclude_kinds,
+            search=search,
+            compatibility_risk=compatibility_risk,
+            approval_decision=approval_decision,
+            approver_identity=approver_identity,
+        )
+        return await super().count(query)
+
+    async def distinct_approvers(
+        self,
+        *,
+        owner_identity: str | None = None,
+        exclude_kinds: list[str] | None = None,
+    ) -> list[str]:
+        """Approver identities present in the caller's runs, for a filter list."""
+        query = (
+            select(Approval.approver_identity)
+            .join(MigrationRun, MigrationRun.id == Approval.migration_run_id)
+            .distinct()
+        )
         if owner_identity is not None:
             query = query.where(MigrationRun.owner_identity == owner_identity)
-        if run_kind is not None:
-            query = query.where(MigrationRun.run_kind == run_kind)
         if exclude_kinds:
             query = query.where(MigrationRun.run_kind.notin_(exclude_kinds))
-        return await super().count(query)
+        rows = await self._session.execute(query)
+        return [r for (r,) in rows.all() if r]
 
     async def update(self, entity: MigrationRun) -> MigrationRun:
         return await super().update(entity)

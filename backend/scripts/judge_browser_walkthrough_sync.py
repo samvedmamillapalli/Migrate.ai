@@ -12,6 +12,7 @@ import time
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
+import pathlib
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +21,15 @@ from playwright.sync_api import TimeoutError as PlaywrightTimeout
 from playwright.sync_api import sync_playwright
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def _judge_ro_url_path():
+    """Path to the RO demo URL file (.local_secrets/, legacy root fallback)."""
+    import sys as _sys
+    _sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1]))
+    from app.demo_secrets import JUDGE_RO_DATABASE_URL_FILE, demo_secret_path
+    return demo_secret_path(JUDGE_RO_DATABASE_URL_FILE)
+
 load_dotenv(ROOT / ".env")
 
 API = os.environ.get("JUDGE_API_BASE", "http://127.0.0.1:8000").rstrip("/")
@@ -162,7 +172,7 @@ def path4_empty_and_honesty(page) -> None:
 
 
 def path1_happy(page) -> None:
-    ro_path = ROOT / ".judge_ro_database_url"
+    ro_path = _judge_ro_url_path() or ROOT / ".judge_ro_database_url"
     if not ro_path.exists():
         REPORT["could_not_test"].append("PATH1: missing .judge_ro_database_url")
         return

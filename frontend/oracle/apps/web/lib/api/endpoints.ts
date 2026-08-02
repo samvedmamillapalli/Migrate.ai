@@ -11,6 +11,9 @@ export type Grade = components["schemas"]["GradeResponse"]
 export type Memory = components["schemas"]["MemoryResponse"]
 export type MemoryListItem = components["schemas"]["MemoryListItem"]
 export type MemoryList = components["schemas"]["MemoryListResponse"]
+export type MemorySearchRequest = components["schemas"]["MemorySearchRequest"]
+export type MemorySearchResponse = components["schemas"]["MemorySearchResponse"]
+export type MemorySearchHit = components["schemas"]["MemorySearchHit"]
 export type ShadowCluster = components["schemas"]["ShadowClusterResponse"]
 export type ExecutionResult = components["schemas"]["ExecutionResultResponse"]
 export type ApprovalCreateRequest =
@@ -18,6 +21,34 @@ export type ApprovalCreateRequest =
 export type ApprovalResponse = components["schemas"]["ApprovalResponse"]
 export type DiscoverSchemaRequest =
   components["schemas"]["DiscoverSchemaRequest"]
+
+/** Server-side `status` filter values accepted by GET /runs. */
+export type RunStatusFilter =
+  | "pending"
+  | "predicting"
+  | "awaiting_approval"
+  | "running"
+  | "completed"
+  | "failed"
+
+/** One real lifecycle event from GET /runs/activity. Never synthesized. */
+export type ActivityEvent = {
+  migration_run_id: string
+  /** ISO timestamp of the persisted event. */
+  at: string | null
+  /** Queued | Predicted | Learned | Approved | Accepted Plan | Cancelled |
+   *  Shadow | Completed | Failed | Graded | Remembered */
+  kind: string
+  /** emerald | blue | violet | amber | red — semantic palette key. */
+  tone: string
+  text: string
+  sql_snippet: string
+}
+
+export type ActivityFeed = {
+  items: ActivityEvent[]
+  total: number
+}
 
 export type HealthResponse = {
   status: string
@@ -78,22 +109,97 @@ export function getHealth() {
   return api<HealthResponse>("/health")
 }
 
+export type RunSortKey =
+  | "created_at"
+  | "updated_at"
+  | "status"
+  | "compatibility_risk"
+
+export type ApprovalDecisionFilter =
+  | "proceed"
+  | "accept_recommended"
+  | "cancel"
+  /** Runs with no decision recorded yet. */
+  | "none"
+
 export function listRuns(params?: {
   limit?: number
   offset?: number
   owner_identity?: string
   run_kind?: string
+  /** Server-side run status filter, e.g. "awaiting_approval" (decision queue). */
+  status?: RunStatusFilter
   /** Comma-separated run_kind values to exclude, e.g. "chaos,debug". */
   exclude_kinds?: string
+  /** Case-insensitive substring match on the migration SQL (server-side). */
+  q?: string
+  risk?: "low" | "medium" | "high"
+  decision?: ApprovalDecisionFilter
+  approver?: string
+  order_by?: RunSortKey
+  order_dir?: "asc" | "desc"
 }) {
   const q = new URLSearchParams()
   if (params?.limit != null) q.set("limit", String(params.limit))
   if (params?.offset != null) q.set("offset", String(params.offset))
   if (params?.owner_identity) q.set("owner_identity", params.owner_identity)
   if (params?.run_kind) q.set("run_kind", params.run_kind)
+  if (params?.status) q.set("status", params.status)
   if (params?.exclude_kinds) q.set("exclude_kinds", params.exclude_kinds)
+  if (params?.q) q.set("q", params.q)
+  if (params?.risk) q.set("risk", params.risk)
+  if (params?.decision) q.set("decision", params.decision)
+  if (params?.approver) q.set("approver", params.approver)
+  if (params?.order_by) q.set("order_by", params.order_by)
+  if (params?.order_dir) q.set("order_dir", params.order_dir)
   const qs = q.toString()
   return api<MigrationRunList>(`/runs${qs ? `?${qs}` : ""}`)
+}
+
+/** Distinct approver identities, for the history filter dropdown. */
+export function listApprovers(params?: { owner_identity?: string }) {
+  const q = new URLSearchParams()
+  if (params?.owner_identity) q.set("owner_identity", params.owner_identity)
+  const qs = q.toString()
+  return api<{ approvers: string[] }>(`/runs/approvers${qs ? `?${qs}` : ""}`)
+}
+
+export type RunVolume = {
+  days: Array<{ day: string; ok: number; bad: number; total: number }>
+  window_days: number
+}
+
+/** Daily run volume across the whole history (not just the loaded page). */
+export function getRunVolume(params?: {
+  days?: number
+  owner_identity?: string
+}) {
+  const q = new URLSearchParams()
+  if (params?.days != null) q.set("days", String(params.days))
+  if (params?.owner_identity) q.set("owner_identity", params.owner_identity)
+  const qs = q.toString()
+  return api<RunVolume>(`/runs/volume${qs ? `?${qs}` : ""}`)
+}
+
+/**
+ * Discard a run abandoned during setup. Server-side this only succeeds for a
+ * `pending` run with no approval, grade, execution result, shadow cluster or
+ * memory — anything further along is audit record and returns 409.
+ */
+export function discardRun(runId: string) {
+  return api<void>(`/runs/${runId}`, { method: "DELETE" })
+}
+
+/** Merged, reverse-chronological stream of real persisted lifecycle events. */
+export function getActivityFeed(params?: {
+  limit?: number
+  owner_identity?: string
+}) {
+  const q = new URLSearchParams()
+  if (params?.limit != null) q.set("limit", String(params.limit))
+  if (params?.owner_identity) q.set("owner_identity", params.owner_identity)
+  const qs = q.toString()
+  return api<ActivityFeed>(`/runs/activity${qs ? `?${qs}` : ""}`)
 }
 
 export function getRun(runId: string) {
@@ -219,21 +325,54 @@ export function getAccuracyMetrics(params?: { owner_identity?: string }) {
   return api<AccuracyMetrics>(`/runs/metrics/accuracy${qs ? `?${qs}` : ""}`)
 }
 
+/**
+ * Reserved owner for the shared open-source corpus. The backend's owner
+ * filter is `IN (your_id, CORPUS_OWNER_IDENTITY)` — your own memories plus
+ * the shared corpus that informs your predictions.
+ */
+export const CORPUS_OWNER_IDENTITY = "__migration_oracle_corpus__"
+
 export function listMemories(params?: {
   limit?: number
   offset?: number
   owner_identity?: string
+  /** "ready" | "pending" | "failed" */
+  embedding_status?: string
 }) {
   const q = new URLSearchParams()
   if (params?.limit != null) q.set("limit", String(params.limit))
   if (params?.offset != null) q.set("offset", String(params.offset))
   if (params?.owner_identity) q.set("owner_identity", params.owner_identity)
+  if (params?.embedding_status)
+    q.set("embedding_status", params.embedding_status)
   const qs = q.toString()
   return api<MemoryList>(`/memories${qs ? `?${qs}` : ""}`)
 }
 
 export function getMemoriesHealth() {
   return api<CorpusHealth>("/memories/health")
+}
+
+/**
+ * Semantic search over graded memories, on CockroachDB's distributed vector
+ * index — `scope` picks which query shape runs server-side (see
+ * MigrationMemoryRepository.semantic_search): "corpus" and "all" (when an
+ * owner is known) ride the owner-scoped partial index; "all" with no owner
+ * and "corpus" both still exclude your own memories unless owner is set.
+ * `owner_identity` scopes "mine"/"all"; ignored by the backend once auth is
+ * enforced (the token's owner wins there).
+ */
+export function searchMemories(
+  body: MemorySearchRequest,
+  params?: { owner_identity?: string }
+) {
+  const q = new URLSearchParams()
+  if (params?.owner_identity) q.set("owner_identity", params.owner_identity)
+  const qs = q.toString()
+  return api<MemorySearchResponse>(`/memories/search${qs ? `?${qs}` : ""}`, {
+    method: "POST",
+    body,
+  })
 }
 
 export function isSfnReady(health: HealthResponse | null | undefined): boolean {

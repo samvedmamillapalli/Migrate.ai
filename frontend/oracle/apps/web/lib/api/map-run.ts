@@ -75,6 +75,26 @@ export type RetrievedMemoryView = {
   actualStorageMb: number | null
 }
 
+/**
+ * Summary statistics over the retrieved set, computed server-side in
+ * MemoryRetrievalResult.retrieval_aggregates(). Rates cover graded shadow
+ * runs only — open-source incidents and seed rows land in `ungradedCount`
+ * and are excluded, so a corpus full of documented incidents can't be
+ * misread as a 100% success record.
+ */
+export type RetrievalAggregates = {
+  retrievedCount: number
+  gradedCount: number
+  ungradedCount: number
+  succeededCount: number
+  failedCount: number
+  successRate: number | null
+  meanActualDurationSeconds: number | null
+  durationSampleSize: number
+  topSimilarity: number | null
+  meanSimilarity: number | null
+}
+
 export type RetrievalView = {
   attempted: boolean
   mode: string | null
@@ -85,6 +105,8 @@ export type RetrievalView = {
   memories: RetrievedMemoryView[]
   attributionSignals: Array<{ key: string; value: string }>
   vectorIndexNote: string
+  /** Null for runs predicted before aggregates were emitted. */
+  aggregates: RetrievalAggregates | null
 }
 
 export type ConfidenceView = {
@@ -132,11 +154,23 @@ export type AssessmentView = {
   parsedStatementTypes: string[]
 }
 
+export type SchemaColumnView = {
+  name: string
+  type: string
+  /** null when the snapshot didn't record nullability. */
+  nullable: boolean | null
+  isPrimaryKey: boolean
+  isUnique: boolean
+  isForeignKey: boolean
+  keyLabel: string | null
+  defaultValue: string | null
+}
+
 export type SchemaTableView = {
   name: string
   estimatedRowCount: number | null
   approximateSize: string | null
-  columns: Array<{ name: string; type: string }>
+  columns: SchemaColumnView[]
   indexes: string[]
 }
 
@@ -399,6 +433,30 @@ function mapRetrieval(explainability: Record<string, unknown> | null): Retrieval
     }
   })
 
+  const rawAgg = asRecord(memory?.aggregates)
+  const aggregates: RetrievalAggregates | null = rawAgg
+    ? {
+        retrievedCount: Number(rawAgg.retrieved_count ?? 0),
+        gradedCount: Number(rawAgg.graded_count ?? 0),
+        ungradedCount: Number(rawAgg.ungraded_count ?? 0),
+        succeededCount: Number(rawAgg.succeeded_count ?? 0),
+        failedCount: Number(rawAgg.failed_count ?? 0),
+        successRate:
+          rawAgg.success_rate == null ? null : Number(rawAgg.success_rate),
+        meanActualDurationSeconds:
+          rawAgg.mean_actual_duration_seconds == null
+            ? null
+            : Number(rawAgg.mean_actual_duration_seconds),
+        durationSampleSize: Number(rawAgg.duration_sample_size ?? 0),
+        topSimilarity:
+          rawAgg.top_similarity == null ? null : Number(rawAgg.top_similarity),
+        meanSimilarity:
+          rawAgg.mean_similarity == null
+            ? null
+            : Number(rawAgg.mean_similarity),
+      }
+    : null
+
   const attribution = asRecord(memory?.attribution)
   const attributionSignals: Array<{ key: string; value: string }> = []
   if (attribution) {
@@ -449,6 +507,7 @@ function mapRetrieval(explainability: Record<string, unknown> | null): Retrieval
     retrievedCount: Number(memory?.retrieved_count || memories.length || 0),
     memories,
     attributionSignals,
+    aggregates,
     vectorIndexNote:
       "Retrieval is served by a CockroachDB vector index using Distributed Vector Indexing.",
   }
@@ -586,12 +645,53 @@ export function mapSchema(run: MigrationRun): SchemaView | null {
   const tables: SchemaTableView[] = tablesRaw.map((item) => {
     const t = asRecord(item) || {}
     const name = String(t.name ?? t.table_name ?? "table")
+    // Foreign keys are declared at table level; index them by constrained
+    // column so each column can report its own FK marker.
+    const fkColumns = new Set<string>()
+    const fkRaw = Array.isArray(t.foreign_keys) ? t.foreign_keys : []
+    for (const item of fkRaw) {
+      const fk = asRecord(item) || {}
+      const cols = Array.isArray(fk.constrained_columns)
+        ? fk.constrained_columns
+        : []
+      for (const c of cols) fkColumns.add(String(c).toLowerCase())
+    }
+    const pkNames = new Set(
+      (Array.isArray(t.primary_key) ? t.primary_key : []).map((c) =>
+        String(c).toLowerCase()
+      )
+    )
+
     const colsRaw = Array.isArray(t.columns) ? t.columns : []
     const columns = colsRaw.map((c) => {
       const col = asRecord(c) || {}
+      const name = String(col.name ?? col.column_name ?? "?")
+      const lower = name.toLowerCase()
+      const isPrimary = Boolean(col.is_primary_key) || pkNames.has(lower)
+      const isForeign = fkColumns.has(lower)
+      const isUnique = Boolean(col.is_unique)
+      // `is_nullable` is authoritative when present; undefined means the
+      // snapshot predates it, which is reported as unknown rather than
+      // silently defaulting to nullable.
+      const nullable =
+        col.is_nullable == null ? null : Boolean(col.is_nullable)
       return {
-        name: String(col.name ?? col.column_name ?? "?"),
+        name,
         type: String(col.type ?? col.data_type ?? col.udt_name ?? "?"),
+        nullable,
+        isPrimaryKey: isPrimary,
+        isUnique,
+        isForeignKey: isForeign,
+        /** "PK" | "FK" | "UNIQUE" | null — the design's Key column. */
+        keyLabel: isPrimary
+          ? "PK"
+          : isForeign
+            ? "FK"
+            : isUnique
+              ? "UNIQUE"
+              : null,
+        defaultValue:
+          col.column_default == null ? null : String(col.column_default),
       }
     })
     const idxRaw = Array.isArray(t.indexes) ? t.indexes : []
@@ -963,297 +1063,432 @@ export function mapSchemaDiff(shadow: ShadowCluster | null): SchemaDiffTableView
   })
 }
 
-export type RowSampleColumnView = {
+// --- cluster comparison ------------------------------------------------------
+
+export type ClusterTableView = {
+  /** "schema.table" — the same key `build_schema_diff` classifies tables under. */
+  key: string
   name: string
-  type: string | null
-  nullable: boolean | null
-  default: string | null
-  /** Reuses the schema-diff table's column classification, matched by name —
-   * same color language, never recomputed separately. */
+  schemaName: string
+  columnCount: number
+  indexCount: number
+  /** null when the target never reported an estimate for this table. */
+  rowCount: number | null
   diffKind: "added" | "removed" | "changed" | "unchanged"
 }
 
-export type RowSampleTableView = {
-  /** Table name as referenced in the migration SQL (the request key). */
-  requestedName: string
-  /** Resolved schema.table name, or null if the table couldn't be found. */
-  tableName: string | null
-  columns: RowSampleColumnView[]
-  rows: Array<Record<string, unknown>>
-  sampledCount: number
-  totalRowCount: number | null
-  matchedByPk: boolean
-  primaryKey: string[]
-  note: string | null
-  error: string | null
+export type ClusterCardView = {
+  databaseName: string | null
+  /** e.g. "appdb / public" — database plus the non-system schemas present. */
+  schemaLabel: string | null
+  tables: ClusterTableView[]
+  tableCount: number
+  indexCount: number
+  /** null when no table on this side reported a row estimate. */
+  rowCount: number | null
+  /**
+   * True for the shadow side: its rows are tier-capped synthetic rows written
+   * by ShadowSeeder, not the customer's data. The card says so rather than
+   * letting the number read as production volume.
+   */
+  rowsAreSynthetic: boolean
 }
 
-export type RowSamplePanelStatus = "waiting" | "unavailable" | "ready"
-
-export type RowSamplePanelView = {
-  status: RowSamplePanelStatus
-  message: string | null
-  scaleTier: string | null
-  before: RowSampleTableView[]
-  after: RowSampleTableView[]
+export type ClusterChangesView = {
+  /** "schema.table" keys. */
+  addedTables: string[]
+  removedTables: string[]
+  /** "schema.table.column" for every column the diff classified as changed. */
+  modifiedColumns: string[]
+  changedTables: string[]
+  unchangedTableCount: number
 }
 
-function mapRowSampleTables(
-  rowSample: unknown,
-  diffTables: SchemaDiffTableView[]
-): RowSampleTableView[] {
-  const parsed = asRecord(rowSample)
-  const tables = asRecord(parsed?.tables)
-  if (!tables) return []
-  return Object.entries(tables).map(([requestedName, raw]) => {
-    const t = asRecord(raw) || {}
-    const tableName = t.table != null ? String(t.table) : null
-    const diffTable = diffTables.find((d) => d.name === tableName)
-    const diffByName = new Map(diffTable?.columns.map((c) => [c.name, c.kind]) ?? [])
-    const columns = Array.isArray(t.columns) ? (t.columns as unknown[]) : []
-    const rows = Array.isArray(t.rows) ? (t.rows as unknown[]) : []
-    return {
-      requestedName,
-      tableName,
-      columns: columns.map((c) => {
-        const cr = asRecord(c) || {}
-        const name = String(cr.name ?? "")
-        return {
-          name,
-          type: (cr.data_type as string) ?? null,
-          nullable:
-            typeof cr.is_nullable === "boolean" ? (cr.is_nullable as boolean) : null,
-          default: cr.column_default != null ? String(cr.column_default) : null,
-          diffKind: diffByName.get(name) ?? "unchanged",
-        }
-      }),
-      rows: rows.map((r) => (asRecord(r) as Record<string, unknown>) ?? {}),
-      sampledCount: Number(t.sampled_count ?? rows.length),
-      totalRowCount: t.total_row_count != null ? Number(t.total_row_count) : null,
-      matchedByPk: Boolean(t.matched_by_pk),
-      primaryKey: Array.isArray(t.primary_key) ? (t.primary_key as unknown[]).map(String) : [],
-      note: t.note != null ? String(t.note) : null,
-      error: t.error != null ? String(t.error) : null,
-    }
-  })
+export type ClusterColumnRowView = {
+  name: string
+  type: string | null
+  kind: "added" | "removed" | "changed" | "unchanged"
 }
 
 /**
- * Real before/after row sample panel — shadow-tier synthetic data, never the
- * customer's rows. Column color-coding reuses `mapSchemaDiff`'s
- * classification for the same tables rather than a second diff pass.
+ * One touched table's full column list on EACH side — every column that
+ * really exists in the before snapshot, and every column that really exists
+ * in the after snapshot, independently. Not a merged/diffed row set: a
+ * column added or removed only ever appears on the side it actually exists
+ * on, exactly like the Production/Shadow table cards above it (which list
+ * "6 tables" and "8 tables" — different counts on each side, not one merged
+ * row list).
  */
-export function mapRowSamplePanel(shadow: ShadowCluster | null): RowSamplePanelView {
-  if (!shadow) {
+export type ClusterColumnTableView = {
+  tableName: string
+  before: ClusterColumnRowView[]
+  after: ClusterColumnRowView[]
+}
+
+export type ClusterComparisonView = {
+  /**
+   * `source_only` — the customer's schema has been discovered but no shadow
+   * run has produced an after-snapshot yet. The left card is real and fully
+   * populated; only the right one is still pending. This is the state the
+   * page sits in between "Discover schema" and the end of a shadow run, and
+   * it is deliberately not an error.
+   */
+  status: "waiting" | "unavailable" | "source_only" | "ready"
+  message: string | null
+  source: ClusterCardView | null
+  shadow: ClusterCardView | null
+  /** after − before, from the shadow's own two snapshots. */
+  deltas: { tables: number; indexes: number } | null
+  changes: ClusterChangesView | null
+  /** Column-level detail — see `ClusterColumnTableView`. Empty before a schema
+   * is known at all; populated from the production schema alone in
+   * `source_only`, and from the diff (touched tables only) once `ready`. */
+  columnDetails: ClusterColumnTableView[]
+}
+
+const SYSTEM_SCHEMAS = new Set([
+  "information_schema",
+  "pg_catalog",
+  "crdb_internal",
+  "pg_extension",
+])
+
+/**
+ * One row per user table in a persisted DatabaseMetadata snapshot.
+ *
+ * `key` is built from the *parent schema's* name, not the table's own schema
+ * field, because that is exactly how `build_schema_diff._index_tables` keys
+ * its output — anything else would fail to line up with the diff. (The two
+ * snapshot sources also spell the table's own field differently: the run's
+ * discovered snapshot serializes it by alias as `schema`, the shadow's own
+ * capture stores `schema_name`, since `model_dump(mode="json")` does not
+ * apply `ser_json_by_alias`.)
+ */
+function readSnapshotTables(snapshot: unknown): ClusterTableView[] {
+  const snap = asRecord(snapshot)
+  const schemas = Array.isArray(snap?.schemas) ? (snap!.schemas as unknown[]) : []
+  const out: ClusterTableView[] = []
+  for (const rawSchema of schemas) {
+    const schema = asRecord(rawSchema) || {}
+    const schemaName = String(schema.name ?? "")
+    if (SYSTEM_SCHEMAS.has(schemaName)) continue
+    const tables = Array.isArray(schema.tables) ? (schema.tables as unknown[]) : []
+    for (const rawTable of tables) {
+      const table = asRecord(rawTable) || {}
+      const name = String(table.name ?? "")
+      if (!name) continue
+      const columns = Array.isArray(table.columns) ? table.columns.length : 0
+      const rows = table.estimated_row_count
+      out.push({
+        key: `${schemaName}.${name}`,
+        name,
+        schemaName,
+        columnCount:
+          typeof table.column_count === "number" ? table.column_count : columns,
+        indexCount: Array.isArray(table.indexes) ? table.indexes.length : 0,
+        rowCount: typeof rows === "number" ? rows : null,
+        diffKind: "unchanged",
+      })
+    }
+  }
+  return out.sort((a, b) => a.key.localeCompare(b.key))
+}
+
+/**
+ * Real `SELECT count(*)` totals from a row-sample capture, keyed by both the
+ * name the migration referenced and the resolved "schema.table".
+ *
+ * Preferred over the snapshot's `estimated_row_count` wherever it exists: that
+ * estimate comes from `SHOW TABLES`, which reads CockroachDB table statistics,
+ * and statistics lag a bulk insert — a freshly seeded shadow table reports 0
+ * rows for a while even though the rows are there. Only covers the tables the
+ * migration referenced, since those are the only ones sampled.
+ */
+function readRowSampleCounts(rowSample: unknown): Map<string, number> {
+  const out = new Map<string, number>()
+  const parsed = asRecord(rowSample)
+  const tables = asRecord(parsed?.tables)
+  if (!tables) return out
+  for (const [requested, raw] of Object.entries(tables)) {
+    const entry = asRecord(raw) || {}
+    const total = entry.total_row_count
+    if (typeof total !== "number") continue
+    out.set(requested.toLowerCase(), total)
+    if (typeof entry.table === "string") {
+      out.set(entry.table.toLowerCase(), total)
+      const bare = entry.table.split(".").pop()
+      if (bare) out.set(bare.toLowerCase(), total)
+    }
+  }
+  return out
+}
+
+function resolveRowCount(
+  table: ClusterTableView,
+  counts: Map<string, number>
+): number | null {
+  return (
+    counts.get(table.key.toLowerCase()) ??
+    counts.get(table.name.toLowerCase()) ??
+    table.rowCount
+  )
+}
+
+function buildCard(
+  snapshot: unknown,
+  tables: ClusterTableView[],
+  rowsAreSynthetic: boolean
+): ClusterCardView | null {
+  if (tables.length === 0) return null
+  const snap = asRecord(snapshot)
+  const databaseName = snap?.database_name ? String(snap.database_name) : null
+  const schemaNames = Array.from(new Set(tables.map((t) => t.schemaName))).sort()
+  const withRows = tables.filter((t) => t.rowCount != null)
+  return {
+    databaseName,
+    schemaLabel: [databaseName, schemaNames.join(", ")].filter(Boolean).join(" / ") || null,
+    tables,
+    tableCount: tables.length,
+    indexCount: tables.reduce((sum, t) => sum + t.indexCount, 0),
+    rowCount:
+      withRows.length > 0
+        ? withRows.reduce((sum, t) => sum + (t.rowCount ?? 0), 0)
+        : null,
+    rowsAreSynthetic,
+  }
+}
+
+/**
+ * Every column of one table, straight from a raw DatabaseMetadata snapshot —
+ * real names, real types, in the order the backend reports them. Returns []
+ * if the table doesn't exist on this side at all (dropped, or not created
+ * yet), which is the correct, honest answer for that side of the box, not an
+ * error.
+ */
+function rawColumnsForTable(
+  snapshot: unknown,
+  schemaName: string,
+  tableName: string
+): { name: string; type: string | null }[] {
+  const snap = asRecord(snapshot)
+  const schemas = Array.isArray(snap?.schemas) ? (snap!.schemas as unknown[]) : []
+  for (const rawSchema of schemas) {
+    const schema = asRecord(rawSchema) || {}
+    if (String(schema.name ?? "") !== schemaName) continue
+    const tables = Array.isArray(schema.tables) ? (schema.tables as unknown[]) : []
+    for (const rawTable of tables) {
+      const table = asRecord(rawTable) || {}
+      if (String(table.name ?? "") !== tableName) continue
+      const rawColumns = Array.isArray(table.columns) ? (table.columns as unknown[]) : []
+      return rawColumns.map((c) => {
+        const cr = asRecord(c) || {}
+        return { name: String(cr.name ?? ""), type: (cr.data_type as string) ?? null }
+      })
+    }
+  }
+  return []
+}
+
+/**
+ * Column detail before any shadow run exists yet — the left box shows every
+ * real column of the customer's own table (all "unchanged", since there's
+ * nothing yet to compare against); the right box is empty until a shadow run
+ * produces an after-snapshot (the component renders its own "awaiting run"
+ * placeholder for that side).
+ */
+function productionColumnDetails(snapshot: unknown): ClusterColumnTableView[] {
+  const snap = asRecord(snapshot)
+  const schemas = Array.isArray(snap?.schemas) ? (snap!.schemas as unknown[]) : []
+  const out: ClusterColumnTableView[] = []
+  for (const rawSchema of schemas) {
+    const schema = asRecord(rawSchema) || {}
+    const schemaName = String(schema.name ?? "")
+    if (SYSTEM_SCHEMAS.has(schemaName)) continue
+    const tables = Array.isArray(schema.tables) ? (schema.tables as unknown[]) : []
+    for (const rawTable of tables) {
+      const table = asRecord(rawTable) || {}
+      const tableName = String(table.name ?? "")
+      if (!tableName) continue
+      const before = rawColumnsForTable(snapshot, schemaName, tableName).map((c) => ({
+        ...c,
+        kind: "unchanged" as const,
+      }))
+      out.push({ tableName: `${schemaName}.${tableName}`, before, after: [] })
+    }
+  }
+  return out
+}
+
+/**
+ * Column detail for every table the migration actually touched (added,
+ * removed, or changed) — unchanged tables are already fully described by the
+ * summary cards and don't need a column-by-column listing. Each side's
+ * column list comes straight from that side's own raw snapshot (see
+ * `rawColumnsForTable`), so both boxes are always complete; the diff
+ * (`t.columns`) is used only to color each row, never to decide which rows
+ * exist.
+ */
+function diffColumnDetails(
+  diffTables: SchemaDiffTableView[],
+  schemaBefore: unknown,
+  schemaAfter: unknown
+): ClusterColumnTableView[] {
+  return diffTables
+    .filter((t) => t.kind !== "unchanged")
+    .map((t) => {
+      const parts = t.name.split(".")
+      const schemaName = parts[0] ?? ""
+      const tableName = parts.slice(1).join(".")
+      const kindByName = new Map(t.columns.map((c) => [c.name, c.kind]))
+      const withKind = (cols: { name: string; type: string | null }[]) =>
+        cols.map((c) => ({ ...c, kind: kindByName.get(c.name) ?? "unchanged" }))
+      return {
+        tableName: t.name,
+        before: withKind(rawColumnsForTable(schemaBefore, schemaName, tableName)),
+        after: withKind(rawColumnsForTable(schemaAfter, schemaName, tableName)),
+      }
+    })
+}
+
+/**
+ * The side-by-side "source vs shadow" view.
+ *
+ * Both cards and every add/remove/change badge come from the shadow cluster's
+ * own before/after snapshots, so the comparison is apples-to-apples: the same
+ * database, measured twice around the migration. The run's discovered
+ * production snapshot is used only to label the source card and to show the
+ * customer's real row estimates where the same table exists — never to
+ * compute the diff, since production and shadow are different clusters and
+ * differences between them would not be migration effects.
+ */
+export function mapClusterComparison(
+  run: MigrationRun | null,
+  shadow: ShadowCluster | null
+): ClusterComparisonView {
+  const before = shadow ? readSnapshotTables(shadow.schema_snapshot_before) : []
+  const after = shadow ? readSnapshotTables(shadow.schema_snapshot_after) : []
+
+  // Nothing captured on the shadow cluster yet. The customer's own schema is
+  // already known the moment "Discover schema" succeeds, so show that as the
+  // source card rather than an empty panel — the left half of this comparison
+  // never has to wait for a shadow run.
+  if (before.length === 0 && after.length === 0) {
+    const productionTables = readSnapshotTables(run?.schema_snapshot)
+    const sourceCard = buildCard(run?.schema_snapshot, productionTables, false)
+    const status = (shadow?.status || "").toLowerCase()
+    const preMigrate = ["provisioning", "ready", "seeding"].includes(status)
+    const failedCapture = Boolean(shadow) && !preMigrate
+
+    if (sourceCard) {
+      return {
+        status: "source_only",
+        message: failedCapture
+          ? "No before/after snapshot was captured on the shadow cluster for this run (connection issue or timeout). Your discovered schema is shown on the left; the migration result itself is unaffected."
+          : shadow
+            ? "Shadow cluster is being prepared — the after side is captured immediately before and after your migration executes."
+            : "Run a shadow test to see the after side. Your discovered schema is already shown on the left.",
+        source: sourceCard,
+        shadow: null,
+        deltas: null,
+        changes: null,
+        columnDetails: productionColumnDetails(run?.schema_snapshot),
+      }
+    }
+
     return {
-      status: "waiting",
-      message: "Waiting for the shadow cluster to be created…",
-      scaleTier: null,
-      before: [],
-      after: [],
+      status: failedCapture ? "unavailable" : "waiting",
+      message: failedCapture
+        ? "No schema snapshot was captured for this run (connection issue or timeout). This doesn't affect the migration result."
+        : "Attach your database and run Discover schema to populate this comparison.",
+      source: null,
+      shadow: null,
+      deltas: null,
+      changes: null,
+      columnDetails: [],
     }
   }
 
-  const status = (shadow.status || "").toLowerCase()
-  const preMigrate = ["provisioning", "ready", "seeding"].includes(status)
-  if (preMigrate && !shadow.row_sample_before) {
-    return {
-      status: "waiting",
-      message:
-        "Waiting for the migration to run — row samples are captured right before and right after execution.",
-      scaleTier: shadow.scale_tier ?? null,
-      before: [],
-      after: [],
-    }
+  // Past this point at least one shadow snapshot exists, so `shadow` is set.
+  const liveShadow = shadow!
+
+  const diffTables = mapSchemaDiff(liveShadow)
+  const diffByKey = new Map(diffTables.map((t) => [t.name, t]))
+
+  // Real production row estimates, keyed by bare table name so they still
+  // match when the customer's schema namespace differs from the shadow's.
+  const productionRows = new Map<string, number>()
+  for (const t of readSnapshotTables(run?.schema_snapshot)) {
+    if (t.rowCount != null) productionRows.set(t.name.toLowerCase(), t.rowCount)
   }
 
-  if (!shadow.row_sample_before && !shadow.row_sample_after) {
-    return {
-      status: "unavailable",
-      message:
-        "Row sample capture was unavailable for this run (connection issue, timeout, or the migration didn't reference a known table). This doesn't affect the migration result.",
-      scaleTier: shadow.scale_tier ?? null,
-      before: [],
-      after: [],
-    }
+  const withDiff = (tables: ClusterTableView[]): ClusterTableView[] =>
+    tables.map((t) => ({
+      ...t,
+      diffKind: diffByKey.get(t.key)?.kind ?? "unchanged",
+    }))
+
+  const beforeCounts = readRowSampleCounts(liveShadow.row_sample_before)
+  const afterCounts = readRowSampleCounts(liveShadow.row_sample_after)
+
+  // Source card prefers the customer's real production estimate; where the
+  // migration didn't touch that table, fall back to the sampled count and
+  // only then to the shadow's own (statistics-lagged) estimate.
+  const sourceTables = withDiff(before).map((t) => ({
+    ...t,
+    rowCount:
+      productionRows.get(t.name.toLowerCase()) ?? resolveRowCount(t, beforeCounts),
+  }))
+  const shadowTables = withDiff(after).map((t) => ({
+    ...t,
+    rowCount: resolveRowCount(t, afterCounts),
+  }))
+
+  const sourceCard = buildCard(liveShadow.schema_snapshot_before, sourceTables, false)
+  const shadowCard = buildCard(liveShadow.schema_snapshot_after, shadowTables, true)
+
+  const modifiedColumns: string[] = []
+  const addedTables: string[] = []
+  const removedTables: string[] = []
+  const changedTables: string[] = []
+  let unchangedTableCount = 0
+  for (const table of diffTables) {
+    if (table.kind === "added") addedTables.push(table.name)
+    else if (table.kind === "removed") removedTables.push(table.name)
+    else if (table.kind === "changed") {
+      changedTables.push(table.name)
+      for (const column of table.columns) {
+        if (column.kind !== "unchanged") {
+          modifiedColumns.push(`${table.name}.${column.name}`)
+        }
+      }
+    } else unchangedTableCount += 1
   }
 
-  const diffTables = mapSchemaDiff(shadow)
   return {
     status: "ready",
     message: null,
-    scaleTier: shadow.scale_tier ?? null,
-    before: mapRowSampleTables(shadow.row_sample_before, diffTables),
-    after: mapRowSampleTables(shadow.row_sample_after, diffTables),
+    source: sourceCard,
+    shadow: shadowCard,
+    deltas:
+      sourceCard && shadowCard
+        ? {
+            tables: shadowCard.tableCount - sourceCard.tableCount,
+            indexes: shadowCard.indexCount - sourceCard.indexCount,
+          }
+        : null,
+    changes: {
+      addedTables,
+      removedTables,
+      modifiedColumns,
+      changedTables,
+      unchangedTableCount,
+    },
+    columnDetails: diffColumnDetails(
+      diffTables,
+      liveShadow.schema_snapshot_before,
+      liveShadow.schema_snapshot_after
+    ),
   }
-}
-
-export type UnifiedDiffColumnView = {
-  name: string
-  type: string | null
-  nullable: boolean | null
-  diffKind: "added" | "removed" | "changed" | "unchanged"
-  isPrimaryKey: boolean
-}
-
-export type UnifiedDiffRowView = {
-  /** Primary-key value (or a full-row fallback key when there's no usable PK). */
-  key: string
-  before: Record<string, unknown> | null
-  after: Record<string, unknown> | null
-  /** True when this exact key exists on both sides — required for cell-level diffing. */
-  matched: boolean
-}
-
-export type UnifiedTableDiffView = {
-  requestedName: string
-  tableName: string | null
-  primaryKey: string[]
-  matchedByPk: boolean
-  /** Every captured column, before/after-union, diff-classified. */
-  columns: UnifiedDiffColumnView[]
-  rows: UnifiedDiffRowView[]
-  totalRowCount: number | null
-  sampledCount: number
-  note: string | null
-  error: string | null
-}
-
-export type UnifiedDiffPanelView = {
-  status: RowSamplePanelStatus
-  message: string | null
-  scaleTier: string | null
-  tables: UnifiedTableDiffView[]
-}
-
-function rowMatchKey(row: Record<string, unknown>, pk: string[]): string {
-  if (pk.length === 0) return JSON.stringify(row)
-  return pk.map((k) => JSON.stringify(row[k])).join("::")
-}
-
-/**
- * One table, one before→after box: merges what used to be three separate
- * panels (structural diff, masked table shape, real row samples) into a
- * single view model — one row array shared by both sides, so "before" and
- * "after" are guaranteed aligned by the same key instead of two
- * independently-ordered tables. This is what makes cell-level diffing
- * (`isCellChanged` below) possible without a second matching pass.
- */
-export function mapUnifiedTableDiff(shadow: ShadowCluster | null): UnifiedDiffPanelView {
-  const panel = mapRowSamplePanel(shadow)
-  if (panel.status !== "ready") {
-    return {
-      status: panel.status,
-      message: panel.message,
-      scaleTier: panel.scaleTier,
-      tables: [],
-    }
-  }
-
-  const byName = new Map<
-    string,
-    { before?: RowSampleTableView; after?: RowSampleTableView }
-  >()
-  for (const t of panel.before) {
-    byName.set(t.requestedName, { ...byName.get(t.requestedName), before: t })
-  }
-  for (const t of panel.after) {
-    byName.set(t.requestedName, { ...byName.get(t.requestedName), after: t })
-  }
-
-  const tables: UnifiedTableDiffView[] = Array.from(byName.entries()).map(
-    ([requestedName, { before, after }]) => {
-      const primary = after ?? before ?? null
-      if (!primary || primary.error) {
-        return {
-          requestedName,
-          tableName: primary?.tableName ?? null,
-          primaryKey: [],
-          matchedByPk: false,
-          columns: [],
-          rows: [],
-          totalRowCount: primary?.totalRowCount ?? null,
-          sampledCount: 0,
-          note: primary?.note ?? null,
-          error: primary?.error ?? "No data captured for this table.",
-        }
-      }
-
-      // Union of columns. `after` wins on metadata when both sides have the
-      // same column (it's the more current shape); a column only present
-      // `before` (removed) or only `after` (added) comes from that side.
-      const columnByName = new Map<string, RowSampleColumnView>()
-      for (const c of before?.columns ?? []) columnByName.set(c.name, c)
-      for (const c of after?.columns ?? []) columnByName.set(c.name, c)
-      const pk = after?.primaryKey ?? before?.primaryKey ?? []
-      const columns: UnifiedDiffColumnView[] = Array.from(columnByName.values()).map(
-        (c) => ({
-          name: c.name,
-          type: c.type,
-          nullable: c.nullable,
-          diffKind: c.diffKind,
-          isPrimaryKey: pk.includes(c.name),
-        })
-      )
-      const beforeRows = before?.rows ?? []
-      const afterRows = after?.rows ?? []
-      const beforeByKey = new Map(beforeRows.map((r) => [rowMatchKey(r, pk), r]))
-      const afterByKey = new Map(afterRows.map((r) => [rowMatchKey(r, pk), r]))
-      const orderedKeys: string[] = []
-      const seenKeys = new Set<string>()
-      for (const r of beforeRows) {
-        const k = rowMatchKey(r, pk)
-        if (!seenKeys.has(k)) {
-          seenKeys.add(k)
-          orderedKeys.push(k)
-        }
-      }
-      for (const r of afterRows) {
-        const k = rowMatchKey(r, pk)
-        if (!seenKeys.has(k)) {
-          seenKeys.add(k)
-          orderedKeys.push(k)
-        }
-      }
-      const rows: UnifiedDiffRowView[] = orderedKeys.map((k) => ({
-        key: k,
-        before: beforeByKey.get(k) ?? null,
-        after: afterByKey.get(k) ?? null,
-        matched: beforeByKey.has(k) && afterByKey.has(k),
-      }))
-
-      return {
-        requestedName,
-        tableName: primary.tableName,
-        primaryKey: pk,
-        matchedByPk: after?.matchedByPk ?? before?.matchedByPk ?? false,
-        columns,
-        rows,
-        totalRowCount: after?.totalRowCount ?? before?.totalRowCount ?? null,
-        sampledCount: Math.max(beforeRows.length, afterRows.length),
-        note: after?.note ?? before?.note ?? null,
-        error: null,
-      }
-    }
-  )
-
-  return { status: "ready", message: null, scaleTier: panel.scaleTier, tables }
-}
-
-/**
- * A cell is only ever flagged changed for a matched row on an
- * unchanged/changed column — added/removed columns already read as
- * changed via the whole-column color, and unmatched rows have nothing on
- * one side to compare against.
- */
-export function isCellChanged(
-  row: UnifiedDiffRowView,
-  columnName: string,
-  diffKind: UnifiedDiffColumnView["diffKind"]
-): boolean {
-  if (diffKind !== "unchanged" && diffKind !== "changed") return false
-  if (!row.matched || !row.before || !row.after) return false
-  return JSON.stringify(row.before[columnName]) !== JSON.stringify(row.after[columnName])
 }
 
 export type CostStripView = {
@@ -1576,7 +1811,178 @@ export function mapComparisons(
   return rows
 }
 
+/**
+ * Risk level → semantic tone name used by the design system's --tone-*
+ * tokens. Kept here (not in packages/ui) because the mapping is a domain
+ * decision: low risk reads as "pass", high risk reads as "fail".
+ */
+export type SemanticTone = "pass" | "warn" | "fail" | "info" | "model" | "neutral"
+
+export function riskSemanticTone(
+  risk: string | null | undefined
+): SemanticTone {
+  const tone = riskTone(risk)
+  if (tone === "low") return "pass"
+  if (tone === "medium") return "warn"
+  if (tone === "high") return "fail"
+  return "neutral"
+}
+
+/** Shadow pass/warn/fail → semantic tone. */
+export function shadowSemanticTone(
+  outcome: string | null | undefined
+): SemanticTone {
+  if (outcome === "pass") return "pass"
+  if (outcome === "warn") return "warn"
+  if (outcome === "fail") return "fail"
+  return "neutral"
+}
+
+/** First table-ish identifier in the SQL, for the "SQL / Table" column. */
+export function primaryTableName(sql: string | null | undefined): string | null {
+  if (!sql) return null
+  const match =
+    /\b(?:TABLE|FROM|JOIN|INTO|UPDATE|ON)\s+(?:IF\s+(?:NOT\s+)?EXISTS\s+)?"?([a-zA-Z_][a-zA-Z0-9_]*)"?(?:\."?([a-zA-Z_][a-zA-Z0-9_]*)"?)?/i.exec(
+      sql
+    )
+  if (!match) return null
+  return (match[2] || match[1] || "").toLowerCase() || null
+}
+
+export type RunListItem = ReturnType<typeof mapRunListItem>
+
+export type ShadowCheck = {
+  id: string
+  name: string
+  detail: string
+  state: "pass" | "warn" | "fail"
+}
+
+/**
+ * Shadow evidence checks, derived only from what was actually measured.
+ *
+ * The design listed six named checks — lock escalation, deadlock detection,
+ * replica lag, memory usage, replica id and shadow-run count. Four of those
+ * have no source anywhere in this system and are not invented here. These are
+ * the six that *are* real: execution outcome, rollback, timeout, and the
+ * grader's per-dimension band checks for duration and storage, plus the
+ * schema diff actually applied on the shadow cluster.
+ *
+ * Returns an empty list when no shadow execution has happened yet, so callers
+ * can hide the panel rather than render six "unknown" rows.
+ */
+export function mapShadowChecks(extras: RunExtras): ShadowCheck[] {
+  const { execution, grade, shadow } = extras
+  if (!execution && !grade && !shadow) return []
+  const checks: ShadowCheck[] = []
+
+  if (execution) {
+    checks.push({
+      id: "execution",
+      name: "Execution outcome",
+      detail: execution.success
+        ? "Migration applied cleanly on the shadow cluster."
+        : `Migration failed on the shadow cluster${
+            execution.error_message ? `: ${execution.error_message}` : "."
+          }`,
+      state: execution.success ? "pass" : "fail",
+    })
+    checks.push({
+      id: "rollback",
+      name: "Rollback safety",
+      detail: execution.rollback_required
+        ? "A rollback was required after execution."
+        : "No rollback was required.",
+      state: execution.rollback_required ? "fail" : "pass",
+    })
+    checks.push({
+      id: "timeout",
+      name: "Timeout",
+      detail: execution.timed_out
+        ? "Execution hit the shadow timeout before completing."
+        : `Completed in ${formatDuration(execution.actual_duration_seconds)} without hitting the timeout.`,
+      state: execution.timed_out ? "fail" : "pass",
+    })
+  }
+
+  if (grade) {
+    if (grade.duration_unverifiable) {
+      checks.push({
+        id: "duration_band",
+        name: "Duration vs prediction",
+        detail: "Duration could not be verified for this run.",
+        state: "warn",
+      })
+    } else if (grade.duration_within_band != null) {
+      checks.push({
+        id: "duration_band",
+        name: "Duration vs prediction",
+        detail:
+          grade.duration_pct_error == null
+            ? grade.duration_within_band
+              ? "Measured duration fell within the predicted band."
+              : "Measured duration fell outside the predicted band."
+            : `${Math.abs(Math.round(grade.duration_pct_error * 100))}% off the predicted duration — ${
+                grade.duration_within_band ? "within" : "outside"
+              } band.`,
+        state: grade.duration_within_band ? "pass" : "warn",
+      })
+    }
+
+    if (grade.storage_unverifiable) {
+      checks.push({
+        id: "storage_band",
+        name: "Storage vs prediction",
+        detail: "Storage growth could not be verified for this run.",
+        state: "warn",
+      })
+    } else if (grade.storage_within_band != null) {
+      checks.push({
+        id: "storage_band",
+        name: "Storage vs prediction",
+        detail: `Measured ${formatStorage(extras.execution?.actual_storage_mb)} — ${
+          grade.storage_within_band ? "within" : "outside"
+        } the predicted band.`,
+        state: grade.storage_within_band ? "pass" : "warn",
+      })
+    }
+  }
+
+  if (shadow) {
+    const diff = asRecord(shadow.schema_diff)
+    const changed = diff
+      ? Object.values(diff).reduce<number>(
+          (n, v) => n + (Array.isArray(v) ? v.length : 0),
+          0
+        )
+      : 0
+    checks.push({
+      id: "schema_diff",
+      name: "Schema change applied",
+      detail:
+        changed > 0
+          ? `${changed} schema change${changed === 1 ? "" : "s"} observed between the before and after snapshots.`
+          : "No schema difference was captured between the before and after snapshots.",
+      state: changed > 0 ? "pass" : "warn",
+    })
+    if (shadow.error_message) {
+      checks.push({
+        id: "cluster",
+        name: "Shadow cluster",
+        detail: shadow.error_message,
+        state: "fail",
+      })
+    }
+  }
+
+  return checks
+}
+
 export function mapRunListItem(item: MigrationRunSummary) {
+  // Fields below the divider come from the widened summary response — the
+  // run's approval / grade / execution-result / shadow-cluster children,
+  // flattened server-side. They are null until the corresponding stage has
+  // actually happened; nothing here is inferred or defaulted.
   return {
     id: item.id,
     status: item.status,
@@ -1587,11 +1993,41 @@ export function mapRunListItem(item: MigrationRunSummary) {
     createdAgo: formatRelativeTime(item.created_at),
     ownerIdentity: item.owner_identity,
     sqlSnippet: item.sql_snippet,
+    migrationSql: item.migration_sql,
+    tableName: primaryTableName(item.migration_sql),
     policyDecision: item.policy_decision,
     scaleTier: item.prediction_scale_tier,
     isTerminal: item.is_terminal,
     isFailed: item.status === "failed",
     isCancelledLook: item.status === "failed" && item.workflow_status === "aborted",
+    // ---
+    risk: item.compatibility_risk ?? null,
+    riskTone: riskSemanticTone(item.compatibility_risk),
+    confidence: item.confidence_score ?? null,
+    confidencePercent:
+      item.confidence_score == null
+        ? null
+        : Math.round(Number(item.confidence_score) * 100),
+    approvalDecision: item.approval_decision ?? null,
+    approverIdentity: item.approver_identity ?? null,
+    approvedAt: item.approved_at ?? null,
+    durationSeconds: item.actual_duration_seconds ?? null,
+    durationLabel:
+      item.actual_duration_seconds == null
+        ? null
+        : formatDuration(item.actual_duration_seconds),
+    storageMb: item.actual_storage_mb ?? null,
+    executionSuccess: item.execution_success ?? null,
+    outcomeClass: item.outcome_class ?? null,
+    scalarAccuracy: item.scalar_accuracy_score ?? null,
+    isGraded: Boolean(item.is_graded),
+    shadowOutcome: (item.shadow_outcome ?? null) as
+      | "pass"
+      | "warn"
+      | "fail"
+      | null,
+    shadowStatus: item.shadow_status ?? null,
+    shadowProvider: item.shadow_provider ?? null,
   }
 }
 

@@ -38,6 +38,11 @@ class RetrievedMemory(BaseModel):
     source_url: str | None = None
     ui_label: str | None = None
     lessons_learned: str | None = None
+    # Measured outcome of the remembered run. Present only for graded shadow
+    # runs — open-source incidents and seed rows leave these None, which is
+    # what keeps them out of the success-rate aggregate below.
+    outcome_class: str | None = None
+    execution_success: bool | None = None
 
 
 class MemoryRetrievalResult(BaseModel):
@@ -60,11 +65,59 @@ class MemoryRetrievalResult(BaseModel):
     def to_prompt_context(self) -> list[dict[str, Any]]:
         return [m.model_dump(mode="json") for m in self.memories]
 
+    def retrieval_aggregates(self) -> dict[str, Any]:
+        """Honest summary statistics over the retrieved set.
+
+        The memory panel wants "N similar migrations, X% success rate, avg
+        runtime Y, Z failures". Only *graded* memories can answer that — an
+        open-source documented incident or a synthetic seed row has no
+        predicted-then-measured outcome, so it is excluded from every rate
+        below (and counted separately in ``ungraded_count``) rather than
+        silently inflating or deflating the numbers.
+        """
+        graded = [
+            m
+            for m in self.memories
+            if not m.not_a_graded_run and m.outcome_class is not None
+        ]
+        succeeded = [m for m in graded if m.outcome_class in {"clean_ok", "warned_ok"}]
+        failed = [m for m in graded if m.outcome_class in {"bad", "timeout"}]
+        durations = [
+            m.actual_duration_seconds
+            for m in self.memories
+            if m.actual_duration_seconds is not None
+        ]
+        similarities = [m.similarity_score for m in self.memories]
+
+        return {
+            "retrieved_count": len(self.memories),
+            "graded_count": len(graded),
+            "ungraded_count": len(self.memories) - len(graded),
+            "succeeded_count": len(succeeded),
+            "failed_count": len(failed),
+            "success_rate": (
+                len(succeeded) / len(graded) if graded else None
+            ),
+            "mean_actual_duration_seconds": (
+                sum(durations) / len(durations) if durations else None
+            ),
+            "duration_sample_size": len(durations),
+            "top_similarity": max(similarities) if similarities else None,
+            "mean_similarity": (
+                sum(similarities) / len(similarities) if similarities else None
+            ),
+            "note": (
+                "Rates cover only graded shadow runs; open-source incidents "
+                "and seed rows are counted in ungraded_count and excluded."
+            ),
+        }
+
     def to_explainability(self) -> dict[str, Any]:
         weak = self.is_empty or all(
             m.similarity_score < self.weak_similarity_threshold for m in self.memories
         )
         base: dict[str, Any] = {
+            "aggregates": self.retrieval_aggregates(),
             "retrieval_attempted": self.retrieval_attempted,
             "retrieval_mode": self.retrieval_mode,
             "retrieved_count": len(self.memories),

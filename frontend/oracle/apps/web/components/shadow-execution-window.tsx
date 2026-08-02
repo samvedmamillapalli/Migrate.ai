@@ -3,8 +3,10 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { ChevronUp, X } from "lucide-react"
 
 import { Button, buttonVariants } from "@workspace/ui/components/button"
+import { toneText } from "@workspace/ui/components/ui-kit"
 import { cn } from "@workspace/ui/lib/utils"
 
 import { ShadowLiveView } from "@/components/shadow-live-view"
@@ -16,6 +18,7 @@ import {
   getMemory,
   getRun,
   getShadowCluster,
+  formatDuration,
   hasRealSfnArn,
   mapComparisons,
   syncWorkflow,
@@ -152,43 +155,83 @@ export function ShadowExecutionWindow() {
   const comparisons = run ? mapComparisons(run, extras) : []
 
   if (minimized) {
+    // The design's floating "Shadow Watch" pill: dark slab, bottom-right,
+    // status dot + one-line state, expand and dismiss. Every value below is
+    // measured — replica provider, real duration, real error — or omitted.
+    const durationLabel =
+      extras.execution?.actual_duration_seconds != null
+        ? formatDuration(extras.execution.actual_duration_seconds)
+        : null
     return (
       <div className="pointer-events-none fixed right-4 bottom-4 z-50 flex justify-end">
-        <button
-          type="button"
-          onClick={() => setMinimized(false)}
-          className={cn(
-            "pointer-events-auto flex items-center gap-3 rounded-lg border border-border/80",
-            "bg-background/95 px-4 py-3 text-left shadow-lg backdrop-blur-md",
-            "hover:border-amber-400/40 transition-colors"
-          )}
-        >
-          <span
-            aria-hidden
-            className={cn(
-              "size-2 shrink-0 rounded-full",
-              isLive
-                ? "bg-amber-400 animate-pulse"
-                : extras.execution
-                  ? "bg-[var(--oracle-verified)]"
-                  : "bg-muted-foreground/40"
-            )}
-          />
-          <span className="min-w-0">
-            <span className="block font-mono text-[10px] tracking-[0.14em] text-muted-foreground uppercase">
-              Shadow watch
-            </span>
-            <span className="block truncate font-mono text-xs text-foreground/85">
-              {run
-                ? isLive
-                  ? "Live cluster running…"
-                  : extras.execution
-                    ? "Finished — expand for results"
-                    : `run ${runId.slice(0, 8)}`
-                : `run ${runId.slice(0, 8)}`}
-            </span>
-          </span>
-        </button>
+        <div className="border-border bg-foreground text-background pointer-events-auto w-[320px] rounded-xl border px-4 py-3 shadow-lg">
+          <div className="flex items-start gap-2.5">
+            <span
+              aria-hidden
+              className={cn(
+                "mt-1.5 size-2 shrink-0 rounded-full",
+                isLive
+                  ? "animate-pulse bg-[var(--tone-warn-dot)]"
+                  : extras.execution?.success === false
+                    ? "bg-[var(--tone-fail-dot)]"
+                    : extras.execution
+                      ? "bg-[var(--tone-pass-dot)]"
+                      : "bg-background/40"
+              )}
+            />
+            <div className="min-w-0 flex-1">
+              <div className="text-[11px] font-bold tracking-[0.08em] uppercase">
+                Shadow Watch
+              </div>
+              <div className="text-background/90 mt-0.5 truncate text-[13px] font-medium">
+                {isLive
+                  ? "Running — expand to watch"
+                  : extras.execution?.success === false
+                    ? "Failed — expand for detail"
+                    : extras.execution
+                      ? "Finished — expand for results"
+                      : `run ${runId.slice(0, 8)}`}
+              </div>
+              {extras.shadow || durationLabel ? (
+                <div className="text-background/70 mt-2 space-y-1 font-mono text-[11px]">
+                  {extras.shadow ? (
+                    <div>
+                      {extras.shadow.provider}
+                      {extras.shadow.region ? ` · ${extras.shadow.region}` : ""}
+                      {durationLabel ? ` · ${durationLabel}` : ""}
+                    </div>
+                  ) : durationLabel ? (
+                    <div>{durationLabel}</div>
+                  ) : null}
+                  {extras.execution ? (
+                    <div>
+                      {extras.execution.rollback_required
+                        ? "rollback required"
+                        : "no rollback required"}
+                      {extras.execution.timed_out ? " · timed out" : ""}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            <button
+              type="button"
+              aria-label="Expand shadow watch"
+              onClick={() => setMinimized(false)}
+              className="text-background/60 hover:text-background transition-colors"
+            >
+              <ChevronUp className="size-4" />
+            </button>
+            <button
+              type="button"
+              aria-label="Dismiss shadow watch"
+              onClick={closeWatch}
+              className="text-background/60 hover:text-background transition-colors"
+            >
+              <X className="size-4" />
+            </button>
+          </div>
+        </div>
       </div>
     )
   }
@@ -205,13 +248,11 @@ export function ShadowExecutionWindow() {
     >
       <header className="flex shrink-0 items-start justify-between gap-2 border-b border-border/60 px-4 py-3">
         <div className="min-w-0 space-y-0.5">
-          <p className="font-mono text-[10px] tracking-[0.16em] text-muted-foreground uppercase">
-            Shadow visualization
-          </p>
+          <p className="section-label">Shadow visualization</p>
           <p className="truncate font-mono text-xs text-foreground/85">
             run {runId.slice(0, 8)}
             {isLive ? (
-              <span className="ml-2 text-amber-400/90">· live</span>
+              <span className={cn("ml-2", toneText("warn"))}>· live</span>
             ) : null}
           </p>
         </div>
@@ -238,15 +279,13 @@ export function ShadowExecutionWindow() {
       </header>
 
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-3">
-        {error ? (
-          <p className="text-sm text-[var(--oracle-risk)]">{error}</p>
-        ) : null}
+        {error ? <p className={cn("text-sm", toneText("fail"))}>{error}</p> : null}
 
         {run ? (
           <>
             <section className="space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <p className="font-mono text-[10px] tracking-[0.12em] text-muted-foreground uppercase">
+                <p className="section-label">
                   {isLive ? "Live" : extras.execution ? "Done" : "Shadow"}
                 </p>
                 <button

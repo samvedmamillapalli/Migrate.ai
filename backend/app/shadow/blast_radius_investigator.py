@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from app.core.logging import get_logger
 from app.prediction.bedrock_client import (
@@ -31,11 +31,115 @@ from app.prediction.bedrock_client import (
 )
 from app.shadow.mcp_client import open_shadow_mcp_session
 
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    from app.memory.embedding_client import EmbeddingClient
+
 logger = get_logger(__name__)
 
-_PROMPT_VERSION = "blast_radius_investigation_v1"
+_PROMPT_VERSION = "blast_radius_investigation_v2"
 _PROMPT_PATH = Path(__file__).parent / "prompts" / f"{_PROMPT_VERSION}.txt"
 _MAX_TOOL_CALLS = 8
+
+# Agent-facing semantic search over Migration Oracle's own graded history.
+MEMORY_TOOL_NAME = "search_prior_migrations"
+
+# This text is fed back into the model's context, so it is capped hard. Five
+# hits of ~4 short lines each stays well inside a sane share of the window.
+_MEMORY_TOOL_MAX_LIMIT = 5
+_MEMORY_RESULT_MAX_CHARS = 4000
+_MEMORY_FIELD_MAX_CHARS = 240
+
+_MEMORY_TOOL_SPEC: dict[str, Any] = {
+    "toolSpec": {
+        "name": MEMORY_TOOL_NAME,
+        "description": (
+            "Semantic search over Migration Oracle's memory of past "
+            "migrations, backed by CockroachDB's distributed vector index. "
+            "Searches institutional history — previously graded runs (with "
+            "predicted vs actual outcomes and lessons learned) and documented "
+            "open-source migration incidents. This does NOT query the shadow "
+            "cluster. Use a natural-language description of the migration "
+            "mechanism you are curious about, not SQL."
+        ),
+        "inputSchema": {
+            "json": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": (
+                            "Natural-language description of the mechanism, "
+                            "e.g. 'backfill stalled adding a NOT NULL column "
+                            "to a large table'."
+                        ),
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": (
+                            f"Max results (1-{_MEMORY_TOOL_MAX_LIMIT}, default 5)."
+                        ),
+                    },
+                },
+                "required": ["query"],
+            }
+        },
+    }
+}
+
+
+def _clip(value: Any, limit: int = _MEMORY_FIELD_MAX_CHARS) -> str:
+    text = " ".join(str(value or "").split())
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+def _format_memory_hits(rows: list[tuple[Any, float]], index_used: str | None) -> str:
+    """Compact plain-text rendering of search hits for the model's context."""
+    if not rows:
+        return (
+            "No prior migrations in memory matched that query. This mechanism "
+            "has no recorded history — treat it as unprecedented rather than "
+            "assuming it is safe."
+        )
+
+    lines: list[str] = []
+    for rank, (mem, similarity) in enumerate(rows, start=1):
+        pred = mem.prediction_summary or {}
+        exe = mem.execution_summary or {}
+        grade = mem.grade_summary if isinstance(mem.grade_summary, dict) else {}
+        integrity = grade.get("integrity") if isinstance(grade.get("integrity"), dict) else {}
+
+        predicted = pred.get("estimated_duration_seconds")
+        actual = exe.get("actual_duration_seconds")
+        if predicted is not None and actual is not None:
+            duration = f"predicted {float(predicted):.0f}s -> actual {float(actual):.0f}s"
+        else:
+            duration = "duration not recorded"
+
+        # A documented incident is not a measured run of ours; saying so keeps
+        # the model from citing it as if we had graded it ourselves.
+        origin = (
+            "documented open-source incident (not one of our graded runs)"
+            if integrity.get("not_a_graded_run")
+            else "our graded run"
+        )
+
+        lines.append(
+            f"[{rank}] similarity {similarity:.2f} | {origin} | "
+            f"{mem.migration_type}/{mem.scale_tier} | "
+            f"outcome {grade.get('outcome_class') or 'unknown'} | {duration}\n"
+            f"    what: {_clip(mem.migration_summary)}\n"
+            f"    lesson: {_clip(mem.lessons_learned)}"
+        )
+
+    header = f"{len(rows)} prior migration(s) via CockroachDB vector index"
+    if index_used:
+        header += f" ({index_used})"
+    body = header + ":\n" + "\n".join(lines)
+    if len(body) > _MEMORY_RESULT_MAX_CHARS:
+        body = body[: _MEMORY_RESULT_MAX_CHARS - 1] + "…"
+    return body
 
 
 def _load_system_prompt() -> str:
@@ -62,6 +166,58 @@ def _build_user_prompt(
     )
 
 
+async def _search_prior_migrations(
+    *,
+    session: AsyncSession,
+    embedding_client: EmbeddingClient,
+    arguments: dict[str, Any],
+) -> tuple[str, bool]:
+    """Run the agent's memory search. Returns (result_text, is_error).
+
+    Never raises: a failed search is a finding the model can reason about
+    ("history unavailable"), not a crash — the whole investigation is
+    best-effort enrichment on top of an already-measured migration.
+    """
+    from app.memory.embedding_client import vector_to_literal
+    from app.repositories.migration_memory_repository import MigrationMemoryRepository
+
+    query = str(arguments.get("query") or "").strip()
+    if not query:
+        return ("search_prior_migrations requires a non-empty 'query'.", True)
+
+    try:
+        raw_limit = int(arguments.get("limit") or _MEMORY_TOOL_MAX_LIMIT)
+    except (TypeError, ValueError):
+        raw_limit = _MEMORY_TOOL_MAX_LIMIT
+    limit = max(1, min(_MEMORY_TOOL_MAX_LIMIT, raw_limit))
+
+    try:
+        vector = embedding_client.embed(query)
+        rows, index_used = await MigrationMemoryRepository(session).semantic_search(
+            query_vector_literal=vector_to_literal(vector),
+            # Corpus-wide: the investigating agent should draw on the shared
+            # open-source corpus and every graded run, not just one tenant's.
+            owner_identities=None,
+            limit=limit,
+        )
+    except Exception as exc:  # noqa: BLE001 - a failed search is a finding, not a crash
+        logger.warning(
+            "search_prior_migrations failed",
+            extra={"error": f"{type(exc).__name__}: {exc}"},
+        )
+        return (
+            f"Memory search unavailable ({type(exc).__name__}). Proceed using "
+            "only the live shadow-cluster evidence; do not guess at history.",
+            True,
+        )
+
+    logger.info(
+        "search_prior_migrations served",
+        extra={"query": query[:120], "hits": len(rows), "index_used": index_used},
+    )
+    return (_format_memory_hits(rows, index_used), False)
+
+
 async def investigate(
     *,
     bedrock_client: BedrockClient,
@@ -74,6 +230,8 @@ async def investigate(
     schema_diff: dict[str, Any] | None,
     row_sample_after: dict[str, Any] | None,
     max_tool_calls: int = _MAX_TOOL_CALLS,
+    session: AsyncSession | None = None,
+    embedding_client: EmbeddingClient | None = None,
 ) -> dict[str, Any] | None:
     """Run the investigation. Returns a ModelTrace-shaped dict (same shape
     `app.prediction.trace.build_trace` produces, so it drops into the
@@ -87,17 +245,20 @@ async def investigate(
         row_sample_after=row_sample_after,
     )
 
+    # `mcp_session`, not `session` — `session` is the CockroachDB AsyncSession
+    # parameter above, which the memory tool needs; shadowing it here would
+    # silently break search_prior_migrations.
     async with open_shadow_mcp_session(
         cluster_id=cluster_id,
         api_secret=api_secret,
         base_url=mcp_base_url,
         max_calls=max_tool_calls,
-    ) as session:
-        if session is None:
+    ) as mcp_session:
+        if mcp_session is None:
             return None
 
         try:
-            tool_defs = await session.tool_defs()
+            tool_defs = await mcp_session.tool_defs()
         except Exception as exc:  # noqa: BLE001 - enrichment, never blocks the migration
             logger.warning(
                 "MCP list_tools failed; skipping investigation",
@@ -120,13 +281,36 @@ async def investigate(
             for t in tool_defs
         ]
 
+        # Offer the memory search only when it can actually be served. Adding
+        # the toolSpec without a session/embedder would advertise a tool that
+        # errors on every call and burns the model's budget doing it.
+        memory_tool_available = session is not None and embedding_client is not None
+        if memory_tool_available:
+            tools.append(_MEMORY_TOOL_SPEC)
+        else:
+            logger.info(
+                "search_prior_migrations not offered (no DB session or embedding "
+                "client passed); investigation will use MCP tools only"
+            )
+
         async def tool_executor(name: str, arguments: dict[str, Any]) -> tuple[str, bool]:
+            if name == MEMORY_TOOL_NAME:
+                # Local tool, not MCP — it queries Migration Oracle's own
+                # memory. Still counted against converse_with_tools'
+                # max_tool_calls budget, which tallies every dispatch here
+                # regardless of which tool served it.
+                assert session is not None and embedding_client is not None
+                return await _search_prior_migrations(
+                    session=session,
+                    embedding_client=embedding_client,
+                    arguments=arguments,
+                )
             # Every MCP tool here takes a `database` argument; default it to
             # the shadow cluster's own database so the model doesn't have to
             # rediscover which database it's supposed to be looking at.
             args = dict(arguments)
             args.setdefault("database", database)
-            call = await session.call_tool(name, args)
+            call = await mcp_session.call_tool(name, args)
             return call.result_text, call.is_error
 
         started = perf_counter()

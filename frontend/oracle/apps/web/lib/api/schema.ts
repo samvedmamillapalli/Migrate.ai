@@ -21,6 +21,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/auth/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Auth Status */
+        get: operations["auth_status_auth_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register */
+        post: operations["register_auth_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/login": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Login */
+        post: operations["login_auth_login_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/auth/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Me */
+        get: operations["me_auth_me_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/health": {
         parameters: {
             query?: never;
@@ -66,10 +134,110 @@ export interface paths {
         /**
          * Get Accuracy Metrics
          * @description Plain SQL accuracy / learning metrics (Phase 11 chart source).
+         *
+         *     Scoped to the same owner as the Recent-runs list when one is known (auth
+         *     session, or an explicit query param), so this card and "Recent" never show
+         *     two different populations side by side without saying so.
          */
         get: operations["get_accuracy_metrics_runs_metrics_accuracy_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/approvers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Approvers
+         * @description Distinct approver identities, for the history page's filter dropdown.
+         */
+        get: operations["list_approvers_runs_approvers_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/volume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Run Volume
+         * @description Daily run counts over the whole history, not just one page.
+         *
+         *     Splits each day into runs that succeeded and runs that failed or were
+         *     cancelled, so the chart's two series mean something specific. Days with no
+         *     runs are returned as explicit zeroes rather than omitted, so the caller
+         *     doesn't have to reconstruct the calendar.
+         */
+        get: operations["get_run_volume_runs_volume_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/activity": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Activity Feed
+         * @description Merged, reverse-chronological stream of what actually happened.
+         *
+         *     Every entry is derived from a persisted timestamp (run created, prediction
+         *     written, approval recorded, shadow started/measured, grade written, memory
+         *     stored). Nothing is synthesized. Scoped to the same owner as the Recent
+         *     list so the Overview never mixes two populations.
+         */
+        get: operations["get_activity_feed_runs_activity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/debug/demo-with-db": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Debug Demo With Db
+         * @description Developer helper: real customer_demo RO DB + sample migration SQL.
+         *
+         *     Reads the URL from env ``DEMO_READONLY_DATABASE_URL`` or repo file
+         *     ``.judge_ro_database_url`` (server-side only). Creates the run, stores a
+         *     connection secret, and runs schema discovery so predict/shadow can proceed.
+         *
+         *     Easy to remove: delete this route + the frontend Developer mode button.
+         */
+        post: operations["create_debug_demo_with_db_runs_debug_demo_with_db_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -111,7 +279,16 @@ export interface paths {
         get: operations["get_run_runs__run_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Discard Run
+         * @description Discard a run abandoned during setup.
+         *
+         *     Only a ``pending`` run with no approval, grade, execution result, shadow
+         *     cluster or memory can be removed — see
+         *     MigrationRunService.discard_abandoned_run. Anything further along is part
+         *     of the audit record and returns 409 instead.
+         */
+        delete: operations["discard_run_runs__run_id__delete"];
         options?: never;
         head?: never;
         /** Update Run Status */
@@ -167,7 +344,13 @@ export interface paths {
         };
         /**
          * Get Pipeline Progress
-         * @description Live stage progress for a long-running predict / local-verify (in-process).
+         * @description Live stage progress for a long-running predict / discover / local-verify
+         *     (in-process, single-uvicorn-worker).
+         *
+         *     Predict progress is cleared once the run leaves ``predicting``; discover
+         *     progress is only meaningful while the run is still ``pending`` (discovery
+         *     never changes run status itself). Either way, a stale bar from a previous
+         *     stage never survives a status change it doesn't belong to.
          */
         get: operations["get_pipeline_progress_runs__run_id__pipeline_progress_get"];
         put?: never;
@@ -279,6 +462,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/runs/{run_id}/abort-workflow": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Abort Workflow
+         * @description Abort a running shadow workflow and tear down the shadow cluster.
+         */
+        post: operations["abort_workflow_runs__run_id__abort_workflow_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/runs/{run_id}/approval": {
         parameters: {
             query?: never;
@@ -343,6 +546,58 @@ export interface paths {
          * @description Read-only shadow cluster lifecycle row (Phase 7 data; Phase 11 exposure).
          */
         get: operations["get_shadow_cluster_runs__run_id__shadow_cluster_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/shadow-cluster/teardown-now": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Teardown Shadow Cluster Now
+         * @description End a HOLDING cluster's inspection window immediately.
+         *
+         *     After execute+measure finish, the cluster is held (not destroyed) for
+         *     ``settings.shadow_hold_minutes`` so the row-sample/schema-diff box stays
+         *     populated — see app.lambdas.handlers.cleanup. This lets the user end that
+         *     hold early instead of waiting out the window or the sweeper. Idempotent:
+         *     calling it on an already-destroyed cluster just returns its current state.
+         */
+        post: operations["teardown_shadow_cluster_now_runs__run_id__shadow_cluster_teardown_now_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/runs/{run_id}/shadow-cluster/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Shadow Cluster
+         * @description Push-based shadow-cluster updates (SSE) — replaces polling GET /shadow-cluster.
+         *
+         *     One JSON `ShadowClusterResponse` payload per `event: shadow` message,
+         *     sent only when it actually changed (plus a periodic heartbeat so proxies
+         *     don't time out an idle connection). Falls back gracefully: a client that
+         *     can't use EventSource can keep polling the plain GET route, which is
+         *     unaffected by this endpoint's existence.
+         */
+        get: operations["stream_shadow_cluster_runs__run_id__shadow_cluster_stream_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -445,6 +700,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/memories/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search Memories
+         * @description Semantic search over graded memories, on the CockroachDB distributed
+         *     vector index.
+         *
+         *     ``scope``:
+         *       * ``corpus`` — the shared open-source corpus only (no owner predicate,
+         *         rides the no-prefix partial index)
+         *       * ``mine`` — this owner's graded runs only
+         *       * ``all`` — both, which is what prediction-time retrieval uses
+         */
+        post: operations["search_memories_memories_search_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/memories/corpus-identity": {
         parameters: {
             query?: never;
@@ -517,6 +799,45 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /** AuthLoginRequest */
+        AuthLoginRequest: {
+            /** Owner Identity */
+            owner_identity: string;
+            /** Password */
+            password: string;
+        };
+        /** AuthMeResponse */
+        AuthMeResponse: {
+            /** Owner Identity */
+            owner_identity: string;
+            /** Auth Enabled */
+            auth_enabled: boolean;
+            /** Display Name */
+            display_name?: string | null;
+        };
+        /** AuthRegisterRequest */
+        AuthRegisterRequest: {
+            /** Owner Identity */
+            owner_identity: string;
+            /** Password */
+            password: string;
+            /** Display Name */
+            display_name?: string | null;
+        };
+        /** AuthTokenResponse */
+        AuthTokenResponse: {
+            /** Access Token */
+            access_token: string;
+            /**
+             * Token Type
+             * @default bearer
+             */
+            token_type: string;
+            /** Owner Identity */
+            owner_identity: string;
+            /** Expires In Seconds */
+            expires_in_seconds: number;
         };
         /**
          * ClosedLoopRequest
@@ -626,8 +947,11 @@ export interface components {
             storage_pct_error?: number | null;
             /** Storage Within Band */
             storage_within_band?: boolean | null;
-            /** Storage Unverifiable */
-            storage_unverifiable?: boolean;
+            /**
+             * Storage Unverifiable
+             * @default false
+             */
+            storage_unverifiable: boolean;
             /** Rollback Predicted */
             rollback_predicted: string;
             /** Rollback Actual Class */
@@ -808,6 +1132,113 @@ export interface components {
              */
             updated_at: string;
         };
+        /**
+         * MemorySearchHit
+         * @description One ranked memory. Carries the same integrity markers as the browse and
+         *     retrieval paths so a seeded open-source corpus entry can never be mistaken
+         *     for a real graded run.
+         */
+        MemorySearchHit: {
+            /**
+             * Memory Id
+             * Format: uuid
+             */
+            memory_id: string;
+            /**
+             * Migration Run Id
+             * Format: uuid
+             */
+            migration_run_id: string;
+            /** Similarity Score */
+            similarity_score: number;
+            /** Owner Identity */
+            owner_identity: string;
+            /** Migration Type */
+            migration_type: string;
+            /** Scale Tier */
+            scale_tier: string;
+            /** Migration Summary */
+            migration_summary: string;
+            /** Lessons Learned */
+            lessons_learned: string;
+            /** Surprise Notes */
+            surprise_notes?: string | null;
+            /** Outcome Class */
+            outcome_class?: string | null;
+            /** Execution Success */
+            execution_success?: boolean | null;
+            /** Predicted Duration Seconds */
+            predicted_duration_seconds?: number | null;
+            /** Actual Duration Seconds */
+            actual_duration_seconds?: number | null;
+            /** Predicted Storage Mb */
+            predicted_storage_mb?: number | null;
+            /** Actual Storage Mb */
+            actual_storage_mb?: number | null;
+            /** Scalar Accuracy Score */
+            scalar_accuracy_score?: number | null;
+            /** Memory Origin */
+            memory_origin?: string | null;
+            /**
+             * Not A Graded Run
+             * @default false
+             */
+            not_a_graded_run: boolean;
+            /** Source Url */
+            source_url?: string | null;
+            /** Ui Label */
+            ui_label?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /**
+         * MemorySearchRequest
+         * @description Free-text semantic search over graded memories.
+         */
+        MemorySearchRequest: {
+            /** Query */
+            query: string;
+            /**
+             * Scope
+             * @default all
+             * @enum {string}
+             */
+            scope: "mine" | "corpus" | "all";
+            /** Migration Type */
+            migration_type?: string | null;
+            /** Scale Tier */
+            scale_tier?: string | null;
+            /**
+             * Min Similarity
+             * @default 0
+             */
+            min_similarity: number;
+            /**
+             * Limit
+             * @default 10
+             */
+            limit: number;
+        };
+        /** MemorySearchResponse */
+        MemorySearchResponse: {
+            /** Query */
+            query: string;
+            /** Scope */
+            scope: string;
+            /** Embedding Model Id */
+            embedding_model_id?: string | null;
+            /** Index Used */
+            index_used: string | null;
+            /** Took Ms */
+            took_ms: number;
+            /** Total */
+            total: number;
+            /** Results */
+            results: components["schemas"]["MemorySearchHit"][];
+        };
         /** MigrationRunCreateRequest */
         MigrationRunCreateRequest: {
             /**
@@ -826,6 +1257,12 @@ export interface components {
              * @description Optional link to an earlier run this migration revises
              */
             revises_run_id?: string | null;
+            /**
+             * Run Kind
+             * @description standard (default) | chaos (deliberate failure test) | debug (developer/demo tooling). Keeps chaos/debug runs out of the default Recent list and future accuracy queries.
+             * @default standard
+             */
+            run_kind: string;
         };
         /** MigrationRunListResponse */
         MigrationRunListResponse: {
@@ -863,6 +1300,11 @@ export interface components {
              * @default anonymous
              */
             owner_identity: string;
+            /**
+             * Run Kind
+             * @default standard
+             */
+            run_kind: string;
             /** Revises Run Id */
             revises_run_id?: string | null;
             /** Schema Snapshot */
@@ -927,6 +1369,12 @@ export interface components {
         /**
          * MigrationRunSummaryResponse
          * @description List item without the large JSONB schema snapshot.
+         *
+         *     Carries a flattened slice of the run's approval / grade / execution-result /
+         *     shadow-cluster children so a history table can render risk, confidence,
+         *     duration, approver, shadow outcome and graded state without N follow-up
+         *     requests per row. Populated by :meth:`from_orm_run`; the children are
+         *     batch-loaded via ``load_summary_children`` in the repository.
          */
         MigrationRunSummaryResponse: {
             /**
@@ -952,6 +1400,11 @@ export interface components {
              * @default anonymous
              */
             owner_identity: string;
+            /**
+             * Run Kind
+             * @default standard
+             */
+            run_kind: string;
             /** Revises Run Id */
             revises_run_id?: string | null;
             /** Schema Discovered At */
@@ -976,8 +1429,47 @@ export interface components {
             requires_manual_review?: boolean | null;
             /** Prediction Scale Tier */
             prediction_scale_tier?: string | null;
+            compatibility_risk?: components["schemas"]["CompatibilityRisk"] | null;
+            /** Confidence Score */
+            confidence_score?: number | null;
+            /** Approval Decision */
+            approval_decision?: string | null;
+            /** Approver Identity */
+            approver_identity?: string | null;
+            /** Approved At */
+            approved_at?: string | null;
+            /** Actual Duration Seconds */
+            actual_duration_seconds?: number | null;
+            /** Actual Storage Mb */
+            actual_storage_mb?: number | null;
+            /** Execution Success */
+            execution_success?: boolean | null;
+            /** Execution Timed Out */
+            execution_timed_out?: boolean | null;
+            /** Outcome Class */
+            outcome_class?: string | null;
+            /** Scalar Accuracy Score */
+            scalar_accuracy_score?: number | null;
+            /**
+             * Is Graded
+             * @default false
+             */
+            is_graded: boolean;
+            /** Shadow Status */
+            shadow_status?: string | null;
+            /** Shadow Provider */
+            shadow_provider?: string | null;
             /** Has Schema Snapshot */
             readonly has_schema_snapshot: boolean;
+            /**
+             * Shadow Outcome
+             * @description pass | warn | fail — or None when no shadow execution happened.
+             *
+             *     Derived only from measured facts: whether the shadow execution
+             *     succeeded, whether it timed out, whether the cluster itself failed,
+             *     and the grader's outcome_class. Never inferred from risk or confidence.
+             */
+            readonly shadow_outcome: string | null;
             /** Is Terminal */
             readonly is_terminal: boolean;
             /** Sql Snippet */
@@ -1051,17 +1543,29 @@ export interface components {
              */
             updated_at: string;
             /** Event Log */
-            event_log?: Array<{ [key: string]: unknown }> | null;
+            event_log?: {
+                [key: string]: unknown;
+            }[] | null;
             /** Schema Snapshot Before */
-            schema_snapshot_before?: { [key: string]: unknown } | null;
+            schema_snapshot_before?: {
+                [key: string]: unknown;
+            } | null;
             /** Schema Snapshot After */
-            schema_snapshot_after?: { [key: string]: unknown } | null;
+            schema_snapshot_after?: {
+                [key: string]: unknown;
+            } | null;
             /** Schema Diff */
-            schema_diff?: { [key: string]: unknown } | null;
+            schema_diff?: {
+                [key: string]: unknown;
+            } | null;
             /** Row Sample Before */
-            row_sample_before?: { [key: string]: unknown } | null;
+            row_sample_before?: {
+                [key: string]: unknown;
+            } | null;
             /** Row Sample After */
-            row_sample_after?: { [key: string]: unknown } | null;
+            row_sample_after?: {
+                [key: string]: unknown;
+            } | null;
         };
         /** StartWorkflowRequest */
         StartWorkflowRequest: {
@@ -1070,6 +1574,11 @@ export interface components {
              * @description Override; defaults to the ARN stored on the run
              */
             connection_secret_arn?: string | null;
+            /**
+             * Database Url
+             * @description One-shot read-only URL when the run has no connection_secret_arn yet (same store path as POST /discover)
+             */
+            database_url?: string | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -1121,6 +1630,114 @@ export interface operations {
             };
         };
     };
+    auth_status_auth_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    register_auth_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthRegisterRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthTokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    login_auth_login_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AuthLoginRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthTokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    me_auth_me_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthMeResponse"];
+                };
+            };
+        };
+    };
     health_check_health_get: {
         parameters: {
             query?: never;
@@ -1147,6 +1764,20 @@ export interface operations {
         parameters: {
             query?: {
                 status?: components["schemas"]["MigrationRunStatus"] | null;
+                owner_identity?: string | null;
+                run_kind?: string | null;
+                /** @description Comma-separated run_kind values to exclude, e.g. chaos,debug */
+                exclude_kinds?: string | null;
+                /** @description Case-insensitive substring match on the migration SQL. */
+                q?: string | null;
+                /** @description Filter by compatibility_risk: low | medium | high */
+                risk?: string | null;
+                /** @description Filter by recorded approval decision: proceed | accept_recommended | cancel, or 'none' for runs with no decision yet. */
+                decision?: string | null;
+                approver?: string | null;
+                /** @description created_at | updated_at | status | compatibility_risk */
+                order_by?: string;
+                order_dir?: string;
                 limit?: number;
                 offset?: number;
             };
@@ -1211,7 +1842,9 @@ export interface operations {
     };
     get_accuracy_metrics_runs_metrics_accuracy_get: {
         parameters: {
-            query?: never;
+            query?: {
+                owner_identity?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -1227,6 +1860,147 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_approvers_runs_approvers_get: {
+        parameters: {
+            query?: {
+                owner_identity?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_volume_runs_volume_get: {
+        parameters: {
+            query?: {
+                owner_identity?: string | null;
+                days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_activity_feed_runs_activity_get: {
+        parameters: {
+            query?: {
+                owner_identity?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_debug_demo_with_db_runs_debug_demo_with_db_post: {
+        parameters: {
+            query?: {
+                owner_identity?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -1281,6 +2055,35 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["MigrationRunResponse"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_run_runs__run_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -1594,6 +2397,37 @@ export interface operations {
             };
         };
     };
+    abort_workflow_runs__run_id__abort_workflow_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MigrationRunResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_approval_runs__run_id__approval_get: {
         parameters: {
             query?: never;
@@ -1736,6 +2570,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ShadowClusterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    teardown_shadow_cluster_now_runs__run_id__shadow_cluster_teardown_now_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ShadowClusterResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    stream_shadow_cluster_runs__run_id__shadow_cluster_stream_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                run_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -1892,6 +2788,42 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemoryListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    search_memories_memories_search_post: {
+        parameters: {
+            query?: {
+                /** @description Owner to scope 'mine'/'all' to. Ignored when auth is enforced — the token's owner wins. */
+                owner_identity?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemorySearchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemorySearchResponse"];
                 };
             };
             /** @description Validation Error */

@@ -238,6 +238,8 @@ class HybridMemoryRetrieval(MemoryRetrieval):
                     source_url=str(source_url) if source_url else None,
                     ui_label=integrity.get("ui_label"),
                     lessons_learned=mem.lessons_learned,
+                    outcome_class=grade.get("outcome_class"),
+                    execution_success=exe.get("success"),
                 )
             )
             attribution_rows.append(

@@ -3,7 +3,7 @@
 import { useEffect } from "react"
 import { useAuth } from "@clerk/nextjs"
 
-import { setClerkTokenGetter } from "@/lib/api/clerk-token"
+import { markUnauthenticated, setClerkTokenGetter } from "@/lib/api/clerk-token"
 
 /** Registers Clerk getToken() for the shared api() fetch helper. */
 export function ApiAuthBootstrap() {
@@ -12,8 +12,15 @@ export function ApiAuthBootstrap() {
   useEffect(() => {
     if (!isLoaded) return
 
+    if (!isSignedIn) {
+      // Release the gate in resolveAuthToken — otherwise every request on a
+      // signed-out page waits out the full timeout before failing.
+      markUnauthenticated()
+      setClerkTokenGetter(null)
+      return
+    }
+
     setClerkTokenGetter(async () => {
-      if (!isSignedIn) return null
       try {
         return (await getToken()) ?? null
       } catch {

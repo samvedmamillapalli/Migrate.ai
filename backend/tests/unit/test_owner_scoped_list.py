@@ -51,12 +51,15 @@ async def test_count_migration_runs_passes_owner_identity(
 ) -> None:
     repository.count.return_value = 0
     await service.count_migration_runs(owner_identity="bob")
-    repository.count.assert_awaited_once_with(
-        status=None,
-        owner_identity="bob",
-        run_kind=None,
-        exclude_kinds=None,
-    )
+    repository.count.assert_awaited_once()
+    # Assert the scoping intent, not the full signature — this call gains a
+    # kwarg every time a new filter is added, and pinning the exact shape
+    # turns unrelated feature work into a test failure.
+    kwargs = repository.count.await_args.kwargs
+    assert kwargs["owner_identity"] == "bob"
+    assert kwargs["status"] is None
+    assert kwargs["run_kind"] is None
+    assert kwargs["exclude_kinds"] is None
 
 
 @pytest.mark.asyncio

@@ -4,17 +4,26 @@ import * as React from "react"
 import Link from "next/link"
 
 import { Button, buttonVariants } from "@workspace/ui/components/button"
+import {
+  EmptyNote,
+  ErrorNote,
+  Label,
+  PageHeader,
+  Panel,
+  SkeletonLines,
+  StatusPill,
+  toneText,
+} from "@workspace/ui/components/ui-kit"
 import { cn } from "@workspace/ui/lib/utils"
 
+import { ShadowClusterComparison } from "@/components/shadow-cluster-comparison"
 import { ShadowLiveView } from "@/components/shadow-live-view"
-import { ShadowRowSamplesPanel } from "@/components/shadow-row-samples-panel"
+import { ShadowTeardownControl } from "@/components/shadow-teardown-control"
 import { useShadowWatch } from "@/components/shadow-watch-context"
 import {
   ApiError,
   abortWorkflow,
-  formatDuration,
   formatRelativeTime,
-  formatStorage,
   getConnectionSecretArn,
   getCurrentRunId,
   getExecutionResult,
@@ -67,64 +76,14 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <section
+    <Panel
       aria-label={title}
-      className="border-border flex w-full flex-col gap-4 rounded-lg border p-4"
+      className="flex w-full flex-col gap-4 px-6 py-5"
     >
-      <h2 className="text-muted-foreground text-[11px] font-medium tracking-[0.16em] uppercase">
-        {title}
-      </h2>
+      <Label>{title}</Label>
       {children}
-    </section>
+    </Panel>
   )
-}
-
-function FieldRow({
-  label,
-  value,
-  valueClassName,
-}: {
-  label: string
-  value: React.ReactNode
-  valueClassName?: string
-}) {
-  return (
-    <div className="flex items-baseline justify-between gap-4">
-      <dt className="text-muted-foreground/65 font-mono text-[10px] tracking-[0.08em]">
-        {label}
-      </dt>
-      <dd
-        className={cn(
-          "text-foreground/85 font-mono text-xs tracking-tight tabular-nums",
-          valueClassName
-        )}
-      >
-        {value}
-      </dd>
-    </div>
-  )
-}
-
-function StatusDot({ tone }: { tone: "ok" | "warn" | "bad" | "muted" }) {
-  return (
-    <span
-      aria-hidden
-      className={cn(
-        "size-1.5 shrink-0 rounded-full",
-        tone === "ok" && "bg-[var(--oracle-verified)]",
-        tone === "warn" && "bg-amber-400/90",
-        tone === "bad" && "bg-[var(--oracle-risk)]",
-        tone === "muted" && "bg-muted-foreground/60"
-      )}
-    />
-  )
-}
-
-function statusTone(status: string | null | undefined): "ok" | "warn" | "bad" | "muted" {
-  if (status === "completed" || status === "succeeded") return "ok"
-  if (status === "failed" || status === "timed_out" || status === "aborted") return "bad"
-  if (status === "running") return "warn"
-  return "muted"
 }
 
 function errorMessage(err: unknown): string {
@@ -143,6 +102,10 @@ export default function ShadowExecutionPage() {
   const [statusMessage, setStatusMessage] = React.useState<string | null>(null)
   const [starting, setStarting] = React.useState(false)
   const [aborting, setAborting] = React.useState(false)
+  // The shadow row ShadowLiveView resolved to — SSE frame while live, polled
+  // extras otherwise. Lifted so the comparison and teardown control render off
+  // the same live value without opening a second EventSource.
+  const [liveShadow, setLiveShadow] = React.useState<ShadowCluster | null>(null)
 
   const refreshExtras = React.useCallback(async (target: MigrationRun) => {
     if (!extrasReady(target.status)) {
@@ -255,6 +218,30 @@ export default function ShadowExecutionPage() {
     }
   )
 
+  // The cluster outlives the workflow: after execute + measure, it is held
+  // alive for `shadow_hold_minutes` so this page has something real to show.
+  // The poll above stops at run completion, so keep a slower one running
+  // while the cluster itself is still alive — otherwise the hold never
+  // visibly ends and "Delete now" never reflects the teardown it triggered.
+  const shadowStatus = (liveShadow ?? extras.shadow)?.status?.toLowerCase() ?? null
+  const shadowStillAlive = Boolean(
+    shadowStatus &&
+      !["destroyed", "failed"].includes(shadowStatus) &&
+      !isPolling
+  )
+
+  usePolling(
+    async () => {
+      if (!run) return
+      const latest = await safeGet(() => getShadowCluster(run.id))
+      if (latest) {
+        setExtras((prev) => ({ ...prev, shadow: latest }))
+        setLiveShadow(latest)
+      }
+    },
+    { enabled: shadowStillAlive, intervalMs: 5000, backoffAfterMs: 600_000 }
+  )
+
   async function handleStart() {
     if (!run) return
     setError(null)
@@ -313,79 +300,95 @@ export default function ShadowExecutionPage() {
   }
 
   const comparisons = run ? mapComparisons(run, extras) : []
+  const shadow = liveShadow ?? extras.shadow
 
   return (
-    <div className="flex flex-1 flex-col gap-5 px-4 pb-8 md:px-6">
-      <header className="space-y-3">
-        <nav
-          aria-label="Breadcrumb"
-          className="text-muted-foreground flex flex-wrap items-center gap-1.5 font-mono text-[11px] tracking-tight"
+    <div className="mx-auto w-full max-w-[1500px] px-6 pb-10 lg:px-10">
+      <nav
+        aria-label="Breadcrumb"
+        className="text-muted-foreground mb-4 flex flex-wrap items-center gap-1.5 font-mono text-[11px] tracking-tight"
+      >
+        <Link
+          href="/dashboard/migrations/current"
+          className="hover:text-foreground transition-colors"
         >
-          <Link
-            href="/dashboard/migrations/current"
-            className="hover:text-foreground transition-colors"
-          >
-            Current Migration
-          </Link>
-          <span className="text-muted-foreground/40">/</span>
-          <span className="text-foreground">Shadow Execution</span>
-        </nav>
+          Current Migration
+        </Link>
+        <span className="text-muted-foreground/40">/</span>
+        <span className="text-foreground">Shadow Execution</span>
+      </nav>
 
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-          <div className="min-w-0 space-y-1">
-            <h1 className="text-foreground text-2xl font-medium tracking-tight">
-              Shadow Execution
-            </h1>
+      <PageHeader
+        title="Shadow Execution"
+        subtitle={
+          <>
             {run ? (
-              <p className="text-muted-foreground font-mono text-xs tracking-tight">
+              <span className="font-mono text-xs tracking-tight">
                 run {run.id.slice(0, 8)}
                 <span className="text-muted-foreground/50 mx-2">·</span>
                 created {formatRelativeTime(run.created_at)}
-              </p>
+              </span>
             ) : null}
             {statusMessage ? (
-              <p className="text-foreground/75 max-w-2xl text-sm leading-relaxed">
+              <span className="mt-1 block max-w-2xl text-sm leading-relaxed">
                 {statusMessage}
-              </p>
-            ) : null}
-          </div>
-          {run ? (
-            <div className="flex items-center gap-2 self-start">
-              <StatusDot tone={statusTone(run.status)} />
-              <span className="font-mono text-[11px] tracking-[0.14em] uppercase text-foreground/80">
-                {statusLabel(run.status)}
               </span>
-            </div>
-          ) : null}
-        </div>
-      </header>
+            ) : null}
+          </>
+        }
+        action={run ? <StatusPill status={run.status} /> : null}
+      />
 
       {error ? (
-        <p className="font-mono text-xs tracking-tight text-[var(--oracle-risk)]">
-          {error}
-        </p>
+        <div className="mb-5">
+          <ErrorNote>{error}</ErrorNote>
+        </div>
       ) : null}
 
       {initializing ? (
-        <section className="border-border rounded-lg border p-4">
-          <p className="text-muted-foreground font-mono text-xs tracking-tight">
-            Loading shadow execution…
-          </p>
-        </section>
+        <Panel className="px-6 py-5">
+          <SkeletonLines lines={5} />
+        </Panel>
       ) : !run ? (
-        <section className="border-border flex flex-col gap-3 rounded-lg border p-4">
-          <p className="text-muted-foreground font-mono text-xs tracking-tight">
-            No current run. Create or select a migration first.
-          </p>
+        <Panel className="flex flex-col gap-3 px-6 py-5">
+          <EmptyNote>No current run. Create or select a migration first.</EmptyNote>
           <Link
             href="/dashboard/migrations/current"
             className={cn(buttonVariants({ variant: "outline", size: "sm" }), "w-fit")}
           >
             ← Back to Current Migration
           </Link>
-        </section>
+        </Panel>
       ) : (
-        <>
+        <div className="space-y-5">
+          {/* Headline of this page: the customer's schema vs. what the
+              migration turns it into. Rendered first and unconditionally —
+              the source side is real as soon as discovery has run, so this
+              never sits empty waiting on a shadow cluster. */}
+          <Section title="Data columns">
+            <ShadowClusterComparison
+              run={run}
+              shadow={shadow}
+              extras={extras}
+              comparisons={comparisons}
+            />
+          </Section>
+
+          <Section title="Live">
+            <ShadowLiveView
+              run={run}
+              extras={extras}
+              comparisons={comparisons}
+              isLive={isPolling}
+              awaitingStart={awaitingStart}
+              showHoldDeleteButton={false}
+              showCostStrip={false}
+              showComparisons={false}
+              showEventLog={false}
+              onShadowResolved={setLiveShadow}
+            />
+          </Section>
+
           <Section title="Controls">
             {run.status === "awaiting_approval" ? (
               <p className="text-muted-foreground text-sm">
@@ -408,13 +411,13 @@ export default function ShadowExecutionPage() {
                   {starting ? "Starting…" : "Start shadow test"}
                 </Button>
                 {!isSfnReady(health) ? (
-                  <p className="basis-full text-sm text-[var(--oracle-risk)]">
+                  <p className={cn("basis-full text-sm", toneText("fail"))}>
                     Shadow not ready — check Settings / health.
                   </p>
                 ) : null}
                 {!run.connection_secret_arn &&
                 !getConnectionSecretArn().trim() ? (
-                  <p className="basis-full text-sm text-[var(--oracle-risk)]">
+                  <p className={cn("basis-full text-sm", toneText("fail"))}>
                     Attach a database on Current Migration first.
                   </p>
                 ) : null}
@@ -446,61 +449,9 @@ export default function ShadowExecutionPage() {
                     : "Finish predict → Proceed on Current Migration first."}
               </p>
             ) : null}
+
+            <ShadowTeardownControl shadow={shadow} />
           </Section>
-
-          <ShadowRowSamplesPanel shadow={extras.shadow} />
-
-          <Section title="Live">
-            <ShadowLiveView
-              run={run}
-              extras={extras}
-              comparisons={comparisons}
-              isLive={isPolling}
-              awaitingStart={awaitingStart}
-            />
-          </Section>
-
-          {extras.execution || extras.grade ? (
-            <Section title="Result">
-              <dl className="max-w-md space-y-1.5">
-                {extras.execution ? (
-                  <>
-                    <FieldRow
-                      label="Duration"
-                      value={formatDuration(
-                        extras.execution.actual_duration_seconds
-                      )}
-                    />
-                    <FieldRow
-                      label="Storage"
-                      value={formatStorage(extras.execution.actual_storage_mb)}
-                    />
-                    <FieldRow
-                      label="Success"
-                      value={extras.execution.success ? "yes" : "no"}
-                      valueClassName={
-                        extras.execution.success
-                          ? "text-[var(--oracle-verified)]"
-                          : "text-[var(--oracle-risk)]"
-                      }
-                    />
-                  </>
-                ) : null}
-                {extras.grade ? (
-                  <>
-                    <FieldRow
-                      label="Grade"
-                      value={extras.grade.scalar_accuracy_score.toFixed(3)}
-                    />
-                    <FieldRow
-                      label="Class"
-                      value={extras.grade.outcome_class}
-                    />
-                  </>
-                ) : null}
-              </dl>
-            </Section>
-          ) : null}
 
           <div>
             <Link
@@ -510,7 +461,7 @@ export default function ShadowExecutionPage() {
               ← Current Migration
             </Link>
           </div>
-        </>
+        </div>
       )}
     </div>
   )

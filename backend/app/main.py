@@ -211,6 +211,17 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Order matters and is counter-intuitive: Starlette *prepends* each
+    # add_middleware call, so the LAST one added is the OUTERMOST layer.
+    #
+    # CORS must therefore be added last. If an auth layer sits outside CORS,
+    # its 401s and the browser's OPTIONS preflight both come back without
+    # Access-Control-Allow-Origin, and every cross-origin request from the web
+    # app fails as an opaque CORS error instead of a readable 401. That stays
+    # invisible while auth is disabled (the middleware just calls through) and
+    # breaks the entire app the moment it is switched on.
+    app.add_middleware(DemoApiKeyMiddleware)
+    app.add_middleware(SessionAuthMiddleware)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -218,9 +229,6 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    # Outer-most after CORS: session auth (when enabled), then optional demo API key.
-    app.add_middleware(DemoApiKeyMiddleware)
-    app.add_middleware(SessionAuthMiddleware)
 
     @app.get("/")
     def root() -> dict[str, str]:

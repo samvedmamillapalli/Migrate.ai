@@ -21,7 +21,17 @@ Built for the [CockroachDB × AWS Hackathon](https://cockroachdb-ai.devpost.com/
 
 **Thesis:** Predict → verify → grade → remember — not another risk labeler.
 
-**Public URL:** _add after Phase 7 deploy_
+**Public URL:** _not yet published._ The AWS execution plane (Step Functions + 8
+Lambdas + S3 + Secrets Manager) **is** deployed and live in `us-east-1`, and CockroachDB
+Cloud is live — but the FastAPI control plane and Next.js console currently run
+locally. To publish them see [`docs/HOSTING.md`](docs/HOSTING.md); replace this line
+with the URL once they are up.
+
+**Judges: the local path is fully reproducible** — `python scripts/dev.py setup` then
+`python scripts/dev.py restart`, plus `npm run dev` in `frontend/oracle`. Test-account
+credentials are in [`docs/TEST_ACCOUNT.md`](docs/TEST_ACCOUNT.md), and every
+CockroachDB/AWS integration claim has a copy-pasteable verification command in
+[`docs/HACKATHON_TOOLS.md`](docs/HACKATHON_TOOLS.md).
 
 ## Stack
 
@@ -34,12 +44,26 @@ Built for the [CockroachDB × AWS Hackathon](https://cockroachdb-ai.devpost.com/
 | Orchestration | AWS Lambda + Step Functions + S3 + Secrets Manager + CloudWatch |
 | Shadow verify | CockroachDB Cloud clusters (`SHADOW_PROVIDER=ccloud_api` by default) |
 
-## CockroachDB tools used (demo claim)
+## CockroachDB tools used
 
-1. **Distributed Vector Indexing** — hybrid retrieval over `migration_memories` embeddings (`ix_migration_memories_embedding`).
-2. **Managed MCP / live job watch** — during ExecuteMigration we snapshot `SHOW JOBS` on the shadow cluster (same job surface MCP agents use) and attach attribution to run artifacts. IDE MCP config lives in `.cursor/mcp.json`.
+Every claim here has a verification command in
+[`docs/HACKATHON_TOOLS.md`](docs/HACKATHON_TOOLS.md) — run them rather than trusting
+the list.
 
-AWS: Bedrock + Lambda + Step Functions + S3 + Secrets Manager + CloudWatch.
+1. **Distributed Vector Indexing** — three distinct uses, two partial indexes:
+   owner-scoped hybrid retrieval that grounds each prediction
+   (`ix_migration_memories_embedding_scoped`, with `owner_identity` as a prefix
+   column), corpus-wide semantic search in the product UI
+   (`ix_migration_memories_embedding_ready`), and the investigating agent's own
+   `search_prior_migrations` tool querying its graded history mid-investigation.
+2. **CockroachDB Cloud Managed MCP Server** — a real read-only Bedrock tool-use agent
+   investigating the shadow cluster live after each migration, with every call's real
+   arguments and results persisted as receipts in the run's Model Traces.
+
+Not claimed: the **ccloud CLI** (deleted — it never ran; shadow clusters are
+provisioned via the Cloud REST API) and the **Agent Skills repo** (not used).
+
+AWS: Bedrock + Lambda + Step Functions + S3 + Secrets Manager + CloudWatch + EventBridge.
 
 ## Closed loop
 
@@ -172,7 +196,7 @@ For durable AWS execution-plane checks (Step Functions/Lambda/S3/Secrets/CloudWa
 python scripts/verify_phase8_full.py --skip-lambda-chain
 ```
 
-For a real browser walk-through (Next.js console — **not** the retired `/ui`):
+For a real browser walk-through of the Next.js console:
 
 1. Open `http://localhost:3000/dashboard`
 2. Create a migration (paste SQL)

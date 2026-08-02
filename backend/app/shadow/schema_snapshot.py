@@ -159,9 +159,9 @@ async def capture_shadow_snapshot(
                             limit=sample_limit,
                             match_row_ids=match_row_ids,
                         )
-            return ShadowSnapshot(
-                schema=metadata.model_dump(mode="json"), row_samples=row_samples
-            )
+                    dumped = metadata.model_dump(mode="json")
+                    await _fill_exact_row_counts(conn, dumped)
+            return ShadowSnapshot(schema=dumped, row_samples=row_samples)
         except Exception as exc:  # noqa: BLE001 - best-effort, never blocks migration
             last_exc = exc
             if attempt <= _SNAPSHOT_MAX_RETRIES:
@@ -183,6 +183,40 @@ async def capture_shadow_snapshot(
         },
     )
     return None
+
+
+# --- exact row counts -------------------------------------------------------
+
+
+async def _fill_exact_row_counts(
+    conn: AsyncConnection, snapshot: dict[str, Any]
+) -> None:
+    """Replace each table's ``estimated_row_count`` with a real ``count(*)``.
+
+    ``SchemaAnalyzer`` sources row counts from ``SHOW TABLES``, which reads
+    CockroachDB's table statistics. Statistics lag a bulk insert, so a table
+    the seeder just filled reports 0 rows for a while — which would render as
+    a confident, wrong "0" in the cluster comparison's ROWS column.
+
+    Counting exactly is affordable *here specifically* and nowhere else: this
+    only ever runs against the disposable shadow cluster, whose tables are
+    capped at ``TIER_ROW_CAPS`` (1k-50k rows). It is never used on the
+    customer's database, where a full scan per table would not be acceptable.
+
+    Best-effort and in-place: a table that fails to count keeps whatever
+    estimate it already had rather than failing the snapshot.
+    """
+    for schema in snapshot.get("schemas") or []:
+        schema_name = schema.get("name") or ""
+        if schema_name in _IGNORED_SCHEMAS:
+            continue
+        for table in schema.get("tables") or []:
+            table_name = table.get("name")
+            if not table_name:
+                continue
+            exact = await _count_rows(conn, _qualify(schema_name, table_name))
+            if exact is not None:
+                table["estimated_row_count"] = exact
 
 
 # --- row sampling -----------------------------------------------------------
