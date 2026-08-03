@@ -38,7 +38,10 @@ def test_integrity_block_marks_not_graded() -> None:
 
 def test_json_corpus_has_mechanism_summaries_and_spread() -> None:
     records = load_open_source_records()
-    assert 8 <= len(records) <= 20
+    # Upper bound raised from 20 -> 40 when the corpus grew from 11 to 20
+    # real sources (2026-08-03) — a sanity ceiling against accidental mass
+    # duplication, not a cap on legitimate curated growth.
+    assert 8 <= len(records) <= 40
     types = {r.migration_type for r in records}
     assert "create_index" in types
     assert "add_column" in types

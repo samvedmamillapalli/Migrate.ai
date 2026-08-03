@@ -1,0 +1,52 @@
+{
+  "source_key": "pgroll:examples/16_set_nullable",
+  "project": "pgroll",
+  "repo": "https://github.com/xataio/pgroll",
+  "license": "Apache-2.0",
+  "migration_file": "https://github.com/xataio/pgroll/blob/main/examples/16_set_nullable.yaml",
+  "incident_issue": "https://github.com/xataio/pgroll/blob/main/examples/16_set_nullable.yaml",
+  "migration_summary": "pgroll's declarative expand/contract pattern for making an existing nullable column NOT NULL without a blocking table scan: a new physical column is created behind the scenes, backfilled via an UPDATE-expression ('up') for every existing row, both old and new readers are dual-served through views during a migration window, and only once complete does the old column get dropped ('contract') and the constraint finalized. Converted from pgroll's YAML operation into the equivalent multi-step SQL it is documented to execute, since the source is a declarative config for a tool, not raw SQL.",
+  "migration_sql": "ALTER TABLE reviews ADD COLUMN _pgroll_new_review text; UPDATE reviews SET _pgroll_new_review = (CASE WHEN review IS NULL THEN product || ' is good' ELSE review END); ALTER TABLE reviews ALTER COLUMN _pgroll_new_review SET NOT NULL; ALTER TABLE reviews DROP COLUMN review; ALTER TABLE reviews RENAME COLUMN _pgroll_new_review TO review;",
+  "scale_tier": "large",
+  "migration_type": "backward_incompatible",
+  "parsed_statement_types": ["AlterTable", "Update"],
+  "schema_summary": "reviews table with a nullable text column being tightened to NOT NULL — the canonical zero-downtime backfill-then-constrain shape.",
+  "index_count": 6,
+  "table_complexity": 25,
+  "risk_flags": [
+    {
+      "rule_id": "backward_incompatible",
+      "severity": "medium",
+      "message": "Naively running ALTER TABLE ... ALTER COLUMN ... SET NOT NULL directly on a large table requires PostgreSQL to scan the whole table to validate the constraint while holding a table lock; pgroll's whole reason to exist is replacing that single blocking statement with an online expand/contract sequence."
+    }
+  ],
+  "risk_narrative": "This is the tool's own worked example of the specific pattern it exists to make safe: instead of one blocking `ALTER COLUMN ... SET NOT NULL` that validates every existing row under a lock, the value is computed via a per-row expression (here: fall back to a generated default when the old value was NULL) into a new column, both the old and new column are kept live and readable through pgroll-managed views during the migration window, and only the final 'complete' step drops the old column and renames the new one into place.",
+  "lessons_learned": "A NOT NULL constraint addition on a large, already-populated table is functionally a backfill (compute/verify a value for every existing NULL row) even when it's spelled as a single ALTER COLUMN statement — treat it with the same duration/lock expectations as an explicit UPDATE-then-constrain sequence, not as instant metadata change.",
+  "surprise_notes": "The 'down' expression in the same file (`down: review`) is the reverse-migration case — it has to define how to reconstruct the old nullable shape from the new NOT NULL one, which is trivial here (just read the new value back) but is not always so simple, and pgroll forces you to state it explicitly rather than assuming reversibility.",
+  "documented_outcomes": {
+    "success": true,
+    "actual_duration_seconds": null,
+    "actual_storage_mb": null,
+    "rollback_required": false,
+    "timed_out": false,
+    "error_message": null
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 900.0,
+    "estimated_storage_mb": 100.0,
+    "rollback_risk": "low",
+    "confidence_score": 0.6,
+    "risk_explanation": "Backfill cost scales with row count of the table; the expand/contract shape trades a longer total migration window for avoiding a single long blocking lock."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "expand_contract_pattern",
+    "duration_within_band": true,
+    "storage_within_band": true,
+    "rollback_within_band": true,
+    "dimension_details": {
+      "source": "open_source",
+      "note": "Real worked example from pgroll's own examples/ directory, converted from its declarative YAML operation format into the equivalent SQL sequence pgroll is documented to execute; not a literal SQL file in the source repo."
+    }
+  }
+}

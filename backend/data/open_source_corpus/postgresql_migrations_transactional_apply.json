@@ -1,0 +1,52 @@
+{
+  "source_key": "postgresql-migrations-purcell:documented_pattern/apply_migration",
+  "project": "postgresql-migrations (purcell)",
+  "repo": "https://github.com/purcell/postgresql-migrations",
+  "license": "MIT",
+  "migration_file": "https://github.com/purcell/postgresql-migrations/blob/master/migrations.sql",
+  "incident_issue": "https://github.com/purcell/postgresql-migrations/blob/master/migrations.sql",
+  "migration_summary": "A self-contained idempotency pattern for applying DDL from a single growing SQL file: a plpgsql apply_migration(name, ddl) function takes an EXCLUSIVE lock on its own bookkeeping table, checks whether a migration with that name has already been recorded, and if not, executes the DDL and records it in the same statement's transaction — so re-running the whole file is always safe. Real, verbatim content (the function definition and its own documented usage example) from the repo's single migrations.sql file.",
+  "migration_sql": "CREATE TABLE applied_migrations (\n  identifier TEXT NOT NULL PRIMARY KEY,\n  ddl TEXT NOT NULL,\n  applied_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()\n);\nLOCK TABLE applied_migrations IN EXCLUSIVE MODE;\nSELECT apply_migration('alter_things_table', $$\n  ALTER TABLE things ADD number INTEGER;\n  ALTER TABLE things ALTER name SET NOT NULL;\n$$);",
+  "scale_tier": "medium",
+  "migration_type": "backward_incompatible",
+  "parsed_statement_types": ["CreateTable", "AlterTable"],
+  "schema_summary": "Generic 'things' table used in the project's own documented usage example; the pattern itself is schema-agnostic.",
+  "index_count": 3,
+  "table_complexity": 15,
+  "risk_flags": [
+    {
+      "rule_id": "backward_incompatible",
+      "severity": "medium",
+      "message": "The documented example combines an additive ADD COLUMN with a same-migration ALTER COLUMN ... SET NOT NULL on an existing column in one apply_migration call; if the table already has rows and the new column has no default, the whole multi-statement DDL block fails atomically rather than partially applying."
+    }
+  ],
+  "risk_narrative": "The safety property this tool actually provides is re-run idempotency, not migration safety in the row-count sense: EXCLUSIVE-locking the bookkeeping table serializes concurrent apply attempts (so two deploys racing to run migrations.sql can't both apply the same migration), and recording success only after the DDL runs means a killed process leaves the migration unrecorded and safely re-runnable, not half-applied-and-silently-skipped. The tool explicitly documents that 'all statements will be run in a transaction' for a single migration block, which is a real, useful guarantee (all-or-nothing per named migration) but does not make the underlying DDL itself any cheaper or safer against locking/backfill cost.",
+  "lessons_learned": "Idempotent-application tooling (safe to re-run the whole migration file) and migration-safety tooling (safe against long locks and backfill cost on large tables) are two different problems — this pattern solves the first one well via a locked bookkeeping table and doesn't attempt to solve the second. Don't conflate 'this migration runner is safe to re-run' with 'this specific migration is safe to run on a large table'.",
+  "surprise_notes": "The EXCLUSIVE lock is on the bookkeeping table (applied_migrations), not on the tables being migrated — it prevents two concurrent deploys from double-applying the same migration, but provides no protection against the DDL itself blocking on unrelated concurrent activity against the target table.",
+  "documented_outcomes": {
+    "success": true,
+    "actual_duration_seconds": null,
+    "actual_storage_mb": null,
+    "rollback_required": false,
+    "timed_out": false,
+    "error_message": null
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 10.0,
+    "estimated_storage_mb": 1.0,
+    "rollback_risk": "medium",
+    "confidence_score": 0.5,
+    "risk_explanation": "Bookkeeping overhead is negligible; actual cost depends entirely on the wrapped DDL, which in the documented example includes a same-migration SET NOT NULL that assumes no NULLs already exist."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "documented_ops_guidance",
+    "duration_within_band": true,
+    "storage_within_band": true,
+    "rollback_within_band": true,
+    "dimension_details": {
+      "source": "open_source",
+      "note": "Real content (function definition + documented usage example) from purcell/postgresql-migrations' single migrations.sql file; the example migrations in that file are commented-out templates illustrating usage, not an executed migration history, and are represented here as such."
+    }
+  }
+}

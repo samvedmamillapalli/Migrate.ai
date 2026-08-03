@@ -29,6 +29,13 @@ class SlackInstallation(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     team_id: Mapped[str] = mapped_column(String(64), nullable=False)
     team_name: Mapped[str | None] = mapped_column(String(256), nullable=True)
     bot_user_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    # Slack user ID of the person who completed the OAuth install
+    # (``authed_user.id`` in the token-exchange response). Lifecycle
+    # notifications DM this user directly rather than posting to a
+    # hardcoded channel name — see SlackNotificationService.send_message.
+    # Nullable so pre-existing rows (installed before this column existed)
+    # degrade to the SLACK_DEFAULT_CHANNEL fallback instead of failing.
+    authed_user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Stored encrypted when SLACK_TOKEN_ENCRYPTION_KEY is set; otherwise
     # plaintext with a startup warning (may be acceptable in dev only).
     bot_access_token: Mapped[str] = mapped_column(Text, nullable=False)

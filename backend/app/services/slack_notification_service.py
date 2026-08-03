@@ -61,7 +61,7 @@ class SlackNotificationService:
         self,
         *,
         owner_identity: str,
-        channel: str,
+        channel: str | None = None,
         run_id: uuid.UUID,
         migration_name: str,
         status: str,
@@ -84,7 +84,7 @@ class SlackNotificationService:
         self,
         *,
         owner_identity: str,
-        channel: str,
+        channel: str | None = None,
         run_id: uuid.UUID,
         migration_name: str,
         status: str,
@@ -107,7 +107,7 @@ class SlackNotificationService:
         self,
         *,
         owner_identity: str,
-        channel: str,
+        channel: str | None = None,
         run_id: uuid.UUID,
         migration_name: str,
         status: str,
@@ -130,7 +130,7 @@ class SlackNotificationService:
         self,
         *,
         owner_identity: str,
-        channel: str,
+        channel: str | None = None,
         run_id: uuid.UUID,
         migration_name: str,
         status: str,
@@ -154,14 +154,24 @@ class SlackNotificationService:
     async def send_message(
         self,
         owner_identity: str,
-        channel: str,
+        channel: str | None,
         blocks: list[dict[str, Any]],
     ) -> bool:
-        """Look up the installation, decrypt the bot token, and post to Slack.
+        """Look up the installation, resolve a channel, decrypt the bot
+        token, and post to Slack.
+
+        Channel resolution, in order: an explicit ``channel`` argument; the
+        Slack user ID of whoever completed the OAuth install
+        (``installation.authed_user_id`` — a DM, requiring only the
+        ``chat:write`` scope already requested); ``SLACK_DEFAULT_CHANNEL`` as
+        a last resort for installations that predate the ``authed_user_id``
+        column. A named channel the bot hasn't joined fails with
+        ``not_in_channel`` — DMing the installer avoids that failure mode
+        entirely, which is why it's preferred over the env-var default.
 
         Best-effort: never raises. Returns ``True`` when Slack acknowledged
-        the message; ``False`` for any failure (missing installation, bad
-        token, network error, Slack API error).
+        the message; ``False`` for any failure (missing installation, no
+        resolvable channel, bad token, network error, Slack API error).
         """
         try:
             owner = (owner_identity or "").strip()
@@ -169,19 +179,25 @@ class SlackNotificationService:
                 logger.warning("Slack notification skipped: owner_identity is empty")
                 return False
 
-            channel = (channel or "").strip()
-            if not channel:
-                logger.warning(
-                    "Slack notification skipped: channel is empty",
-                    extra={"owner_identity": owner},
-                )
-                return False
-
             installation = await self._repository.get_by_owner(owner)
             if installation is None:
                 logger.info(
                     "Slack notification skipped: no Slack installation for owner",
                     extra={"owner_identity": owner},
+                )
+                return False
+
+            resolved_channel = (
+                (channel or "").strip()
+                or (installation.authed_user_id or "").strip()
+                or (self._settings.slack_default_channel or "").strip()
+            )
+            if not resolved_channel:
+                logger.warning(
+                    "Slack notification skipped: no channel could be resolved "
+                    "(no explicit channel, no authed_user_id on the "
+                    "installation, no SLACK_DEFAULT_CHANNEL configured)",
+                    extra={"owner_identity": owner, "team_id": installation.team_id},
                 )
                 return False
 
@@ -196,7 +212,7 @@ class SlackNotificationService:
                 return False
 
             payload = {
-                "channel": channel,
+                "channel": resolved_channel,
                 "blocks": blocks,
             }
             headers = {
@@ -253,7 +269,7 @@ class SlackNotificationService:
                 extra={
                     "owner_identity": owner,
                     "team_id": installation.team_id,
-                    "channel": channel,
+                    "channel": resolved_channel,
                 },
             )
             return True
@@ -275,7 +291,7 @@ class SlackNotificationService:
         self,
         *,
         owner_identity: str,
-        channel: str,
+        channel: str | None = None,
         notification_key: str,
         run_id: uuid.UUID,
         migration_name: str,

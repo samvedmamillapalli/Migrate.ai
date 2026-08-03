@@ -186,9 +186,13 @@ class Settings(BaseSettings):
         default="http://localhost:3000",
         validation_alias="FRONTEND_URL",
     )
-    # Default Slack channel for lifecycle notifications. Temporary demo
-    # default — later replaced with a per-user preference when the
-    # SlackInstallation model gains a channel column.
+    # Last-resort fallback channel for lifecycle notifications, used only
+    # when SlackNotificationService has no explicit channel and the
+    # installation predates the authed_user_id column (see
+    # slack_installations migration q2l8i5d9e6a7) — the normal path DMs the
+    # user who completed the OAuth install instead of posting to a named
+    # channel, which requires no scope beyond chat:write and cannot fail
+    # with not_in_channel the way an un-joined named channel can.
     slack_default_channel: str = Field(
         default="general",
         validation_alias="SLACK_DEFAULT_CHANNEL",

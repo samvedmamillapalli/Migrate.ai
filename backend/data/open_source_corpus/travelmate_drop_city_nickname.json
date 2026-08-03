@@ -1,0 +1,52 @@
+{
+  "source_key": "travelmate:migrations/0022_remove_city_nickname",
+  "project": "Travel Mate (server)",
+  "repo": "https://github.com/project-travel-mate/server",
+  "license": "MIT",
+  "migration_file": "https://github.com/project-travel-mate/server/blob/master/api/migrations/0022_remove_city_nickname.py",
+  "incident_issue": "https://github.com/project-travel-mate/server/blob/master/api/migrations/0022_remove_city_nickname.py",
+  "migration_summary": "Drop the nickname column from the City model, one migration after it was added (0018_city_nickname) and populated. Converted faithfully from the real Django RemoveField operation to the single equivalent PostgreSQL DDL statement it generates.",
+  "migration_sql": "ALTER TABLE api_city DROP COLUMN nickname;",
+  "scale_tier": "small",
+  "migration_type": "drop_column",
+  "parsed_statement_types": ["AlterTable"],
+  "schema_summary": "api_city is a small reference/lookup table (cities available in the app), not a high-write operational table.",
+  "index_count": 2,
+  "table_complexity": 8,
+  "risk_flags": [
+    {
+      "rule_id": "drop_column",
+      "severity": "high",
+      "message": "DROP COLUMN is destructive and irreversible without a backup or a preserved down-migration; any application code, serializer, or admin view still reading api_city.nickname breaks immediately on deploy."
+    }
+  ],
+  "risk_narrative": "This project's own migration history shows the field being added (0018) and then removed four migrations later (0022) — a real example of a column that was added, never fully adopted, and cleaned up. Even on a small table, the operation itself is unconditionally destructive: the data is gone the moment the migration runs, and Django's own reverse migration for RemoveField is a no-op (there is no way to regenerate the dropped values), so 'rollback' here really means 're-add an empty column', not 'restore the data'.",
+  "lessons_learned": "DROP COLUMN risk is about irreversibility of the data, not about table size or lock duration — a tiny table doesn't make a destructive change safe, it just makes the blast radius small. Confirm nothing (application code, reports, exports) still reads a column before dropping it, since the migration tool cannot warn about consumers outside its own schema history.",
+  "surprise_notes": null,
+  "documented_outcomes": {
+    "success": true,
+    "actual_duration_seconds": null,
+    "actual_storage_mb": null,
+    "rollback_required": false,
+    "timed_out": false,
+    "error_message": null
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 5.0,
+    "estimated_storage_mb": 0.0,
+    "rollback_risk": "high",
+    "confidence_score": 0.7,
+    "risk_explanation": "Fast on a small table, but the data itself is unrecoverable once the column is dropped."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "irreversible_drop",
+    "duration_within_band": true,
+    "storage_within_band": true,
+    "rollback_within_band": true,
+    "dimension_details": {
+      "source": "open_source",
+      "note": "Real production migration from Travel Mate server's Django migration set (api/migrations); migration_sql is the exact PostgreSQL DDL Django's migration executor generates for this RemoveField operation."
+    }
+  }
+}

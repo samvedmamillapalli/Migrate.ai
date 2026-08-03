@@ -22,7 +22,6 @@ from app.aws.workflow import (
     stop_workflow_execution,
 )
 from app.aws.workflow.models import WorkflowStatus as AwsWorkflowStatus
-from app.config import get_settings
 from app.core.exceptions import ConflictError, ValidationError
 from app.core.logging import get_logger
 from app.database.models import CCloudAuditEvent, MigrationRun, MigrationRunStatus, WorkflowStatus
@@ -81,7 +80,6 @@ class WorkflowOrchestrationService:
         self._aws_clients = aws_clients
         self._aws_settings = aws_settings
         self._slack_notifications = slack_notifications
-        self._settings = get_settings()
 
     async def start_for_run(
         self,
@@ -379,7 +377,10 @@ class WorkflowOrchestrationService:
         try:
             await self._slack_notifications.send_shadow_started(
                 owner_identity=run.owner_identity or "",
-                channel=self._settings.slack_default_channel,
+                # None -> SlackNotificationService resolves the channel:
+                # DM the OAuth installer first, slack_default_channel only
+                # as a fallback for rows predating authed_user_id.
+                channel=None,
                 run_id=run.id,
                 migration_name=derive_migration_name(run.migration_sql),
                 status=run.status.value,
@@ -422,7 +423,7 @@ class WorkflowOrchestrationService:
                     description = description_override
                 await self._slack_notifications.send_shadow_completed(
                     owner_identity=run.owner_identity or "",
-                    channel=self._settings.slack_default_channel,
+                    channel=None,
                     run_id=run.id,
                     migration_name=derive_migration_name(run.migration_sql),
                     status=run.status.value,
@@ -438,7 +439,7 @@ class WorkflowOrchestrationService:
                     description = description_override
                 await self._slack_notifications.send_shadow_failed(
                     owner_identity=run.owner_identity or "",
-                    channel=self._settings.slack_default_channel,
+                    channel=None,
                     run_id=run.id,
                     migration_name=derive_migration_name(run.migration_sql),
                     status=run.status.value,

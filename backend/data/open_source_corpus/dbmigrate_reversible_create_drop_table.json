@@ -1,0 +1,46 @@
+{
+  "source_key": "dbmigrate:examples/0002.add_companies_table",
+  "project": "dbmigrate",
+  "repo": "https://github.com/Keats/dbmigrate",
+  "license": "MIT OR Apache-2.0 (dual-licensed; LICENSE-MIT and LICENSE-APACHE both present in the repo)",
+  "migration_file": "https://github.com/Keats/dbmigrate/blob/master/dbmigrate/examples/migrations/sql/0002.add_companies_table.up.sql",
+  "incident_issue": "https://github.com/Keats/dbmigrate/blob/master/dbmigrate/examples/migrations/sql/0002.add_companies_table.down.sql",
+  "migration_summary": "Plain up.sql/down.sql pair creating (and, in the paired down migration, dropping) a simple companies table. Real, verbatim example content from dbmigrate's own examples/ directory, included as a clean baseline of what a fully reversible migration looks like — contrast against the irreversible DROP COLUMN (Travel Mate) and one-way data backfills (Zulip, Mattermost) elsewhere in this corpus.",
+  "migration_sql": "CREATE TABLE IF NOT EXISTS companies (\n  id SERIAL PRIMARY KEY,\n  name TEXT NOT NULL\n);",
+  "scale_tier": "small",
+  "migration_type": "create_table",
+  "parsed_statement_types": ["CreateTable"],
+  "schema_summary": "New standalone table, no existing rows, no foreign keys into or out of it in this example.",
+  "index_count": 1,
+  "table_complexity": 3,
+  "risk_flags": [],
+  "risk_narrative": "CREATE TABLE has no rows to touch and no existing consumers, so it carries essentially none of the risk categories (backfill cost, lock contention, irreversibility) that dominate the rest of this corpus. Its value here is as a contrast case: dbmigrate's own down.sql for this same migration (`DROP TABLE IF EXISTS companies;`) is a true, lossless inverse, because nothing has written to the table yet — a property that stops holding the moment real data exists, which is exactly why later 'reverse' migrations in almost every other real project in this corpus are not simple structural opposites.",
+  "lessons_learned": "'Reversible' is easy to achieve for a migration that creates something new and hard to achieve for one that removes or transforms something with existing data — the up/down symmetry in a template or a fresh example does not generalize to production migrations once real rows are involved. Use this shape as the baseline the safety of other patterns is measured against, not as a claim that all migrations are this simple to reverse.",
+  "surprise_notes": null,
+  "documented_outcomes": {
+    "success": true,
+    "actual_duration_seconds": null,
+    "actual_storage_mb": null,
+    "rollback_required": false,
+    "timed_out": false,
+    "error_message": null
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 1.0,
+    "estimated_storage_mb": 0.0,
+    "rollback_risk": "low",
+    "confidence_score": 0.9,
+    "risk_explanation": "New empty table; no backfill, no lock contention, and a true lossless down-migration is available."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "low_risk_additive",
+    "duration_within_band": true,
+    "storage_within_band": true,
+    "rollback_within_band": true,
+    "dimension_details": {
+      "source": "open_source",
+      "note": "Real example migration pair, verbatim, from Keats/dbmigrate's examples/migrations/sql/ directory."
+    }
+  }
+}

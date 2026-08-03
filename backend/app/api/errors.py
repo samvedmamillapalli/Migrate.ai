@@ -15,6 +15,8 @@ from app.core.exceptions import (
     SchemaNetworkError,
     SchemaSSLError,
     SchemaTimeoutError,
+    SlackOAuthError,
+    SlackStateError,
     UnauthorizedError,
     UnsupportedDatabaseError,
     ValidationError,
@@ -54,6 +56,15 @@ _STATUS_BY_ERROR: dict[type[AppError], int] = {
     GradingConfigError: status.HTTP_500_INTERNAL_SERVER_ERROR,
     EmbeddingAccessError: status.HTTP_503_SERVICE_UNAVAILABLE,
     EmbeddingInvocationError: status.HTTP_502_BAD_GATEWAY,
+    # SlackOAuthError covers both "not configured" (missing client id/secret/
+    # redirect URI — a server misconfiguration) and "Slack's token exchange
+    # rejected the code" (an upstream failure). 503 fits the former exactly
+    # and is a defensible approximation of the latter — same choice already
+    # made for BedrockAccessError/AwsConfigurationError above. Before this
+    # entry, both cases fell through to the default 400, which mislabeled a
+    # server-side config problem as a client error.
+    SlackOAuthError: status.HTTP_503_SERVICE_UNAVAILABLE,
+    SlackStateError: status.HTTP_400_BAD_REQUEST,
 }
 
 

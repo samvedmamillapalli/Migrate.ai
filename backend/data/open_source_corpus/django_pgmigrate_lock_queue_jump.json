@@ -1,0 +1,52 @@
+{
+  "source_key": "django-pgmigrate:documented_pattern/lock_queue_jumping",
+  "project": "django-pgmigrate",
+  "repo": "https://github.com/AmbitionEng/django-pgmigrate",
+  "license": "BSD-3-Clause",
+  "migration_file": "https://github.com/AmbitionEng/django-pgmigrate#readme",
+  "incident_issue": "https://github.com/AmbitionEng/django-pgmigrate#readme",
+  "migration_summary": "A representative ALTER TABLE against a model with an existing long-running reader/writer, illustrating the exact scenario django-pgmigrate's README documents as its reason to exist: a routine schema change queues behind an already-open transaction's lock and, because PostgreSQL grants locks in request order, every subsequent query against that table then queues behind the migration too — a short ALTER TABLE turns into an outage for the whole table, not just a slow migration.",
+  "migration_sql": "ALTER TABLE accounts_user ADD COLUMN last_login_ip inet;",
+  "scale_tier": "medium",
+  "migration_type": "add_column",
+  "parsed_statement_types": ["AlterTable"],
+  "schema_summary": "A typical Django user/accounts table under active read/write traffic — the pattern applies to any table with concurrent long-running transactions, not to this specific column addition.",
+  "index_count": 5,
+  "table_complexity": 20,
+  "risk_flags": [
+    {
+      "rule_id": "backward_incompatible",
+      "severity": "medium",
+      "message": "PostgreSQL grants locks strictly in request order: a migration's ALTER TABLE requesting ACCESS EXCLUSIVE behind an already-open transaction doesn't just wait for that transaction to finish, it also blocks every query submitted after it against the same table, since those queries now queue behind the migration's pending lock request too."
+    }
+  ],
+  "risk_narrative": "django-pgmigrate exists specifically to prevent this failure mode: a long-running task holds any open transaction that has touched the target model (even a read), then a routine `python manage.py migrate` requests an ACCESS EXCLUSIVE lock for its ALTER TABLE and queues behind it. Because Postgres's lock queue is FIFO by relation, every subsequent query against that table — not just future migrations — now queues behind the migration's pending request too, turning a fast ALTER TABLE into a full-table outage for the duration of the original long-running transaction. The project's fix is operational, not SQL-level: detect and (optionally) auto-terminate the blocking query, or enforce a lock_timeout so the migration fails fast instead of queuing indefinitely.",
+  "lessons_learned": "A migration's own predicted duration can be near-instant and still cause a real incident if it queues behind an unrelated long-running transaction on the same table — the risk isn't in the DDL statement itself, it's in what else is concurrently open against that table. Setting a lock_timeout on migrations converts an unbounded, invisible wait into a fast, visible failure that can be retried, which is strictly safer than an indefinite queue-jump outage.",
+  "surprise_notes": "The dangerous part isn't the migration's own lock duration — it's near-zero — it's that PostgreSQL's FIFO lock queue makes the migration's mere presence in the queue block everything requested after it, even queries that would have run instantly if the migration weren't there.",
+  "documented_outcomes": {
+    "success": true,
+    "actual_duration_seconds": null,
+    "actual_storage_mb": null,
+    "rollback_required": false,
+    "timed_out": false,
+    "error_message": null
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 2.0,
+    "estimated_storage_mb": 0.0,
+    "rollback_risk": "low",
+    "confidence_score": 0.5,
+    "risk_explanation": "The ALTER TABLE itself is cheap; the real risk is queueing behind a concurrent long-running transaction on the same table, which this estimate cannot see without runtime lock-queue visibility."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "lock_queue_contention",
+    "duration_within_band": true,
+    "storage_within_band": true,
+    "rollback_within_band": true,
+    "dimension_details": {
+      "source": "open_source",
+      "note": "django-pgmigrate is a Django migration-safety tool, not an application with its own migration history; this record represents the documented operational pattern from the project's own README (blocking-query detection, lock_timeout enforcement), not a specific migration file, since none exists in the tool's own repo."
+    }
+  }
+}

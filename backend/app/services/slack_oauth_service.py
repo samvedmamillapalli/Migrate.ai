@@ -37,14 +37,21 @@ _SLACK_TOKEN_URL = "https://slack.com/api/oauth.v2.access"
 _STATE_VERSION = 1
 
 
-def _get_fernet() -> Any | None:
+def _get_fernet(settings: Settings | None = None) -> Any | None:
     """Return a Fernet cipher for token encryption, or None when unset.
 
     In non-production environments an unset key falls back to an ephemeral
     key derived from the app's database URL so local demos still work. In
     production an unset key is a hard error.
+
+    Accepts an explicit ``settings`` so callers with an injected instance
+    (``SlackOAuthService._settings``) don't silently fall back to a fresh
+    global lookup that ignores that injection — that mismatch previously
+    meant two service instances built with different ``Settings`` still
+    encrypted/decrypted tokens using whichever settings ``get_settings()``'s
+    cache happened to return, not the instance's own configuration.
     """
-    settings = get_settings()
+    settings = settings or get_settings()
     raw = settings.slack_token_encryption_key
     if raw is not None and raw.get_secret_value().strip():
         try:
@@ -185,13 +192,13 @@ class SlackOAuthService:
     # --- Token encryption ---
 
     def encrypt_token(self, token: str) -> str:
-        fernet = _get_fernet()
+        fernet = _get_fernet(self._settings)
         if fernet is None:
             return token
         return fernet.encrypt(token.encode("utf-8")).decode("ascii")
 
     def decrypt_token(self, ciphertext: str) -> str:
-        fernet = _get_fernet()
+        fernet = _get_fernet(self._settings)
         if fernet is None:
             return ciphertext
         try:
@@ -313,6 +320,12 @@ class SlackOAuthService:
 
         token_data = await self.exchange_code(code)
 
+        # exchange_code returns "" (never None) when Slack's response omitted
+        # authed_user.id — normalize to None so the model's nullable column
+        # and the notification service's fallback chain both see "absent"
+        # consistently, rather than persisting an empty string as a value.
+        authed_user_id = token_data.get("authed_user_id") or None
+
         async def _commit() -> tuple[SlackInstallation, bool]:
             existing = await self._repository.get_by_owner(owner)
             now = datetime.now(UTC)
@@ -322,6 +335,7 @@ class SlackOAuthService:
                 existing.team_id = token_data["team_id"]
                 existing.team_name = token_data["team_name"]
                 existing.bot_user_id = token_data["bot_user_id"]
+                existing.authed_user_id = authed_user_id
                 existing.bot_access_token = encrypted
                 existing.scope = token_data["scope"]
                 existing.installed_at = now
@@ -332,6 +346,7 @@ class SlackOAuthService:
                     team_id=token_data["team_id"],
                     team_name=token_data["team_name"],
                     bot_user_id=token_data["bot_user_id"],
+                    authed_user_id=authed_user_id,
                     bot_access_token=encrypted,
                     scope=token_data["scope"],
                     installed_at=now,

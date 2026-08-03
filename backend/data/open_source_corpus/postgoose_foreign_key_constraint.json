@@ -1,0 +1,52 @@
+{
+  "source_key": "postgoose:tests/master_migrations/2",
+  "project": "postgoose",
+  "repo": "https://github.com/leantaas/postgoose",
+  "license": "Apache-2.0",
+  "migration_file": "https://github.com/leantaas/postgoose/blob/master/tests/master_migrations/2_up.sql",
+  "incident_issue": "https://github.com/leantaas/postgoose/blob/master/tests/master_migrations/2_down.sql",
+  "migration_summary": "A foreign key declared inline at table-creation time, referencing rows committed by the immediately-preceding migration — the cheap end of the foreign_key_add risk spectrum, since there is no existing-row validation scan the way there would be on an ALTER TABLE ADD CONSTRAINT against a populated table. Real, verbatim test-fixture content from postgoose's own migration test suite.",
+  "migration_sql": "CREATE TABLE ys (\n  y int not null primary key,\n  x varchar(32) not null references xs (x)\n);\nINSERT INTO ys (y, x) VALUES (1, 'a'), (2, 'a'), (3, 'b'), (4, 'c'), (5, 'c'), (6, 'c'), (7, 'd');",
+  "scale_tier": "small",
+  "migration_type": "create_table",
+  "parsed_statement_types": ["CreateTable", "Insert"],
+  "schema_summary": "Two-table setup: xs (referenced) and ys (referencing xs.x via a REFERENCES foreign key), created across two sequential migrations in the same migration run.",
+  "index_count": 2,
+  "table_complexity": 10,
+  "risk_flags": [
+    {
+      "rule_id": "foreign_key_add",
+      "severity": "medium",
+      "message": "A REFERENCES constraint declared inline on CREATE TABLE is validated for every inserted row going forward and requires the referenced table/values to already exist at the time rows are inserted, unlike adding a foreign key to an already-populated table (which validates every existing row up front)."
+    }
+  ],
+  "risk_narrative": "This is the cheap case of the foreign_key_add risk category: the constraint is declared on a brand-new, empty table (CREATE TABLE ... REFERENCES ...), not added to a table that already has rows, so there is no existing-row validation scan — the cost is paid per-INSERT going forward instead of once, up front, at ALTER TABLE time. Ordering matters operationally: migration 2 depends on migration 1 (xs) already having committed the exact values ('a', 'b', 'c', 'd') that migration 2's INSERTs reference, so the two migrations are not independently reorderable.",
+  "lessons_learned": "Foreign key risk is very different depending on whether the constraint is declared at CREATE TABLE time on an empty table (cheap, no existing-row scan) versus ALTER TABLE ADD CONSTRAINT on a table that already has rows (expensive, validates every existing row against the referenced table). Migration ordering that depends on values committed by an earlier migration is an implicit dependency the migration tool won't enforce for you beyond file ordering — get the sequence wrong and the INSERT fails on a missing foreign key value, not on a schema error.",
+  "surprise_notes": null,
+  "documented_outcomes": {
+    "success": true,
+    "actual_duration_seconds": null,
+    "actual_storage_mb": null,
+    "rollback_required": false,
+    "timed_out": false,
+    "error_message": null
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 1.0,
+    "estimated_storage_mb": 0.0,
+    "rollback_risk": "low",
+    "confidence_score": 0.75,
+    "risk_explanation": "New table with a constraint declared at creation time (no existing-row validation scan); cost is bounded by the small seed INSERT."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "low_risk_additive",
+    "duration_within_band": true,
+    "storage_within_band": true,
+    "rollback_within_band": true,
+    "dimension_details": {
+      "source": "open_source",
+      "note": "Real test-fixture migration, verbatim, from leantaas/postgoose's tests/master_migrations/ directory."
+    }
+  }
+}

@@ -264,6 +264,14 @@ Then copy stack outputs into `.env`:
 - [`docs/PHASE_9_AI_PREDICTION.md`](docs/PHASE_9_AI_PREDICTION.md)
 - [`docs/PHASE_10_GRADING_AND_MEMORY.md`](docs/PHASE_10_GRADING_AND_MEMORY.md)
 - [`docs/HACKATHON_TOOLS.md`](docs/HACKATHON_TOOLS.md) — tool narrative for judges
+- [`docs/SLACK_INTEGRATION.md`](docs/SLACK_INTEGRATION.md) — Slack lifecycle
+  notifications + the local→deployed OAuth checklist
+- [`docs/DEFERRED_LAMBDA_WORK.md`](docs/DEFERRED_LAMBDA_WORK.md) — fixes that
+  only take effect after a `sam build` + `sam deploy`; batch these
+- [`docs/corpus_info.md`](docs/corpus_info.md) — open-source migration corpus
+  research: sources, licenses, what was included/excluded and why
+- [`docs/AGPL_DISCLOSURE.md`](docs/AGPL_DISCLOSURE.md) — the one AGPL-sourced
+  corpus entry (Mattermost) and why its inclusion is scoped and defensible
 
 ## License
 

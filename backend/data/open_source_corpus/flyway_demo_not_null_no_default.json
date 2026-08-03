@@ -1,0 +1,52 @@
+{
+  "source_key": "postgresql-flyway-demo:migrations/V1.01__addcolumn",
+  "project": "postgresql-flyway-demo",
+  "repo": "https://github.com/arinpro/postgresql-flyway-demo",
+  "license": "Apache-2.0",
+  "migration_file": "https://github.com/arinpro/postgresql-flyway-demo/blob/main/migrations/V1.01__addcolumn.sql",
+  "incident_issue": "https://github.com/arinpro/postgresql-flyway-demo/blob/main/migrations/V1.01__addcolumn.sql",
+  "migration_summary": "Add a NOT NULL column with no DEFAULT to a table created in the immediately-preceding Flyway migration (V1.00). Real, verbatim SQL from the repo's own migrations/ folder.",
+  "migration_sql": "ALTER TABLE customers ADD COLUMN name VARCHAR(10) NOT NULL;",
+  "scale_tier": "small",
+  "migration_type": "add_column",
+  "parsed_statement_types": ["AlterTable"],
+  "schema_summary": "customers table with a single existing PRIMARY KEY column (id); the migration adds a second column.",
+  "index_count": 1,
+  "table_complexity": 5,
+  "risk_flags": [
+    {
+      "rule_id": "missing_default_on_not_null",
+      "severity": "high",
+      "message": "ADD COLUMN ... NOT NULL with no DEFAULT has no value to backfill existing rows with; PostgreSQL rejects the statement outright on any table that already has rows, rather than running slowly."
+    }
+  ],
+  "risk_narrative": "This exact statement only succeeds in the demo because V1.00 creates the customers table and V1.01 runs before any row is ever inserted — on a table with even one existing row, PostgreSQL raises `column \"name\" of relation \"customers\" contains null values` and the migration fails outright rather than degrading gracefully. This is a common first mistake when hand-writing an ADD COLUMN ... NOT NULL: it works in a fresh dev database (always empty) and fails the first time it's run against anything with real data.",
+  "lessons_learned": "ADD COLUMN ... NOT NULL needs either a DEFAULT (cheap in modern Postgres — a metadata-only change since PG 11 for a constant default) or a separate backfill step before the constraint is added, on any table that might have existing rows. Testing a migration only against an empty database will not catch this failure mode.",
+  "surprise_notes": "The statement is syntactically valid and will be accepted by any SQL linter; the failure is purely data-dependent (fails only when the target table is non-empty), which is exactly the kind of failure that a fresh empty dev/CI database won't catch before it reaches a real environment.",
+  "documented_outcomes": {
+    "success": true,
+    "actual_duration_seconds": null,
+    "actual_storage_mb": null,
+    "rollback_required": false,
+    "timed_out": false,
+    "error_message": null
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 1.0,
+    "estimated_storage_mb": 0.0,
+    "rollback_risk": "low",
+    "confidence_score": 0.5,
+    "risk_explanation": "Succeeds instantly on an empty table (as in this demo); fails outright rather than running slowly on any table that already has rows, which this scale-tier/confidence estimate does not capture without knowing whether the target table is populated."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "missing_default_failure_mode",
+    "duration_within_band": true,
+    "storage_within_band": true,
+    "rollback_within_band": true,
+    "dimension_details": {
+      "source": "open_source",
+      "note": "Real migration file, verbatim, from arinpro/postgresql-flyway-demo's migrations/ folder — a small demo repo, included specifically because it demonstrates a common ADD COLUMN NOT NULL mistake, not because of its scale."
+    }
+  }
+}

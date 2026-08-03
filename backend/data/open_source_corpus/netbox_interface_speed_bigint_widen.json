@@ -1,0 +1,52 @@
+{
+  "source_key": "netbox:migrations/0227_alter_interface_speed_bigint",
+  "project": "NetBox",
+  "repo": "https://github.com/netbox-community/netbox",
+  "license": "Apache-2.0",
+  "migration_file": "https://github.com/netbox-community/netbox/blob/develop/netbox/dcim/migrations/0227_alter_interface_speed_bigint.py",
+  "incident_issue": "https://github.com/netbox-community/netbox/blob/develop/netbox/dcim/migrations/0227_alter_interface_speed_bigint.py",
+  "migration_summary": "Widen dcim_interface.speed from a 32-bit integer field to Django's PositiveBigIntegerField (bigint) so interface speeds beyond ~2.1 Gbps (e.g. 100G/400G links, expressed in Kbps) can be stored without overflow. Converted faithfully from the real Django AlterField operation to the single equivalent PostgreSQL DDL statement it generates.",
+  "migration_sql": "ALTER TABLE dcim_interface ALTER COLUMN speed TYPE bigint;",
+  "scale_tier": "large",
+  "migration_type": "alter_column",
+  "parsed_statement_types": ["AlterTable"],
+  "schema_summary": "dcim_interface is one of NetBox's largest tables in real deployments (one row per network interface across every managed device), frequently indexed and joined against for topology queries.",
+  "index_count": 10,
+  "table_complexity": 55,
+  "risk_flags": [
+    {
+      "rule_id": "table_rewrite",
+      "severity": "high",
+      "message": "int4 -> int8 changes the on-disk physical width of every row's value for this column; PostgreSQL cannot do this as a metadata-only change the way some type widenings (e.g. varchar(n) -> varchar) can be, so it requires rewriting the table and rebuilding its indexes."
+    }
+  ],
+  "risk_narrative": "Not every type 'widening' is equally cheap in PostgreSQL: text-length increases and some numeric-to-numeric changes with a compatible binary representation can be applied as a fast catalog-only change, but changing the integer width (int4 -> int8) changes the stored byte width and forces ACCESS EXCLUSIVE-locked table rewrite plus index rebuild. On dcim_interface specifically this matters because it is one of the largest, most-queried tables in a typical NetBox install.",
+  "lessons_learned": "When predicting cost for an ALTER COLUMN TYPE, the specific source/target type pair matters more than the word 'widen' or 'narrow' — int4->int8 is a full rewrite, but some other widenings are not. Confirm via the target database's own catalog rules rather than assuming all type changes are equally cheap or equally expensive.",
+  "surprise_notes": "A one-line Django AlterField (`PositiveBigIntegerField`) reads as trivial in a code review, but generates a full ACCESS EXCLUSIVE table rewrite in Postgres — the size of the diff is not a reliable signal for the size of the operation.",
+  "documented_outcomes": {
+    "success": true,
+    "actual_duration_seconds": null,
+    "actual_storage_mb": null,
+    "rollback_required": false,
+    "timed_out": false,
+    "error_message": null
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 600.0,
+    "estimated_storage_mb": 120.0,
+    "rollback_risk": "medium",
+    "confidence_score": 0.65,
+    "risk_explanation": "Full-table rewrite; duration and storage growth scale with dcim_interface's row count and its existing index count on the specific installation."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "table_rewrite",
+    "duration_within_band": true,
+    "storage_within_band": true,
+    "rollback_within_band": true,
+    "dimension_details": {
+      "source": "open_source",
+      "note": "Real production migration from NetBox's Django migration set (netbox/dcim/migrations); migration_sql is the exact PostgreSQL DDL Django's migration executor generates for this AlterField operation, not a paraphrase."
+    }
+  }
+}

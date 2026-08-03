@@ -752,6 +752,96 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/slack/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start Slack OAuth installation
+         * @description Generate the Slack OAuth authorize URL for the authenticated user.
+         *
+         *     Requires a valid Clerk bearer token. The returned ``state`` is signed and
+         *     TTL-bounded; the browser must be redirected to ``authorize_url`` to begin
+         *     the OAuth flow.
+         */
+        get: operations["slack_install_api_slack_install_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/slack/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Slack OAuth callback
+         * @description Handle Slack's OAuth redirect back to the application.
+         *
+         *     This route is public (the browser follows Slack's redirect with no
+         *     Authorization header). The signed ``state`` is verified first, and the
+         *     embedded owner identity is used to associate the installation with the
+         *     correct Clerk user. On failure, the browser is redirected to the
+         *     configured error URL with ``?slack=error``.
+         */
+        get: operations["slack_oauth_callback_api_slack_oauth_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/slack/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Slack Status
+         * @description Return whether Slack is configured and connected for this user.
+         */
+        get: operations["slack_status_api_slack_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/slack/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Slack Disconnect
+         * @description Remove the Slack installation for the current user.
+         */
+        post: operations["slack_disconnect_api_slack_disconnect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1596,6 +1686,41 @@ export interface components {
              * @default []
              */
             ccloud_audit_trail: components["schemas"]["CCloudAuditEventItem"][];
+        };
+        /** SlackDisconnectResponse */
+        SlackDisconnectResponse: {
+            /** Disconnected */
+            disconnected: boolean;
+            /** Owner Identity */
+            owner_identity: string;
+        };
+        /**
+         * SlackInstallAuthorizeResponse
+         * @description Redirect target for Slack's OAuth v2 authorization page.
+         */
+        SlackInstallAuthorizeResponse: {
+            /** Authorize Url */
+            authorize_url: string;
+            /** State */
+            state: string;
+            /** Expires In Seconds */
+            expires_in_seconds: number;
+        };
+        /**
+         * SlackStatusResponse
+         * @description Liveness/diagnostic endpoint for the Slack integration.
+         */
+        SlackStatusResponse: {
+            /** Configured */
+            configured: boolean;
+            /** Connected */
+            connected: boolean;
+            /** Team Id */
+            team_id?: string | null;
+            /** Team Name */
+            team_name?: string | null;
+            /** Scope */
+            scope?: string | null;
         };
         /** StartWorkflowRequest */
         StartWorkflowRequest: {
@@ -2885,6 +3010,99 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    slack_install_api_slack_install_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackInstallAuthorizeResponse"];
+                };
+            };
+        };
+    };
+    slack_oauth_callback_api_slack_oauth_callback_get: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    slack_status_api_slack_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackStatusResponse"];
+                };
+            };
+        };
+    };
+    slack_disconnect_api_slack_disconnect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SlackDisconnectResponse"];
                 };
             };
         };

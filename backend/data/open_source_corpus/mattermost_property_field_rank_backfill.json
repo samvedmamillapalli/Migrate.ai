@@ -1,0 +1,52 @@
+{
+  "source_key": "mattermost:migrations/000198_convert_classification_fields_to_rank",
+  "project": "Mattermost",
+  "repo": "https://github.com/mattermost/mattermost",
+  "license": "AGPL-3.0 (source; see docs/AGPL_DISCLOSURE.md for how this project uses it)",
+  "migration_file": "https://github.com/mattermost/mattermost/blob/master/server/channels/db/migrations/postgres/000198_convert_classification_fields_to_rank.up.sql",
+  "incident_issue": "https://github.com/mattermost/mattermost/blob/master/server/channels/db/migrations/postgres/000198_convert_classification_fields_to_rank.up.sql",
+  "migration_summary": "Flip a JSONB-configured property field's Type from 'select' to 'rank' for three specific (Name, ObjectType) pairs, then backfill a rank integer onto every option inside the JSONB 'options' array using jsonb_set + jsonb_array_elements WITH ORDINALITY, so the type change and the required per-row backfill happen in the same migration rather than leaving the field briefly invalid.",
+  "migration_sql": "UPDATE PropertyFields SET Type = 'rank' WHERE Type = 'select' AND GroupID = (SELECT ID FROM PropertyGroups WHERE Name = 'access_control') AND ((Name = 'classification' AND ObjectType = 'template') OR (Name = 'system_classification' AND ObjectType = 'system') OR (Name = 'channel_classification' AND ObjectType = 'channel')); UPDATE PropertyFields pf SET Attrs = jsonb_set(pf.Attrs, '{options}', (SELECT jsonb_agg(elem.opt || jsonb_build_object('rank', elem.ord) ORDER BY elem.ord) FROM jsonb_array_elements(pf.Attrs->'options') WITH ORDINALITY AS elem(opt, ord))) WHERE pf.Type = 'rank' AND pf.GroupID = (SELECT ID FROM PropertyGroups WHERE Name = 'access_control') AND jsonb_typeof(pf.Attrs->'options') = 'array' AND jsonb_array_length(pf.Attrs->'options') > 0;",
+  "scale_tier": "medium",
+  "migration_type": "backfill",
+  "parsed_statement_types": ["Update"],
+  "schema_summary": "PropertyFields table storing per-field configuration as JSONB (Attrs column), scoped by GroupID/Name/ObjectType rather than a fixed relational schema.",
+  "index_count": 4,
+  "table_complexity": 12,
+  "risk_flags": [
+    {
+      "rule_id": "backward_incompatible",
+      "severity": "medium",
+      "message": "A 'rank' field requires every option to carry a unique positive-integer rank; the prior 'select' representation never persisted one, so the type flip alone would leave the field observable in an invalid (rank, null-rank) state until the backfill runs."
+    }
+  ],
+  "risk_narrative": "This is a same-migration type-change-plus-backfill: the UPDATE that flips Type to 'rank' and the UPDATE that backfills a rank onto every JSONB option run in the same file, in that order, specifically so the field is never externally observable in the invalid intermediate state. The rank is derived from the existing array position (via WITH ORDINALITY) rather than from any new input, because the classification UI already writes options in severity order — so position is already the authoritative ordering, just never persisted as an integer.",
+  "lessons_learned": "When a config value is stored as JSONB rather than columns, a 'type change' can hide a real backfill inside what looks like a single UPDATE — the cost and correctness of the migration depends on how many rows have a non-trivial options array, not on the row count alone. Ordering matters: run the backfill in the same migration/transaction as the type flip, not as a follow-up, so nothing observes the field in a half-migrated state.",
+  "surprise_notes": "The visible diff is a one-line Type change; the real work and the real risk is the nested jsonb_agg/jsonb_array_elements backfill immediately after it, which a reviewer skimming the migration for its 'type' could miss.",
+  "documented_outcomes": {
+    "success": true,
+    "actual_duration_seconds": null,
+    "actual_storage_mb": null,
+    "rollback_required": false,
+    "timed_out": false,
+    "error_message": null
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 30.0,
+    "estimated_storage_mb": 5.0,
+    "rollback_risk": "medium",
+    "confidence_score": 0.6,
+    "risk_explanation": "Cost scales with the number of PropertyFields rows carrying the three targeted (Name, ObjectType) pairs and the size of each row's JSONB options array, not with total table size."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "jsonb_backfill_pattern",
+    "duration_within_band": true,
+    "storage_within_band": true,
+    "rollback_within_band": true,
+    "dimension_details": {
+      "source": "open_source",
+      "note": "Real production migration from Mattermost's PostgreSQL migration set (server/channels/db/migrations/postgres); representative pattern, not a separate shadow-graded run."
+    }
+  }
+}

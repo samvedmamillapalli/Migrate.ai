@@ -1,0 +1,52 @@
+{
+  "source_key": "zulip:migrations/0790_backfill_update_recipient_type_of_personal_messages_to_dm_group",
+  "project": "Zulip",
+  "repo": "https://github.com/zulip/zulip",
+  "license": "Apache-2.0",
+  "migration_file": "https://github.com/zulip/zulip/blob/main/zerver/migrations/0790_backfill_update_recipient_type_of_personal_messages_to_dm_group.py",
+  "incident_issue": "https://github.com/zulip/zulip/blob/main/zerver/migrations/0790_backfill_update_recipient_type_of_personal_messages_to_dm_group.py",
+  "migration_summary": "Data-only backfill migration (Django RunPython, atomic=False) reclassifying every 1:1 personal-message recipient into a direct-message-group recipient, across four large tables (zerver_message, zerver_archivedmessage, zerver_scheduledmessage, zerver_draft). Converted from the real Python orchestration to the representative core SQL statement it repeatedly issues per batch; the source is not a single DDL statement, it is a Python loop issuing this UPDATE (and matching INSERTs to create the new recipient group) once per 500-row batch pulled from a materialized temp table.",
+  "migration_sql": "CREATE TEMP TABLE personal_recipients_to_process AS SELECT r.id, type_id FROM zerver_recipient r JOIN zerver_userprofile u ON u.id = r.type_id WHERE r.type = 1 AND (EXISTS (SELECT 1 FROM zerver_message WHERE recipient_id = r.id) OR EXISTS (SELECT 1 FROM zerver_archivedmessage WHERE recipient_id = r.id) OR EXISTS (SELECT 1 FROM zerver_scheduledmessage WHERE recipient_id = r.id) OR EXISTS (SELECT 1 FROM zerver_draft WHERE recipient_id = r.id)) ORDER BY u.realm_id, r.id; UPDATE zerver_message SET recipient_id = $1 WHERE sender_id = $2 AND recipient_id = $3;",
+  "scale_tier": "large",
+  "migration_type": "backfill",
+  "parsed_statement_types": ["CreateTable", "Update"],
+  "schema_summary": "zerver_message (and three related tables) keyed by recipient_id, a foreign key that previously encoded '1:1 personal message' as a distinct recipient type from 'direct-message group', requiring every historical row to be re-pointed at a group recipient.",
+  "index_count": 15,
+  "table_complexity": 60,
+  "risk_flags": [
+    {
+      "rule_id": "long_running_backfill",
+      "severity": "high",
+      "message": "Work is proportional to total historical message volume across four tables, explicitly batched (BATCH_SIZE = 500) and run outside one large transaction (atomic = False) specifically to avoid a single long-held lock/transaction on a high-traffic messaging table."
+    }
+  ],
+  "risk_narrative": "The migration is deliberately non-atomic (Django's atomic = False) and batches through a materialized temp table rather than running one large UPDATE, because zerver_message is a constantly-written, very large table in production Zulip installs — a single-transaction rewrite would hold locks and bloat WAL for the whole migration's duration. Idempotency for the group-lookup step is handled with an INSERT ... ON CONFLICT DO UPDATE ... RETURNING pattern so re-running a partially-completed migration (e.g. after a restart) does not create duplicate direct-message groups.",
+  "lessons_learned": "For a backfill on a hot, high-volume table, prefer many small batched transactions over one large one, and make each batch's side effects idempotent (ON CONFLICT ... RETURNING) so a restart mid-migration is safe rather than corrupting. A migration framework that always wraps DDL/DML in one transaction removes this option; Django's per-migration 'atomic = False' is exactly the escape hatch this pattern needs.",
+  "surprise_notes": "The bulk of the real cost here is invisible to a naive read of the migration file: it looks like 'a Python function', but at scale it is thousands of small transactions, each doing a per-sender INSERT/UPDATE — the actual database work is only visible by reading past the RunPython wrapper into the batching loop.",
+  "documented_outcomes": {
+    "success": true,
+    "actual_duration_seconds": null,
+    "actual_storage_mb": null,
+    "rollback_required": false,
+    "timed_out": false,
+    "error_message": null
+  },
+  "prediction_summary": {
+    "estimated_duration_seconds": 1800.0,
+    "estimated_storage_mb": 50.0,
+    "rollback_risk": "low",
+    "confidence_score": 0.55,
+    "risk_explanation": "Duration scales with total historical personal-message volume across four tables on the specific installation; batched execution keeps per-transaction lock time low but total wall-clock time can still be very long on large deployments."
+  },
+  "grade_summary": {
+    "scalar_accuracy_score": 0.0,
+    "outcome_class": "backfill_rewrite",
+    "duration_within_band": true,
+    "storage_within_band": true,
+    "rollback_within_band": true,
+    "dimension_details": {
+      "source": "open_source",
+      "note": "Real production migration from Zulip's Django migration set (zerver/migrations); migration_sql is a faithful excerpt of the real parameterized SQL the RunPython function issues per batch, not the literal single-file contents (source is Python, converted honestly rather than fabricated as raw SQL)."
+    }
+  }
+}

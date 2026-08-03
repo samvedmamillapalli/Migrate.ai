@@ -19,7 +19,7 @@ from app.auth.tenancy import (
 )
 from app.core.exceptions import NotFoundError, ValidationError
 from app.core.logging import get_logger
-from app.database.models import MigrationRunStatus
+from app.database.models import MigrationRun, MigrationRunStatus
 from app.dependencies import (
     ApprovalSvc,
     ClosedLoopSvc,
@@ -53,6 +53,45 @@ from app.services.closed_loop_service import ClosedLoopRequest
 
 router = APIRouter(prefix="/runs", tags=["migration-runs"])
 logger = get_logger(__name__)
+
+
+# --- Tenant-scoped run access -----------------------------------------------
+#
+# Every `/{run_id}...` route below must resolve the run through one of these
+# two dependencies rather than calling `service.get_migration_run` directly.
+# An earlier version of this file had `assert_run_access` copy-pasted into
+# only 4 of 21 run-scoped routes; the other 17 fetched by ID with no
+# ownership check at all — any authenticated user who knew (or guessed) a
+# UUID could read another user's Bedrock prediction traces, grades, and
+# shadow-cluster state, or worse, call start-workflow / abort-workflow /
+# predict on a run they didn't own. Routing every handler through a shared
+# dependency makes that omission structurally harder to reintroduce: a new
+# route has to actively skip these to reproduce the bug, instead of the
+# leak being the default.
+
+
+async def get_owned_run(
+    run_id: uuid.UUID,
+    request: Request,
+    service: MigrationRunSvc,
+) -> MigrationRun:
+    """Fetch a run and enforce tenant ownership. No relationships loaded."""
+    run = await service.get_migration_run(run_id)
+    assert_run_access(request, run)
+    return run
+
+
+async def get_owned_run_with_children(
+    run_id: uuid.UUID,
+    request: Request,
+    service: MigrationRunSvc,
+) -> MigrationRun:
+    """Same as ``get_owned_run``, with related rows eager-loaded — for
+    routes that read approval / grade / memory / shadow_cluster /
+    execution_result / explainability off the returned run."""
+    run = await service.get_migration_run(run_id, load_children=True)
+    assert_run_access(request, run)
+    return run
 
 
 @router.post(
@@ -317,12 +356,8 @@ async def create_debug_fake_migration(
 
 @router.get("/{run_id}", response_model=MigrationRunResponse)
 async def get_run(
-    run_id: uuid.UUID,
-    service: MigrationRunSvc,
-    request: Request,
+    run: MigrationRun = Depends(get_owned_run),
 ) -> MigrationRunResponse:
-    run = await service.get_migration_run(run_id)
-    assert_run_access(request, run)
     return MigrationRunResponse.model_validate(run)
 
 
@@ -330,7 +365,7 @@ async def get_run(
 async def discard_run(
     run_id: uuid.UUID,
     service: MigrationRunSvc,
-    request: Request,
+    _owned: MigrationRun = Depends(get_owned_run),
 ) -> None:
     """Discard a run abandoned during setup.
 
@@ -339,18 +374,16 @@ async def discard_run(
     MigrationRunService.discard_abandoned_run. Anything further along is part
     of the audit record and returns 409 instead.
     """
-    existing = await service.get_migration_run(run_id)
-    assert_run_access(request, existing)
     await service.discard_abandoned_run(run_id)
 
 
 @router.patch("/{run_id}", response_model=MigrationRunResponse)
 async def update_run_status(
-    run_id: uuid.UUID,
     payload: MigrationRunStatusUpdateRequest,
     service: MigrationRunSvc,
+    owned: MigrationRun = Depends(get_owned_run),
 ) -> MigrationRunResponse:
-    run = await service.update_status(run_id, payload.status)
+    run = await service.update_status(owned.id, payload.status)
     return MigrationRunResponse.model_validate(run)
 
 
@@ -364,11 +397,9 @@ async def discover_schema(
     payload: DiscoverSchemaRequest,
     discovery: SchemaDiscoverySvc,
     request: Request,
-    service: MigrationRunSvc,
+    _owned: MigrationRun = Depends(get_owned_run),
 ) -> MigrationRunResponse:
     """Discover customer schema (read-only) and store connection_secret_arn pointer."""
-    run = await service.get_migration_run(run_id)
-    assert_run_access(request, run)
     secret_arn = payload.connection_secret_arn
     if payload.database_url:
         secret_arn = await _store_connection_url(request, run_id, payload.database_url)
@@ -389,18 +420,18 @@ async def discover_schema(
     status_code=status.HTTP_200_OK,
 )
 async def run_prediction_pipeline(
-    run_id: uuid.UUID,
     service: PredictionPipelineSvc,
+    owned: MigrationRun = Depends(get_owned_run),
 ) -> MigrationRunResponse:
     """Run Phase 9 policy → predict → recommend and stop at awaiting_approval."""
-    run = await service.run_prediction_pipeline(run_id)
+    run = await service.run_prediction_pipeline(owned.id)
     return MigrationRunResponse.model_validate(run)
 
 
 @router.get("/{run_id}/pipeline-progress")
 async def get_pipeline_progress(
     run_id: uuid.UUID,
-    run_service: MigrationRunSvc,
+    run: MigrationRun = Depends(get_owned_run),
 ) -> dict[str, Any]:
     """Live stage progress for a long-running predict / discover / local-verify
     (in-process, single-uvicorn-worker).
@@ -412,7 +443,6 @@ async def get_pipeline_progress(
     """
     from app.services.pipeline_progress import clear_progress, get_progress
 
-    run = await run_service.get_migration_run(run_id)
     if run.status not in (MigrationRunStatus.PREDICTING, MigrationRunStatus.PENDING):
         clear_progress(run_id)
         return {
@@ -441,17 +471,15 @@ async def get_pipeline_progress(
     status_code=status.HTTP_200_OK,
 )
 async def approve_run(
-    run_id: uuid.UUID,
     payload: ApprovalCreateRequest,
     service: ApprovalSvc,
-    runs: MigrationRunSvc,
     request: Request,
+    owned: MigrationRun = Depends(get_owned_run),
 ) -> MigrationRunResponse:
     """Record approval. On proceed, auto-starts the verify workflow when configured."""
     from app.services.pipeline_progress import clear_progress
 
-    existing = await runs.get_migration_run(run_id)
-    assert_run_access(request, existing)
+    run_id = owned.id
     clear_progress(run_id)
     approver = resolve_owner_identity(request, payload.approver_identity)
     run = await service.approve(
@@ -471,12 +499,12 @@ async def approve_run(
     status_code=status.HTTP_200_OK,
 )
 async def run_closed_loop(
-    run_id: uuid.UUID,
     payload: ClosedLoopRequest,
     service: ClosedLoopSvc,
+    owned: MigrationRun = Depends(get_owned_run),
 ) -> MigrationRunResponse:
     """Predict (if needed) → proceed → start SFN when ARN + connection secret exist."""
-    run = await service.run(run_id, payload)
+    run = await service.run(owned.id, payload)
     return MigrationRunResponse.model_validate(run)
 
 
@@ -486,17 +514,17 @@ async def run_closed_loop(
     status_code=status.HTTP_200_OK,
 )
 async def start_workflow(
-    run_id: uuid.UUID,
     payload: StartWorkflowRequest,
     service: WorkflowOrchestrationSvc,
     run_service: MigrationRunSvc,
     request: Request,
+    run: MigrationRun = Depends(get_owned_run_with_children),
 ) -> MigrationRunResponse:
     """Start Step Functions verify after prediction + proceed approval."""
     from app.services.pipeline_progress import clear_progress
 
+    run_id = run.id
     clear_progress(run_id)
-    run = await run_service.get_migration_run(run_id, load_children=True)
     secret = (payload.connection_secret_arn or run.connection_secret_arn or "").strip()
     if not secret and payload.database_url:
         secret = await _store_connection_url(request, run_id, payload.database_url)
@@ -521,8 +549,8 @@ async def start_workflow(
     status_code=status.HTTP_200_OK,
 )
 async def verify_local(
-    run_id: uuid.UUID,
     service: LocalShadowVerifySvc,
+    owned: MigrationRun = Depends(get_owned_run),
 ) -> MigrationRunResponse:
     """Run in-process mock shadow verify when Step Functions is not deployed.
 
@@ -530,7 +558,7 @@ async def verify_local(
     execute → collect → persist/grade → cleanup), using SHADOW_PROVIDER=mock.
     Use this for local demos; set MIGRATION_WORKFLOW_ARN for real AWS verify.
     """
-    run = await service.verify_run(run_id)
+    run = await service.verify_run(owned.id)
     return MigrationRunResponse.model_validate(run)
 
 
@@ -540,10 +568,10 @@ async def verify_local(
     status_code=status.HTTP_200_OK,
 )
 async def sync_workflow(
-    run_id: uuid.UUID,
     service: WorkflowOrchestrationSvc,
+    owned: MigrationRun = Depends(get_owned_run),
 ) -> MigrationRunResponse:
-    run = await service.sync_status(run_id)
+    run = await service.sync_status(owned.id)
     return MigrationRunResponse.model_validate(run)
 
 
@@ -553,12 +581,13 @@ async def sync_workflow(
     status_code=status.HTTP_200_OK,
 )
 async def abort_workflow(
-    run_id: uuid.UUID,
     service: WorkflowOrchestrationSvc,
+    owned: MigrationRun = Depends(get_owned_run),
 ) -> MigrationRunResponse:
     """Abort a running shadow workflow and tear down the shadow cluster."""
     from app.services.pipeline_progress import clear_progress
 
+    run_id = owned.id
     clear_progress(run_id)
     run = await service.abort_for_run(run_id)
     return MigrationRunResponse.model_validate(run)
@@ -566,12 +595,10 @@ async def abort_workflow(
 
 @router.get("/{run_id}/approval", response_model=ApprovalResponse)
 async def get_approval(
-    run_id: uuid.UUID,
-    service: MigrationRunSvc,
+    run: MigrationRun = Depends(get_owned_run_with_children),
 ) -> ApprovalResponse:
-    run = await service.get_migration_run(run_id, load_children=True)
     if run.approval is None:
-        raise NotFoundError(f"No approval recorded for MigrationRun {run_id}")
+        raise NotFoundError(f"No approval recorded for MigrationRun {run.id}")
     return ApprovalResponse.model_validate(run.approval)
 
 
@@ -581,39 +608,34 @@ async def get_approval(
     status_code=status.HTTP_200_OK,
 )
 async def grade_run(
-    run_id: uuid.UUID,
     service: GradingPipelineSvc,
+    owned: MigrationRun = Depends(get_owned_run),
 ) -> MigrationRunResponse:
-    run = await service.grade_run(run_id)
+    run = await service.grade_run(owned.id)
     return MigrationRunResponse.model_validate(run)
 
 
 @router.get("/{run_id}/grade", response_model=GradeResponse)
 async def get_grade(
-    run_id: uuid.UUID,
-    service: MigrationRunSvc,
+    run: MigrationRun = Depends(get_owned_run_with_children),
 ) -> GradeResponse:
-    run = await service.get_migration_run(run_id, load_children=True)
     if run.grade is None:
-        raise NotFoundError(f"No grade recorded for MigrationRun {run_id}")
+        raise NotFoundError(f"No grade recorded for MigrationRun {run.id}")
     return GradeResponse.model_validate(run.grade)
 
 
 @router.get("/{run_id}/memory", response_model=MemoryResponse)
 async def get_memory(
-    run_id: uuid.UUID,
-    service: MigrationRunSvc,
+    run: MigrationRun = Depends(get_owned_run_with_children),
 ) -> MemoryResponse:
-    run = await service.get_migration_run(run_id, load_children=True)
     if run.memory is None:
-        raise NotFoundError(f"No memory recorded for MigrationRun {run_id}")
+        raise NotFoundError(f"No memory recorded for MigrationRun {run.id}")
     return MemoryResponse.from_orm_memory(run.memory)
 
 
 @router.get("/{run_id}/shadow-cluster", response_model=ShadowClusterResponse)
 async def get_shadow_cluster(
-    run_id: uuid.UUID,
-    service: MigrationRunSvc,
+    run: MigrationRun = Depends(get_owned_run_with_children),
     session: AsyncSession = Depends(get_db_session),
 ) -> ShadowClusterResponse:
     """Read-only shadow cluster lifecycle row (Phase 7 data; Phase 11 exposure).
@@ -624,10 +646,9 @@ async def get_shadow_cluster(
     """
     from app.repositories.ccloud_audit_event_repository import CCloudAuditEventRepository
 
-    run = await service.get_migration_run(run_id, load_children=True)
     if run.shadow_cluster is None:
-        raise NotFoundError(f"No shadow cluster recorded for MigrationRun {run_id}")
-    audit_events = await CCloudAuditEventRepository(session).list_for_run(run_id)
+        raise NotFoundError(f"No shadow cluster recorded for MigrationRun {run.id}")
+    audit_events = await CCloudAuditEventRepository(session).list_for_run(run.id)
     return ShadowClusterResponse.from_orm(
         run.shadow_cluster, ccloud_audit_trail=audit_events
     )
@@ -641,6 +662,7 @@ async def get_shadow_cluster(
 async def teardown_shadow_cluster_now(
     run_id: uuid.UUID,
     service: ShadowClusterSvc,
+    _owned: MigrationRun = Depends(get_owned_run),
 ) -> ShadowClusterResponse:
     """End a HOLDING cluster's inspection window immediately.
 
@@ -649,6 +671,11 @@ async def teardown_shadow_cluster_now(
     populated — see app.lambdas.handlers.cleanup. This lets the user end that
     hold early instead of waiting out the window or the sweeper. Idempotent:
     calling it on an already-destroyed cluster just returns its current state.
+
+    ``service.get_by_run`` below reads the ``shadow_clusters`` table, which
+    has no ``owner_identity`` of its own — ownership can only be checked
+    against the parent ``MigrationRun``, hence the extra
+    ``get_owned_run`` dependency alongside it.
     """
     from app.lambdas.handlers.cleanup import delete_shadow_secret
     from app.lambdas.runtime import get_runtime
@@ -678,7 +705,11 @@ async def teardown_shadow_cluster_now(
 
 
 @router.get("/{run_id}/shadow-cluster/stream")
-async def stream_shadow_cluster(run_id: uuid.UUID, request: Request):
+async def stream_shadow_cluster(
+    run_id: uuid.UUID,
+    request: Request,
+    _owned: MigrationRun = Depends(get_owned_run),
+):
     """Push-based shadow-cluster updates (SSE) — replaces polling GET /shadow-cluster.
 
     One JSON `ShadowClusterResponse` payload per `event: shadow` message,
@@ -686,6 +717,11 @@ async def stream_shadow_cluster(run_id: uuid.UUID, request: Request):
     don't time out an idle connection). Falls back gracefully: a client that
     can't use EventSource can keep polling the plain GET route, which is
     unaffected by this endpoint's existence.
+
+    Ownership is checked once, up front, via ``get_owned_run`` — a stream
+    for a run you don't own should never open, rather than being checked
+    per-tick inside the generator below (which re-fetches the run itself
+    for its own polling purposes, unrelated to authorization).
     """
     from sse_starlette.sse import EventSourceResponse
 
@@ -752,32 +788,28 @@ async def stream_shadow_cluster(run_id: uuid.UUID, request: Request):
 
 @router.get("/{run_id}/execution-result", response_model=ExecutionResultResponse)
 async def get_execution_result(
-    run_id: uuid.UUID,
-    service: MigrationRunSvc,
+    run: MigrationRun = Depends(get_owned_run_with_children),
 ) -> ExecutionResultResponse:
     """Read-only shadow execution actuals (Phase 8 data; Phase 11 exposure)."""
-    run = await service.get_migration_run(run_id, load_children=True)
     if run.execution_result is None:
-        raise NotFoundError(f"No execution result recorded for MigrationRun {run_id}")
+        raise NotFoundError(f"No execution result recorded for MigrationRun {run.id}")
     return ExecutionResultResponse.model_validate(run.execution_result)
 
 
 @router.get("/{run_id}/model-traces")
 async def get_model_traces(
-    run_id: uuid.UUID,
-    service: MigrationRunSvc,
+    run: MigrationRun = Depends(get_owned_run_with_children),
 ) -> dict[str, Any]:
     """Durable Bedrock traces from explainability (prediction + recommendation)."""
-    run = await service.get_migration_run(run_id, load_children=True)
     explain = run.explainability or {}
     traces = explain.get("bedrock_traces")
     if not traces:
         raise NotFoundError(
-            f"No Bedrock model traces recorded for MigrationRun {run_id}. "
+            f"No Bedrock model traces recorded for MigrationRun {run.id}. "
             "Traces are stored on predict for runs created after Phase 11."
         )
     return {
-        "migration_run_id": str(run_id),
+        "migration_run_id": str(run.id),
         "traces": traces,
     }
 

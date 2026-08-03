@@ -9,7 +9,6 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import get_settings
 from app.core.exceptions import ConflictError, ValidationError
 from app.core.logging import get_logger
 from app.database.models import (
@@ -81,7 +80,6 @@ class PredictionPipelineService:
         self._skills = skills_retrieval or StubSkillsRetrieval()
         self._policy_engine = policy_engine or PolicyEngine()
         self._slack_notifications = slack_notifications
-        self._settings = get_settings()
 
     async def run_prediction_pipeline(
         self,
@@ -392,7 +390,10 @@ class PredictionPipelineService:
         try:
             await self._slack_notifications.send_prediction_ready(
                 owner_identity=run.owner_identity or "",
-                channel=self._settings.slack_default_channel,
+                # None lets SlackNotificationService resolve the channel
+                # itself — the OAuth installer's DM first, falling back to
+                # slack_default_channel only for pre-authed_user_id rows.
+                channel=None,
                 run_id=run.id,
                 migration_name=derive_migration_name(run.migration_sql),
                 status=MigrationRunStatus.AWAITING_APPROVAL.value,

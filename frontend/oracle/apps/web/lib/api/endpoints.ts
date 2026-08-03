@@ -435,3 +435,33 @@ export function hasRealSfnArn(run: MigrationRun | null | undefined): boolean {
   const arn = run?.sfn_execution_arn || ""
   return Boolean(arn) && !String(arn).startsWith("local://")
 }
+
+export type SlackInstallAuthorizeResponse =
+  components["schemas"]["SlackInstallAuthorizeResponse"]
+export type SlackStatusResponse = components["schemas"]["SlackStatusResponse"]
+export type SlackDisconnectResponse =
+  components["schemas"]["SlackDisconnectResponse"]
+
+/**
+ * Whether Slack is connected for the current user, and (when connected)
+ * which workspace. Routes are under `/api/slack/...`, not `/slack/...` —
+ * see `backend/app/api/routes/slack.py`'s router prefix.
+ */
+export function getSlackStatus() {
+  return api<SlackStatusResponse>("/api/slack/status")
+}
+
+/**
+ * Fetch the signed, TTL-bounded Slack OAuth authorize URL for the current
+ * user. The caller navigates the browser to `authorize_url` — Slack's own
+ * consent screen, not something this app renders.
+ */
+export function getSlackInstallUrl() {
+  return api<SlackInstallAuthorizeResponse>("/api/slack/install")
+}
+
+export function disconnectSlack() {
+  return api<SlackDisconnectResponse>("/api/slack/disconnect", {
+    method: "POST",
+  })
+}
