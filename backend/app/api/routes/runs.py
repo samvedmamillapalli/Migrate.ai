@@ -6,7 +6,6 @@ import json
 import time
 import uuid
 from typing import Any
-from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -31,6 +30,7 @@ from app.dependencies import (
     SchemaDiscoverySvc,
     ShadowClusterSvc,
     WorkflowOrchestrationSvc,
+    WorkspaceSvc,
     get_db_session,
 )
 from app.memory.metrics import fetch_accuracy_metrics
@@ -48,11 +48,15 @@ from app.schemas.observability import (
     ShadowClusterResponse,
 )
 from app.schemas.workflow import DiscoverSchemaRequest, StartWorkflowRequest
-from app.schema_analysis.database_connection import DatabaseConnection, SslMode
 from app.services.closed_loop_service import ClosedLoopRequest
+from app.services.connection_secrets import load_connection, store_connection_url
 
 router = APIRouter(prefix="/runs", tags=["migration-runs"])
 logger = get_logger(__name__)
+
+
+def _run_secret_name(run_id: uuid.UUID) -> str:
+    return f"migration-oracle/connections/{run_id}"
 
 
 # --- Tenant-scoped run access -----------------------------------------------
@@ -102,13 +106,20 @@ async def get_owned_run_with_children(
 async def create_run(
     payload: MigrationRunCreateRequest,
     service: MigrationRunSvc,
+    workspace_service: WorkspaceSvc,
     request: Request,
 ) -> MigrationRunResponse:
     owner = resolve_owner_identity(request, payload.owner_identity)
+    if payload.workspace_id is not None:
+        # Raises NotFoundError (404) if the workspace doesn't exist or
+        # belongs to a different owner — never trust a client-supplied
+        # workspace_id without checking it's actually this owner's.
+        await workspace_service.get_owned_workspace(payload.workspace_id, owner)
     run = await service.create_migration_run(
         payload.migration_sql,
         owner_identity=owner,
         revises_run_id=payload.revises_run_id,
+        workspace_id=payload.workspace_id,
         run_kind=payload.run_kind,
     )
     return MigrationRunResponse.model_validate(run)
@@ -119,7 +130,12 @@ async def list_runs(
     request: Request,
     service: MigrationRunSvc,
     status_filter: MigrationRunStatus | None = Query(default=None, alias="status"),
+    status_in: str | None = Query(
+        default=None,
+        description="Comma-separated statuses, e.g. pending,predicting,awaiting_approval,running",
+    ),
     owner_identity: str | None = Query(default=None, min_length=1, max_length=256),
+    workspace_id: uuid.UUID | None = Query(default=None),
     run_kind: str | None = Query(default=None, min_length=1, max_length=32),
     exclude_kinds: str | None = Query(
         default=None,
@@ -159,6 +175,16 @@ async def list_runs(
         if exclude_kinds
         else None
     )
+    statuses_in: list[MigrationRunStatus] | None = None
+    if status_in:
+        raw_statuses = [s.strip() for s in status_in.split(",") if s.strip()]
+        try:
+            statuses_in = [MigrationRunStatus(s) for s in raw_statuses]
+        except ValueError as exc:
+            valid = ", ".join(s.value for s in MigrationRunStatus)
+            raise ValidationError(
+                f"status_in values must be one of: {valid}"
+            ) from exc
     if risk is not None and risk not in {"low", "medium", "high"}:
         raise ValidationError("risk must be one of: low, medium, high")
     if decision is not None and decision not in {
@@ -173,7 +199,9 @@ async def list_runs(
 
     filters = {
         "status": status_filter,
+        "status_in": statuses_in,
         "owner_identity": owner_identity,
+        "workspace_id": workspace_id,
         "run_kind": run_kind,
         "exclude_kinds": excluded,
         "search": (q or "").strip() or None,
@@ -202,17 +230,23 @@ async def get_accuracy_metrics(
     request: Request,
     session: AsyncSession = Depends(get_db_session),
     owner_identity: str | None = Query(default=None, min_length=1, max_length=256),
+    workspace_id: uuid.UUID | None = Query(default=None),
 ) -> dict[str, Any]:
     """Plain SQL accuracy / learning metrics (Phase 11 chart source).
 
     Scoped to the same owner as the Recent-runs list when one is known (auth
     session, or an explicit query param), so this card and "Recent" never show
-    two different populations side by side without saying so.
+    two different populations side by side without saying so. ``workspace_id``
+    narrows further to one workspace's runs (docs/FUTURE_WORKSPACES_PLAN.md).
     """
     scoped = session_owner(request) if request else None
     if auth_enforced():
         owner_identity = scoped
-    return await fetch_accuracy_metrics(session, owner_identity=owner_identity)
+    return await fetch_accuracy_metrics(
+        session,
+        owner_identity=owner_identity,
+        workspace_id=str(workspace_id) if workspace_id else None,
+    )
 
 
 @router.get("/approvers")
@@ -220,12 +254,14 @@ async def list_approvers(
     request: Request,
     service: MigrationRunSvc,
     owner_identity: str | None = Query(default=None, min_length=1, max_length=256),
+    workspace_id: uuid.UUID | None = Query(default=None),
 ) -> dict[str, Any]:
     """Distinct approver identities, for the history page's filter dropdown."""
     if auth_enforced():
         owner_identity = session_owner(request) if request else None
     approvers = await service.list_approvers(
         owner_identity=owner_identity,
+        workspace_id=workspace_id,
         exclude_kinds=["chaos", "debug"],
     )
     return {"approvers": sorted(approvers)}
@@ -236,6 +272,7 @@ async def get_run_volume(
     request: Request,
     session: AsyncSession = Depends(get_db_session),
     owner_identity: str | None = Query(default=None, min_length=1, max_length=256),
+    workspace_id: uuid.UUID | None = Query(default=None),
     days: int = Query(default=7, ge=1, le=90),
 ) -> dict[str, Any]:
     """Daily run counts over the whole history, not just one page.
@@ -250,7 +287,10 @@ async def get_run_volume(
     if auth_enforced():
         owner_identity = session_owner(request) if request else None
     return await fetch_run_volume(
-        session, owner_identity=owner_identity, days=days
+        session,
+        owner_identity=owner_identity,
+        workspace_id=str(workspace_id) if workspace_id else None,
+        days=days,
     )
 
 
@@ -259,6 +299,7 @@ async def get_activity_feed(
     request: Request,
     session: AsyncSession = Depends(get_db_session),
     owner_identity: str | None = Query(default=None, min_length=1, max_length=256),
+    workspace_id: uuid.UUID | None = Query(default=None),
     limit: int = Query(default=25, ge=1, le=200),
 ) -> dict[str, Any]:
     """Merged, reverse-chronological stream of what actually happened.
@@ -276,6 +317,7 @@ async def get_activity_feed(
     return await fetch_activity_feed(
         session,
         owner_identity=owner_identity,
+        workspace_id=str(workspace_id) if workspace_id else None,
         limit=limit,
     )
 
@@ -319,8 +361,8 @@ async def create_debug_demo_with_db(
         owner_identity=owner_identity,
         run_kind="debug",
     )
-    secret_arn = await _store_connection_url(request, run.id, url)
-    connection = await _load_connection(request, secret_arn)
+    secret_arn = await store_connection_url(request, _run_secret_name(run.id), url)
+    connection = await load_connection(request, secret_arn)
     run = await discovery.discover_and_persist(
         run.id,
         connection,
@@ -349,7 +391,9 @@ async def create_debug_fake_migration(
 
     run = await service.create_debug_fake_migration(owner_identity=owner_identity)
     database_url = get_settings().database_url.get_secret_value()
-    secret_arn = await _store_connection_url(request, run.id, database_url)
+    secret_arn = await store_connection_url(
+        request, _run_secret_name(run.id), database_url
+    )
     run = await service.set_connection_secret_arn(run.id, secret_arn)
     return MigrationRunResponse.model_validate(run)
 
@@ -397,15 +441,27 @@ async def discover_schema(
     payload: DiscoverSchemaRequest,
     discovery: SchemaDiscoverySvc,
     request: Request,
-    _owned: MigrationRun = Depends(get_owned_run),
+    owned: MigrationRun = Depends(get_owned_run_with_children),
 ) -> MigrationRunResponse:
     """Discover customer schema (read-only) and store connection_secret_arn pointer."""
     secret_arn = payload.connection_secret_arn
     if payload.database_url:
-        secret_arn = await _store_connection_url(request, run_id, payload.database_url)
+        secret_arn = await store_connection_url(
+            request, _run_secret_name(run_id), payload.database_url
+        )
+    if not secret_arn and owned.workspace is not None:
+        # docs/FUTURE_WORKSPACES_PLAN.md: a run under a workspace with a
+        # stored connection doesn't require the caller to re-paste a URL
+        # every time. The per-run field (above) still wins when the caller
+        # explicitly provides one — this is only a default.
+        secret_arn = owned.workspace.connection_secret_arn
 
-    assert secret_arn is not None
-    connection = await _load_connection(request, secret_arn)
+    if not secret_arn:
+        raise ValidationError(
+            "Provide connection_secret_arn or database_url for discovery "
+            "(or attach this run to a workspace that has a stored connection)"
+        )
+    connection = await load_connection(request, secret_arn)
     run = await discovery.discover_and_persist(
         run_id,
         connection,
@@ -527,8 +583,12 @@ async def start_workflow(
     clear_progress(run_id)
     secret = (payload.connection_secret_arn or run.connection_secret_arn or "").strip()
     if not secret and payload.database_url:
-        secret = await _store_connection_url(request, run_id, payload.database_url)
+        secret = await store_connection_url(
+            request, _run_secret_name(run_id), payload.database_url
+        )
         run = await run_service.set_connection_secret_arn(run_id, secret)
+    if not secret and run.workspace is not None:
+        secret = (run.workspace.connection_secret_arn or "").strip()
     if not secret:
         raise ValidationError(
             "Attach a database first: POST /discover with connection_secret_arn or "
@@ -840,92 +900,3 @@ async def repair_embeddings(
     }
 
 
-def _parse_database_url(url: str) -> DatabaseConnection:
-    parsed = urlparse(url)
-    if not parsed.hostname:
-        raise ValidationError("database_url must include a host")
-    database = (parsed.path or "/").lstrip("/") or "defaultdb"
-    query = dict(
-        part.split("=", 1) for part in (parsed.query or "").split("&") if "=" in part
-    )
-    ssl_raw = (query.get("sslmode") or "require").replace("_", "-")
-    try:
-        ssl_mode = SslMode(ssl_raw)
-    except ValueError:
-        ssl_mode = SslMode.REQUIRE
-    return DatabaseConnection(
-        host=parsed.hostname,
-        port=parsed.port or 26257,
-        database=database,
-        username=parsed.username or "root",
-        password=parsed.password or "",
-        ssl_mode=ssl_mode,
-    )
-
-
-async def _store_connection_url(
-    request: Request,
-    run_id: uuid.UUID,
-    database_url: str,
-) -> str:
-    """Store URL in local/AWS secret store; return ARN/name pointer."""
-    name = f"migration-oracle/connections/{run_id}"
-    payload = {"database_url": database_url}
-    try:
-        from app.lambdas.runtime import get_runtime
-
-        runtime = get_runtime()
-        return await runtime.secrets.put_json(name, payload)
-    except Exception as exc:
-        from app.config import get_settings
-
-        env = get_settings().environment.strip().lower()
-        if env not in {"development", "dev", "local", "test"}:
-            raise ValidationError(
-                "Unable to store connection secret in Secrets Manager / local "
-                f"secret store (refusing in-memory fallback in {env}): {exc}"
-            ) from exc
-        # Dev-only ephemeral fallback — lost on API restart.
-        request.app.state._demo_secrets = getattr(request.app.state, "_demo_secrets", {})
-        request.app.state._demo_secrets[name] = payload
-        logger.warning(
-            "Stored connection URL in process memory (dev fallback)",
-            extra={"secret_name": name},
-        )
-        return name
-
-
-async def _load_connection(request: Request, secret_arn: str) -> DatabaseConnection:
-    demo = getattr(request.app.state, "_demo_secrets", {})
-    if secret_arn in demo:
-        url = demo[secret_arn].get("database_url")
-        if not url:
-            raise ValidationError("Stored secret missing database_url")
-        return _parse_database_url(url)
-
-    try:
-        from app.lambdas.runtime import get_runtime
-
-        runtime = get_runtime()
-        raw = await runtime.secrets.get_json(secret_arn)
-        if isinstance(raw, dict) and raw.get("database_url"):
-            return _parse_database_url(str(raw["database_url"]))
-        if isinstance(raw, dict) and raw.get("host"):
-            ssl_raw = str(raw.get("sslmode") or raw.get("ssl_mode") or "require")
-            try:
-                ssl_mode = SslMode(ssl_raw.replace("_", "-"))
-            except ValueError:
-                ssl_mode = SslMode.REQUIRE
-            return DatabaseConnection(
-                host=str(raw["host"]),
-                port=int(raw.get("port") or 26257),
-                database=str(raw.get("database") or "defaultdb"),
-                username=str(raw.get("username") or "root"),
-                password=str(raw.get("password") or ""),
-                ssl_mode=ssl_mode,
-            )
-        raise ValidationError("Secret must contain database_url or connection fields")
-    except ValidationError:
-        raise
-    except Exception as exc:
-        raise ValidationError(f"Unable to load connection secret: {exc}") from exc

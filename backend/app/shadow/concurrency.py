@@ -25,6 +25,8 @@ async def acquire_slot(
     max_lifetime_minutes: int,
     wait_timeout_seconds: int,
     poll_interval_seconds: float,
+    owner_identity: str | None = None,
+    max_concurrent_per_owner: int | None = None,
 ) -> ShadowCluster:
     """Admit a run under the concurrency cap, queuing (waiting) if it is full.
 
@@ -46,6 +48,8 @@ async def acquire_slot(
             scale_tier=scale_tier,
             max_concurrent=max_concurrent,
             max_lifetime_minutes=max_lifetime_minutes,
+            owner_identity=owner_identity,
+            max_concurrent_per_owner=max_concurrent_per_owner,
         )
         if admitted is not None:
             if waited:

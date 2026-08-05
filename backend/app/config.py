@@ -58,6 +58,12 @@ class Settings(BaseSettings):
     # Concurrency cap: at most this many simultaneous shadow clusters. Overflow
     # waits for a free slot (see ShadowSlotManager) rather than provisioning.
     shadow_max_concurrent: int = Field(default=2, ge=1, le=10)
+    # Optional per-owner cap, additive on top of the global cap above — unset
+    # (default) means no per-owner limit, identical to today's behavior. Only
+    # meaningful when set below shadow_max_concurrent; the point is fairness
+    # (one owner can't exhaust every slot), not extra total capacity — raising
+    # the global cap is the lever for more total capacity, not this one.
+    shadow_max_concurrent_per_owner: int | None = Field(default=None, ge=1, le=10)
     # Max cluster lifetime; the sweeper reaps active app-tagged clusters older
     # than this, catching leaks from processes that died before teardown.
     shadow_max_lifetime_minutes: int = Field(default=30, ge=1, le=1440)

@@ -59,6 +59,16 @@ class RetrievalWeights(BaseModel):
     risk_flag_overlap: float = Field(ge=0.0)
 
 
+class SourceWeights(BaseModel):
+    """Per-tier multiplier applied to final_score — docs/cross_customer.md §4."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    owner: float = Field(ge=0.0, le=2.0)
+    cross_customer: float = Field(ge=0.0, le=2.0)
+    corpus: float = Field(ge=0.0, le=2.0)
+
+
 class RetrievalConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -67,6 +77,7 @@ class RetrievalConfig(BaseModel):
     weak_similarity_threshold: float = Field(ge=0.0, le=1.0)
     weights: RetrievalWeights
     adjacent_tiers: list[tuple[str, str]] = Field(default_factory=list)
+    source_weights: SourceWeights
 
 
 class GradingFile(BaseModel):

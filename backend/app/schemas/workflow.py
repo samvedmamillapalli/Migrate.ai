@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
 
 class DiscoverSchemaRequest(BaseModel):
@@ -11,6 +11,12 @@ class DiscoverSchemaRequest(BaseModel):
     Provide either ``connection_secret_arn`` (preferred — password stays in
     Secrets Manager / local secret store) or a one-shot ``database_url`` which
     is stored under a run-scoped secret name and never persisted on the row.
+
+    Both may be omitted when the run belongs to a workspace with a stored
+    connection (docs/FUTURE_WORKSPACES_PLAN.md) — the route falls back to
+    ``workspace.connection_secret_arn`` in that case. There is no hard
+    "require one" validator here anymore for that reason; the route raises
+    if, after considering the workspace fallback, nothing usable was found.
     """
 
     connection_secret_arn: str | None = None
@@ -26,14 +32,6 @@ class DiscoverSchemaRequest(BaseModel):
             return None
         normalized = value.strip()
         return normalized or None
-
-    @model_validator(mode="after")
-    def require_one(self) -> DiscoverSchemaRequest:
-        if not self.connection_secret_arn and not self.database_url:
-            raise ValueError(
-                "Provide connection_secret_arn or database_url for discovery"
-            )
-        return self
 
 
 class StartWorkflowRequest(BaseModel):

@@ -25,7 +25,7 @@ import {
   listRuns,
 } from "@/lib/api/endpoints"
 import { mapRunListItem, type RunListItem } from "@/lib/api/map-run"
-import { getOwnerIdentity, setCurrentRunId } from "@/lib/api/owner"
+import { getActiveWorkspaceId, getOwnerIdentity, setCurrentRunId } from "@/lib/api/owner"
 import {
   EmptyNote,
   ErrorNote,
@@ -179,7 +179,11 @@ export default function PastMigrationsPage() {
       setLoading(true)
       try {
         const owner = getOwnerIdentity()
-        const scope = owner ? { owner_identity: owner } : {}
+        const workspaceId = getActiveWorkspaceId()
+        const scope = {
+          ...(owner ? { owner_identity: owner } : {}),
+          ...(workspaceId ? { workspace_id: workspaceId } : {}),
+        }
         const [runsRes, metricsRes, approverRes, volumeRes] =
           await Promise.allSettled([
             listRuns({
@@ -198,7 +202,10 @@ export default function PastMigrationsPage() {
               ...(approver !== "all" ? { approver } : {}),
               ...scope,
             }),
-            getAccuracyMetrics({ owner_identity: owner || undefined }),
+            getAccuracyMetrics({
+              owner_identity: owner || undefined,
+              workspace_id: workspaceId || undefined,
+            }),
             listApprovers(scope),
             getRunVolume({ days: 7, ...scope }),
           ])

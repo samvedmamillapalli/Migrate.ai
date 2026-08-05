@@ -39,6 +39,7 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
                 selectinload(MigrationRun.approval),
                 selectinload(MigrationRun.grade),
                 selectinload(MigrationRun.memory),
+                selectinload(MigrationRun.workspace),
             )
         elif load_summary_children:
             # Narrow loader for list responses: only the four children whose
@@ -105,6 +106,8 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         *,
         status: MigrationRunStatus | None,
         owner_identity: str | None,
+        workspace_id: uuid.UUID | None = None,
+        status_in: list[MigrationRunStatus] | None = None,
         run_kind: str | None,
         exclude_kinds: list[str] | None,
         search: str | None,
@@ -114,8 +117,12 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
     ) -> Select[tuple[MigrationRun]]:
         if status is not None:
             query = query.where(MigrationRun.status == status)
+        if status_in:
+            query = query.where(MigrationRun.status.in_(status_in))
         if owner_identity is not None:
             query = query.where(MigrationRun.owner_identity == owner_identity)
+        if workspace_id is not None:
+            query = query.where(MigrationRun.workspace_id == workspace_id)
         if run_kind is not None:
             query = query.where(MigrationRun.run_kind == run_kind)
         if exclude_kinds:
@@ -154,7 +161,9 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         offset: int = 0,
         limit: int = 50,
         status: MigrationRunStatus | None = None,
+        status_in: list[MigrationRunStatus] | None = None,
         owner_identity: str | None = None,
+        workspace_id: uuid.UUID | None = None,
         run_kind: str | None = None,
         exclude_kinds: list[str] | None = None,
         search: str | None = None,
@@ -174,7 +183,9 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         query = self._apply_filters(
             query,
             status=status,
+            status_in=status_in,
             owner_identity=owner_identity,
+            workspace_id=workspace_id,
             run_kind=run_kind,
             exclude_kinds=exclude_kinds,
             search=search,
@@ -199,7 +210,9 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         self,
         *,
         status: MigrationRunStatus | None = None,
+        status_in: list[MigrationRunStatus] | None = None,
         owner_identity: str | None = None,
+        workspace_id: uuid.UUID | None = None,
         run_kind: str | None = None,
         exclude_kinds: list[str] | None = None,
         search: str | None = None,
@@ -210,7 +223,9 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         query = self._apply_filters(
             select(MigrationRun),
             status=status,
+            status_in=status_in,
             owner_identity=owner_identity,
+            workspace_id=workspace_id,
             run_kind=run_kind,
             exclude_kinds=exclude_kinds,
             search=search,
@@ -224,6 +239,7 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         self,
         *,
         owner_identity: str | None = None,
+        workspace_id: uuid.UUID | None = None,
         exclude_kinds: list[str] | None = None,
     ) -> list[str]:
         """Approver identities present in the caller's runs, for a filter list."""
@@ -234,6 +250,8 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         )
         if owner_identity is not None:
             query = query.where(MigrationRun.owner_identity == owner_identity)
+        if workspace_id is not None:
+            query = query.where(MigrationRun.workspace_id == workspace_id)
         if exclude_kinds:
             query = query.where(MigrationRun.run_kind.notin_(exclude_kinds))
         rows = await self._session.execute(query)

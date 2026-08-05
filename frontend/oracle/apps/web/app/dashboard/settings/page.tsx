@@ -10,22 +10,29 @@ import { apiBaseUrl } from "@/lib/api/client"
 import { DashboardSignOutButton } from "@/components/dashboard-sign-out-button"
 import {
   getConnectionSecretArn,
+  getOwnerIdentity,
   setConnectionSecretArn,
 } from "@/lib/api/owner"
 import {
   disconnectSlack,
   getHealth,
   getMemoriesHealth,
+  getMemorySharingPreview,
+  getMemorySharingStatus,
   getSlackInstallUrl,
   getSlackStatus,
   isSfnReady,
+  setMemorySharing,
   type CorpusHealth,
   type HealthResponse,
+  type MemorySharingPreviewResponse,
+  type MemorySharingStatusResponse,
   type SlackStatusResponse,
 } from "@/lib/api/endpoints"
 import { ApiError } from "@/lib/api/client"
 import { OwnerIdentityField } from "@/components/owner-identity-field"
 import { useThemePreference } from "@/components/theme-provider"
+import { WorkspaceSettingsPanel } from "@/components/workspace-settings-panel"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import {
@@ -152,6 +159,17 @@ export default function SettingsPage() {
   const [slackActionError, setSlackActionError] = React.useState<
     string | null
   >(null)
+  const [sharingStatus, setSharingStatus] =
+    React.useState<MemorySharingStatusResponse | null>(null)
+  const [sharingPreview, setSharingPreview] =
+    React.useState<MemorySharingPreviewResponse | null>(null)
+  const [sharingBusy, setSharingBusy] = React.useState(false)
+  const [sharingPreviewLoading, setSharingPreviewLoading] =
+    React.useState(false)
+  const [sharingActionError, setSharingActionError] = React.useState<
+    string | null
+  >(null)
+  const [sharingConfirming, setSharingConfirming] = React.useState(false)
 
   const refreshSlackStatus = React.useCallback(async () => {
     try {
@@ -160,6 +178,14 @@ export default function SettingsPage() {
       // Best-effort — the panel below shows "unknown" rather than blocking
       // the rest of the settings page on a Slack lookup failure.
       setSlackStatus(null)
+    }
+  }, [])
+
+  const refreshSharingStatus = React.useCallback(async () => {
+    try {
+      setSharingStatus(await getMemorySharingStatus(getOwnerIdentity()))
+    } catch {
+      setSharingStatus(null)
     }
   }, [])
 
@@ -175,10 +201,11 @@ export default function SettingsPage() {
     }
     void load()
     void refreshSlackStatus()
+    void refreshSharingStatus()
     return () => {
       cancelled = true
     }
-  }, [refreshSlackStatus])
+  }, [refreshSlackStatus, refreshSharingStatus])
 
   // The backend redirects here with ?slack=connected|error after the OAuth
   // callback completes (see SLACK_INSTALL_SUCCESS_REDIRECT /
@@ -219,6 +246,71 @@ export default function SettingsPage() {
       )
     } finally {
       setSlackBusy(false)
+    }
+  }
+
+  /**
+   * docs/cross_customer.md §6 — enabling requires seeing a real example
+   * first, not just a checkbox. This fetches that example (built live from
+   * the account's own most recent graded run, never written anywhere) and
+   * opens the confirm step; the actual opt-in only happens in
+   * handleSharingConfirm below.
+   */
+  async function handleSharingEnableClick() {
+    setSharingActionError(null)
+    setSharingPreviewLoading(true)
+    setSharingConfirming(true)
+    try {
+      setSharingPreview(await getMemorySharingPreview(getOwnerIdentity()))
+    } catch (err) {
+      setSharingActionError(
+        err instanceof ApiError
+          ? err.message
+          : "Could not build a preview of what would be shared."
+      )
+      setSharingConfirming(false)
+    } finally {
+      setSharingPreviewLoading(false)
+    }
+  }
+
+  async function handleSharingConfirm() {
+    setSharingBusy(true)
+    setSharingActionError(null)
+    try {
+      setSharingStatus(await setMemorySharing(true, getOwnerIdentity()))
+      setSharingConfirming(false)
+      setSharingPreview(null)
+    } catch (err) {
+      setSharingActionError(
+        err instanceof ApiError
+          ? err.message
+          : "Could not enable cross-customer sharing."
+      )
+    } finally {
+      setSharingBusy(false)
+    }
+  }
+
+  function handleSharingCancel() {
+    setSharingConfirming(false)
+    setSharingPreview(null)
+    setSharingActionError(null)
+  }
+
+  async function handleSharingDisable() {
+    setSharingBusy(true)
+    setSharingActionError(null)
+    try {
+      setSharingStatus(await setMemorySharing(false, getOwnerIdentity()))
+    } catch (err) {
+      setSharingActionError(
+        err instanceof ApiError
+          ? err.message
+          : "Could not disable cross-customer sharing."
+      )
+    } finally {
+      setSharingBusy(false)
     }
   }
 
@@ -376,6 +468,120 @@ export default function SettingsPage() {
                 {slackActionError}
               </p>
             ) : null}
+          </Panel>
+
+          <Panel className="px-6 py-5" delay={0.13}>
+            <Label className="mb-4">Cross-customer memory sharing</Label>
+            <p className="text-muted-foreground mb-1 text-[13px] leading-relaxed">
+              When enabled, your graded migrations contribute anonymized
+              patterns to a shared pool other accounts&apos; predictions can
+              draw on — no table names, column names, or other identifiers
+              ever leave your account; every field goes through an
+              anonymization + defense-in-depth leak check first. Off by
+              default.
+            </p>
+
+            <Row
+              title={
+                sharingStatus?.enabled
+                  ? "Sharing enabled"
+                  : "Not sharing"
+              }
+              detail={
+                sharingStatus?.enabled
+                  ? "Your graded runs are anonymized and contributed to the shared pool automatically."
+                  : "Your graded runs stay private to your account."
+              }
+            >
+              {sharingStatus?.enabled ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={sharingBusy}
+                  onClick={() => void handleSharingDisable()}
+                >
+                  {sharingBusy ? "Disabling…" : "Disable"}
+                </Button>
+              ) : (
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={sharingBusy || sharingConfirming}
+                  onClick={() => void handleSharingEnableClick()}
+                >
+                  Enable…
+                </Button>
+              )}
+            </Row>
+
+            {sharingConfirming ? (
+              <div className="border-border bg-muted/30 mt-3 space-y-3 rounded-lg border p-4">
+                <div className="text-foreground text-[13px] font-semibold">
+                  Here&apos;s a real example of what would be shared
+                </div>
+                {sharingPreviewLoading ? (
+                  <p className="text-muted-foreground text-[13px]">
+                    Building a live example from your most recent graded
+                    run…
+                  </p>
+                ) : sharingPreview?.available ? (
+                  <div className="space-y-2">
+                    <div className="rounded-md border border-border bg-background p-3 font-mono text-[12px] leading-relaxed break-words">
+                      {sharingPreview.sql_shape_template}
+                    </div>
+                    {sharingPreview.generalized_summary ? (
+                      <p className="text-[12.5px] text-foreground leading-relaxed">
+                        {sharingPreview.generalized_summary}
+                      </p>
+                    ) : null}
+                    {sharingPreview.generalized_risk_narrative ? (
+                      <p className="text-muted-foreground text-[12.5px] leading-relaxed">
+                        {sharingPreview.generalized_risk_narrative}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground text-[13px] leading-relaxed">
+                    {sharingPreview?.reason ??
+                      "No preview available yet — you can still enable sharing; it will apply starting with your next graded run."}
+                  </p>
+                )}
+                <p className="text-muted-foreground text-[12px] leading-relaxed">
+                  Once a pattern is contributed, it stays in the shared pool
+                  even if you turn sharing off later — disabling only stops
+                  future contributions, since nothing here is linked back to
+                  your account to remove it.
+                </p>
+                <div className="flex items-center gap-2 pt-1">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    disabled={sharingBusy || sharingPreviewLoading}
+                    onClick={() => void handleSharingConfirm()}
+                  >
+                    {sharingBusy ? "Enabling…" : "Confirm & enable"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={sharingBusy}
+                    onClick={handleSharingCancel}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {sharingActionError ? (
+              <p className="mt-2 text-[12px] leading-snug text-destructive">
+                {sharingActionError}
+              </p>
+            ) : null}
+          </Panel>
+
+          <Panel className="px-6 py-5" delay={0.13}>
+            <WorkspaceSettingsPanel />
           </Panel>
 
           <Panel className="px-6 py-5" delay={0.14}>

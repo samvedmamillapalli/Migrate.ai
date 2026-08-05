@@ -39,6 +39,8 @@ WITH scoped AS (
       AND mr.run_kind NOT IN ('chaos', 'debug')
       AND (CAST(:owner_identity AS STRING) IS NULL
            OR mr.owner_identity = CAST(:owner_identity AS STRING))
+      AND (CAST(:workspace_id AS UUID) IS NULL
+           OR mr.workspace_id = CAST(:workspace_id AS UUID))
 )
 SELECT * FROM (
     -- Run created
@@ -194,6 +196,8 @@ WHERE mr.owner_identity != :corpus_owner
   AND mr.created_at >= (CURRENT_DATE - CAST(:days AS INT) + 1)
   AND (CAST(:owner_identity AS STRING) IS NULL
        OR mr.owner_identity = CAST(:owner_identity AS STRING))
+  AND (CAST(:workspace_id AS UUID) IS NULL
+       OR mr.workspace_id = CAST(:workspace_id AS UUID))
 GROUP BY 1
 ORDER BY 1
 """
@@ -203,6 +207,7 @@ async def fetch_run_volume(
     session: AsyncSession,
     *,
     owner_identity: str | None = None,
+    workspace_id: str | None = None,
     days: int = 7,
 ) -> dict[str, Any]:
     """Daily succeeded / failed run counts across the whole history."""
@@ -214,6 +219,7 @@ async def fetch_run_volume(
             text(_VOLUME_SQL),
             {
                 "owner_identity": owner_identity,
+                "workspace_id": workspace_id,
                 "corpus_owner": CORPUS_OWNER_IDENTITY,
                 "days": window,
             },
@@ -247,6 +253,7 @@ async def fetch_activity_feed(
     session: AsyncSession,
     *,
     owner_identity: str | None = None,
+    workspace_id: str | None = None,
     limit: int = 25,
 ) -> dict[str, Any]:
     rows = (
@@ -254,6 +261,7 @@ async def fetch_activity_feed(
             text(_FEED_SQL),
             {
                 "owner_identity": owner_identity,
+                "workspace_id": workspace_id,
                 "corpus_owner": CORPUS_OWNER_IDENTITY,
                 "limit": max(1, min(int(limit), 200)),
             },

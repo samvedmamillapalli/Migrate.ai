@@ -23,6 +23,7 @@ async def fetch_accuracy_metrics(
     session: AsyncSession,
     *,
     owner_identity: str | None = None,
+    workspace_id: str | None = None,
 ) -> dict[str, Any]:
     """Plain SQL aggregates over grades / memories for Phase 11 charts.
 
@@ -31,8 +32,17 @@ async def fetch_accuracy_metrics(
     When ``owner_identity`` is given, every run-scoped query below is filtered
     to that owner so this card and the Overview "Recent" list always describe
     the same population instead of silently comparing per-owner to global.
+    ``workspace_id``, when given, narrows further to runs created under that
+    one workspace (docs/FUTURE_WORKSPACES_PLAN.md) — deliberately NOT applied
+    to memory/retrieval numbers below (the ``retrieval`` query), since memory
+    retrieval itself is owner-wide by explicit design; showing a workspace-
+    filtered memory count here would misrepresent what prediction actually
+    draws on.
     """
-    params: dict[str, Any] = {"owner_identity": owner_identity}
+    params: dict[str, Any] = {
+        "owner_identity": owner_identity,
+        "workspace_id": workspace_id,
+    }
     # Shared predicate: only genuine graded outcomes count toward accuracy.
     _GRADE_OK = """
         COALESCE(g.prose_status, '') NOT IN ('open_source', 'seed')
@@ -56,6 +66,7 @@ async def fetch_accuracy_metrics(
               'synthetic_seed'
             )
         AND (CAST(:owner_identity AS STRING) IS NULL OR mr.owner_identity = CAST(:owner_identity AS STRING))
+        AND (CAST(:workspace_id AS UUID) IS NULL OR mr.workspace_id = CAST(:workspace_id AS UUID))
     """
 
     scalar_trend = (
@@ -145,6 +156,7 @@ async def fetch_accuracy_metrics(
                 WHERE mr.owner_identity != :corpus_owner
                   AND mr.run_kind NOT IN ('chaos', 'debug')
                   AND (CAST(:owner_identity AS STRING) IS NULL OR mr.owner_identity = CAST(:owner_identity AS STRING))
+                  AND (CAST(:workspace_id AS UUID) IS NULL OR mr.workspace_id = CAST(:workspace_id AS UUID))
                 GROUP BY 1
                 """
             ),

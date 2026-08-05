@@ -12,6 +12,11 @@ LEGACY_DEMO_CORPUS_OWNER = "demo-corpus"
 MEMORY_ORIGIN_GRADED_SHADOW = "graded_shadow"
 MEMORY_ORIGIN_OPEN_SOURCE_INCIDENT = "open_source_documented_incident"
 MEMORY_ORIGIN_SYNTHETIC_SEED = "synthetic_seed"
+# Anonymized, opt-in, cross-tenant pattern — see docs/cross_customer.md.
+# Never a real user's data; every field on cross_customer_memories has
+# already been through app.memory.cross_customer_anonymizer before a row
+# exists, and the table carries no owner/tenant identity at all.
+MEMORY_ORIGIN_CROSS_CUSTOMER = "cross_customer_anonymized"
 
 EMBEDDING_DIMENSIONS = 1024
 EMBEDDING_STATUS_PENDING = "pending"
@@ -25,6 +30,10 @@ EMBEDDING_STATUS_FAILED = "failed"
 # and app.memory.index_health can use them without an import cycle.
 VECTOR_INDEX_SCOPED = "ix_migration_memories_embedding_scoped"
 VECTOR_INDEX_READY = "ix_migration_memories_embedding_ready"
+
+# Cross-customer pool (Alembic r1m9j6e0i8d9). No owner prefix column exists
+# on this table by design, so there is only one query shape/index.
+VECTOR_INDEX_CROSS_CUSTOMER = "ix_cross_customer_memories_embedding_ready"
 
 # CockroachDB Agent Skills Repo (cockroachlabs/cockroachdb-skills), vendored via
 # `npx skills add` and embedded into cockroachdb_skill_docs. Same partial-index

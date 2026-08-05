@@ -16,6 +16,21 @@
 
 Control-plane + frontend hosting: [`docs/HOSTING.md`](HOSTING.md).
 
+**2026-08-05 — optional per-owner shadow concurrency cap, needs a redeploy
+to take effect in the demo path.** `ProvisionShadowCluster`
+(`app/lambdas/handlers/provision_shadow.py`) now also passes
+`owner_identity` and `settings.shadow_max_concurrent_per_owner` into
+`acquire_slot`/`try_admit` — see
+[`docs/FUTURE_CONCURRENT_SHADOW_PLAN.md`](FUTURE_CONCURRENT_SHADOW_PLAN.md).
+Live-verified directly against the real database (bypassing the Lambda,
+since admission is pure DB logic — no CockroachDB Cloud cost), but the
+running Lambda ZIP itself won't pick this up until the next
+`.\build.ps1` / `.\deploy.ps1`. The new `SHADOW_MAX_CONCURRENT_PER_OWNER`
+env var is **optional and unset by default** — leaving it unset keeps
+today's behavior (global cap only) even after redeploying; only set it if
+a per-owner fairness cap is actually wanted, and keep it below
+`SHADOW_MAX_CONCURRENT` (the global cap) or it's a no-op.
+
 One-command repeatable deploy for: **S3 artifacts bucket**, **seven workflow
 Lambdas** (ZIP packages using `SHADOW_PROVIDER=ccloud_api`), **EventBridge orphan
 sweeper**, and the **Step Functions** state machine whose ASL is

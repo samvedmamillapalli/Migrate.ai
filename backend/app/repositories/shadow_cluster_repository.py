@@ -7,6 +7,7 @@ from sqlalchemy import func, select
 
 from app.database.models import (
     ACTIVE_SHADOW_STATUSES,
+    MigrationRun,
     ShadowCluster,
     ShadowClusterStatus,
 )
@@ -38,6 +39,25 @@ class ShadowClusterRepository(BaseRepository[ShadowCluster]):
             select(func.count())
             .select_from(ShadowCluster)
             .where(ShadowCluster.status.in_(ACTIVE_SHADOW_STATUSES))
+        )
+        result = await self._session.execute(query)
+        return int(result.scalar_one())
+
+    async def count_active_for_owner(self, owner_identity: str) -> int:
+        """Same predicate as ``count_active``, narrowed to one owner's runs.
+
+        ``ShadowCluster`` carries no owner column itself, so this joins to
+        ``MigrationRun`` to find out who owns each cluster. Runs inside the
+        caller's transaction, same as ``count_active``.
+        """
+        query = (
+            select(func.count())
+            .select_from(ShadowCluster)
+            .join(MigrationRun, MigrationRun.id == ShadowCluster.migration_run_id)
+            .where(
+                ShadowCluster.status.in_(ACTIVE_SHADOW_STATUSES),
+                MigrationRun.owner_identity == owner_identity,
+            )
         )
         result = await self._session.execute(query)
         return int(result.scalar_one())

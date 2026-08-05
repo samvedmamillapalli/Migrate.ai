@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -35,6 +35,18 @@ from app.memory.embedding_client import (
     vector_to_literal,
 )
 from app.repositories.migration_memory_repository import MigrationMemoryRepository
+
+if TYPE_CHECKING:
+    # Deferred to type-checking only: app.services.cross_customer_promotion_service
+    # imports from app.memory (cross_customer_anonymizer), and app.memory's
+    # own package __init__ imports this module — an eager top-level import
+    # here creates a genuine circular import between the app.memory package
+    # and app.services, reproduced while wiring this in. writer.py only
+    # needs the name for a constructor type hint; the actual instance is
+    # always injected by the caller, never constructed here.
+    from app.services.cross_customer_promotion_service import (
+        CrossCustomerPromotionService,
+    )
 
 logger = get_logger(__name__)
 
@@ -102,11 +114,17 @@ class MemoryWriteService:
         repository: MigrationMemoryRepository,
         embedding_client: EmbeddingClient | None,
         embedding_model_id: str | None = None,
+        cross_customer_promotion: CrossCustomerPromotionService | None = None,
     ) -> None:
         self._session = session
         self._repo = repository
         self._embed = embedding_client
         self._model_id = (embedding_model_id or "").strip() or None
+        # Automatic promotion hook — docs/cross_customer.md §5. Optional by
+        # construction, same as every other cross-customer touchpoint: a
+        # caller that doesn't pass one simply gets no cross-customer
+        # promotion, not an error.
+        self._cross_customer_promotion = cross_customer_promotion
 
     async def write_memory(
         self,
@@ -191,6 +209,27 @@ class MemoryWriteService:
                 "embedding_status": memory.embedding_status,
             },
         )
+
+        # Cross-customer promotion (docs/cross_customer.md §5) — strictly
+        # after the private-tier write above has committed, and strictly
+        # best-effort: try_promote never raises, and its own internal
+        # consent check means this is a no-op for every account that
+        # hasn't opted in (the overwhelming default). A failure here must
+        # never turn a successfully graded and remembered run into a
+        # failed one.
+        if self._cross_customer_promotion is not None:
+            try:
+                await self._cross_customer_promotion.try_promote(
+                    run=run, prediction=prediction, grade=grade
+                )
+            except Exception:  # noqa: BLE001 - see class docstring; belt and braces
+                logger.warning(
+                    "Cross-customer promotion hook raised unexpectedly "
+                    "(try_promote itself should never do this) — ignoring",
+                    extra={"run_id": str(run.id)},
+                    exc_info=True,
+                )
+
         return memory
 
     async def repair_pending_embedding(

@@ -92,6 +92,8 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
                 max_lifetime_minutes=settings.shadow_max_lifetime_minutes,
                 wait_timeout_seconds=settings.shadow_slot_wait_timeout_seconds,
                 poll_interval_seconds=settings.shadow_slot_poll_interval_seconds,
+                owner_identity=run.owner_identity,
+                max_concurrent_per_owner=settings.shadow_max_concurrent_per_owner,
             )
 
             if (

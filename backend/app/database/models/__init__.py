@@ -4,9 +4,11 @@ from app.database.models.app_user import AppUser
 from app.database.models.approval import Approval, ApprovalDecision
 from app.database.models.ccloud_audit_event import CCloudAuditEvent
 from app.database.models.cockroachdb_skill_doc import CockroachDBSkillDoc
+from app.database.models.cross_customer_memory import CrossCustomerMemory
 from app.database.models.execution_result import ExecutionResult
 from app.database.models.grade import Grade
 from app.database.models.learned_outcome import LearnedOutcome
+from app.database.models.memory_sharing_preference import MemorySharingPreference
 from app.database.models.migration_memory import MigrationMemory
 from app.database.models.migration_run import (
     CompatibilityRisk,
@@ -24,6 +26,7 @@ from app.database.models.shadow_cluster import (
     ShadowCluster,
     ShadowClusterStatus,
 )
+from app.database.models.workspace import Workspace
 
 __all__ = [
     "ACTIVE_SHADOW_STATUSES",
@@ -35,9 +38,11 @@ __all__ = [
     "CCloudAuditEvent",
     "CockroachDBSkillDoc",
     "CompatibilityRisk",
+    "CrossCustomerMemory",
     "ExecutionResult",
     "Grade",
     "LearnedOutcome",
+    "MemorySharingPreference",
     "MigrationMemory",
     "MigrationRun",
     "MigrationRunStatus",
@@ -51,4 +56,5 @@ __all__ = [
     "TimestampMixin",
     "UUIDPrimaryKeyMixin",
     "WorkflowStatus",
+    "Workspace",
 ]

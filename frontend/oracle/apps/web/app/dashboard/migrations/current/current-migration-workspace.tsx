@@ -9,6 +9,7 @@ import { Button, buttonVariants } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import { cn } from "@workspace/ui/lib/utils"
 
+import { ActiveRunsPanel } from "@/components/active-runs-panel"
 import { OwnerIdentityField } from "@/components/owner-identity-field"
 import { ShadowLiveView } from "@/components/shadow-live-view"
 import { useShadowWatch } from "@/components/shadow-watch-context"
@@ -47,6 +48,7 @@ import {
   mapProcessStages,
   mapShadowChecks,
   mapSchema,
+  getActiveWorkspaceId,
   policyLabel,
   predictRun,
   primaryTableName,
@@ -1452,6 +1454,7 @@ export function CurrentMigrationWorkspace() {
       const created = await createRun({
         migration_sql: sql,
         owner_identity: ownerIdentity,
+        workspace_id: getActiveWorkspaceId() || null,
       })
       setCurrentRunId(created.id)
       setRun(created)
@@ -1802,6 +1805,8 @@ export function CurrentMigrationWorkspace() {
           ) : null
         }
       />
+
+      <ActiveRunsPanel currentRunId={run?.id} />
 
       {run ? (
         <Panel className="flex flex-col gap-3 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">

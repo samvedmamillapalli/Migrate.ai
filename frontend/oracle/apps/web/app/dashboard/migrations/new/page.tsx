@@ -24,6 +24,7 @@ import {
   discardRun,
   discoverErrorHint,
   discoverSchema,
+  getActiveWorkspaceId,
   getCurrentRunId,
   getPipelineProgress,
   getRun,
@@ -321,6 +322,7 @@ export default function NewMigrationPage() {
       const created = run ?? (await createRun({
         migration_sql: trimmedSql,
         owner_identity: owner,
+        workspace_id: getActiveWorkspaceId() || null,
       }))
       setRun(created)
       setCurrentRunId(created.id)

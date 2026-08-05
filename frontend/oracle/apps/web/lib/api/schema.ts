@@ -577,6 +577,11 @@ export interface paths {
          *     populated — see app.lambdas.handlers.cleanup. This lets the user end that
          *     hold early instead of waiting out the window or the sweeper. Idempotent:
          *     calling it on an already-destroyed cluster just returns its current state.
+         *
+         *     ``service.get_by_run`` below reads the ``shadow_clusters`` table, which
+         *     has no ``owner_identity`` of its own — ownership can only be checked
+         *     against the parent ``MigrationRun``, hence the extra
+         *     ``get_owned_run`` dependency alongside it.
          */
         post: operations["teardown_shadow_cluster_now_runs__run_id__shadow_cluster_teardown_now_post"];
         delete?: never;
@@ -601,6 +606,11 @@ export interface paths {
          *     don't time out an idle connection). Falls back gracefully: a client that
          *     can't use EventSource can keep polling the plain GET route, which is
          *     unaffected by this endpoint's existence.
+         *
+         *     Ownership is checked once, up front, via ``get_owned_run`` — a stream
+         *     for a run you don't own should never open, rather than being checked
+         *     per-tick inside the generator below (which re-fetches the run itself
+         *     for its own polling purposes, unrelated to authorization).
          */
         get: operations["stream_shadow_cluster_runs__run_id__shadow_cluster_stream_get"];
         put?: never;
@@ -666,6 +676,43 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/workspaces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Workspaces */
+        get: operations["list_workspaces_workspaces_get"];
+        put?: never;
+        /** Create Workspace */
+        post: operations["create_workspace_workspaces_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspace_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Workspace */
+        get: operations["get_workspace_workspaces__workspace_id__get"];
+        put?: never;
+        post?: never;
+        /** Delete Workspace */
+        delete: operations["delete_workspace_workspaces__workspace_id__delete"];
+        options?: never;
+        head?: never;
+        /** Update Workspace */
+        patch: operations["update_workspace_workspaces__workspace_id__patch"];
         trace?: never;
     };
     "/memories/health": {
@@ -744,6 +791,73 @@ export interface paths {
          * @description Expose the reserved corpus owner constant for UI filters.
          */
         get: operations["get_corpus_identity_memories_corpus_identity_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory-sharing/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Status */
+        get: operations["get_status_api_memory_sharing_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory-sharing/set": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Status
+         * @description Flip the opt-in toggle. The frontend is expected to have shown
+         *     ``/preview`` before calling this with ``enabled=true`` (§6) — enforced
+         *     in the UI, not here, matching how consent flows work everywhere else in
+         *     this app (e.g. Slack install is a deliberate user action, not
+         *     server-gated on having viewed a specific screen first). Write path, so
+         *     unlike the read routes above, a genuinely missing identity is a hard
+         *     422 (resolve_owner_identity), not a silent "" — a consent row keyed on
+         *     an empty identity would opt in every run whose owner is also blank.
+         */
+        post: operations["set_status_api_memory_sharing_set_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/memory-sharing/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Preview
+         * @description Live example of what would be shared, built from this account's own
+         *     most recently graded run — never written to the database. Does not
+         *     require the account to already be opted in; that's the point of a
+         *     preview.
+         */
+        get: operations["get_preview_api_memory_sharing_preview_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -987,6 +1101,12 @@ export interface components {
          *     Provide either ``connection_secret_arn`` (preferred — password stays in
          *     Secrets Manager / local secret store) or a one-shot ``database_url`` which
          *     is stored under a run-scoped secret name and never persisted on the row.
+         *
+         *     Both may be omitted when the run belongs to a workspace with a stored
+         *     connection (docs/FUTURE_WORKSPACES_PLAN.md) — the route falls back to
+         *     ``workspace.connection_secret_arn`` in that case. There is no hard
+         *     "require one" validator here anymore for that reason; the route raises
+         *     if, after considering the workspace fallback, nothing usable was found.
          */
         DiscoverSchemaRequest: {
             /** Connection Secret Arn */
@@ -1354,6 +1474,56 @@ export interface components {
             /** Results */
             results: components["schemas"]["MemorySearchHit"][];
         };
+        /**
+         * MemorySharingPreviewResponse
+         * @description docs/cross_customer.md §6 — a real, live example of what would be
+         *     shared, built from one of the account's own past graded runs, shown
+         *     before the user confirms opting in. Never written to the database.
+         */
+        MemorySharingPreviewResponse: {
+            /** Available */
+            available: boolean;
+            /** Reason */
+            reason?: string | null;
+            /** Source Run Id */
+            source_run_id?: string | null;
+            /** Sql Shape Template */
+            sql_shape_template?: string | null;
+            /** Generalized Summary */
+            generalized_summary?: string | null;
+            /** Generalized Risk Narrative */
+            generalized_risk_narrative?: string | null;
+            /** Generalized Lessons Learned */
+            generalized_lessons_learned?: string | null;
+            /** Generalized Surprise Notes */
+            generalized_surprise_notes?: string | null;
+            /** Risk Flags */
+            risk_flags?: {
+                [key: string]: unknown;
+            }[] | null;
+        };
+        /** MemorySharingSetRequest */
+        MemorySharingSetRequest: {
+            /** Enabled */
+            enabled: boolean;
+            /** Owner Identity */
+            owner_identity?: string | null;
+        };
+        /**
+         * MemorySharingStatusResponse
+         * @description Current opt-in state. Absence of a row is the same as ``False`` —
+         *     see MemorySharingPreferenceRepository.is_enabled.
+         */
+        MemorySharingStatusResponse: {
+            /** Owner Identity */
+            owner_identity: string;
+            /** Enabled */
+            enabled: boolean;
+            /** Enabled At */
+            enabled_at?: string | null;
+            /** Disabled At */
+            disabled_at?: string | null;
+        };
         /** MigrationRunCreateRequest */
         MigrationRunCreateRequest: {
             /**
@@ -1372,6 +1542,11 @@ export interface components {
              * @description Optional link to an earlier run this migration revises
              */
             revises_run_id?: string | null;
+            /**
+             * Workspace Id
+             * @description Optional workspace this run belongs to (docs/FUTURE_WORKSPACES_PLAN.md). Must belong to the same owner — discover then defaults its connection from the workspace's stored connection when the caller doesn't supply one.
+             */
+            workspace_id?: string | null;
             /**
              * Run Kind
              * @description standard (default) | chaos (deliberate failure test) | debug (developer/demo tooling). Keeps chaos/debug runs out of the default Recent list and future accuracy queries.
@@ -1422,6 +1597,8 @@ export interface components {
             run_kind: string;
             /** Revises Run Id */
             revises_run_id?: string | null;
+            /** Workspace Id */
+            workspace_id?: string | null;
             /** Schema Snapshot */
             schema_snapshot?: {
                 [key: string]: unknown;
@@ -1522,6 +1699,8 @@ export interface components {
             run_kind: string;
             /** Revises Run Id */
             revises_run_id?: string | null;
+            /** Workspace Id */
+            workspace_id?: string | null;
             /** Schema Discovered At */
             schema_discovered_at?: string | null;
             /** Schema Discovery Duration Ms */
@@ -1754,6 +1933,80 @@ export interface components {
          * @enum {string}
          */
         WorkflowStatus: "not_started" | "running" | "succeeded" | "failed" | "timed_out" | "aborted";
+        /** WorkspaceCreateRequest */
+        WorkspaceCreateRequest: {
+            /** Name */
+            name: string;
+            /**
+             * Owner Identity
+             * @description Ignored when auth is enforced (token owner wins).
+             */
+            owner_identity?: string | null;
+            /** Connection Secret Arn */
+            connection_secret_arn?: string | null;
+            /**
+             * Database Url
+             * @description One-shot connection URL; stored as a secret, never persisted on the row
+             */
+            database_url?: string | null;
+        };
+        /** WorkspaceListResponse */
+        WorkspaceListResponse: {
+            /** Items */
+            items: components["schemas"]["WorkspaceResponse"][];
+            /** Total */
+            total: number;
+        };
+        /** WorkspaceResponse */
+        WorkspaceResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Owner Identity */
+            owner_identity: string;
+            /** Name */
+            name: string;
+            /** Connection Secret Arn */
+            connection_secret_arn?: string | null;
+            /** Connection Label */
+            connection_label?: string | null;
+            /**
+             * Has Connection
+             * @default false
+             */
+            has_connection: boolean;
+            /**
+             * Is Default
+             * @default false
+             */
+            is_default: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** WorkspaceUpdateRequest */
+        WorkspaceUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Connection Secret Arn */
+            connection_secret_arn?: string | null;
+            /** Database Url */
+            database_url?: string | null;
+            /**
+             * Clear Connection
+             * @default false
+             */
+            clear_connection: boolean;
+        };
     };
     responses: never;
     parameters: never;
@@ -1920,6 +2173,7 @@ export interface operations {
             query?: {
                 status?: components["schemas"]["MigrationRunStatus"] | null;
                 owner_identity?: string | null;
+                workspace_id?: string | null;
                 run_kind?: string | null;
                 /** @description Comma-separated run_kind values to exclude, e.g. chaos,debug */
                 exclude_kinds?: string | null;
@@ -2899,6 +3153,167 @@ export interface operations {
             };
         };
     };
+    list_workspaces_workspaces_get: {
+        parameters: {
+            query?: {
+                owner_identity?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_workspace_workspaces_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_workspace_workspaces__workspace_id__get: {
+        parameters: {
+            query?: {
+                owner_identity?: string | null;
+            };
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_workspace_workspaces__workspace_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_workspace_workspaces__workspace_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_corpus_health_memories_health_get: {
         parameters: {
             query?: never;
@@ -3010,6 +3425,101 @@ export interface operations {
                     "application/json": {
                         [key: string]: string;
                     };
+                };
+            };
+        };
+    };
+    get_status_api_memory_sharing_status_get: {
+        parameters: {
+            query?: {
+                owner_identity?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemorySharingStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_status_api_memory_sharing_set_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemorySharingSetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemorySharingStatusResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_preview_api_memory_sharing_preview_get: {
+        parameters: {
+            query?: {
+                owner_identity?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemorySharingPreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

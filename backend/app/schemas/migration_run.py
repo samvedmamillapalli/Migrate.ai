@@ -27,6 +27,14 @@ class MigrationRunCreateRequest(BaseModel):
         default=None,
         description="Optional link to an earlier run this migration revises",
     )
+    workspace_id: uuid.UUID | None = Field(
+        default=None,
+        description=(
+            "Optional workspace this run belongs to (docs/FUTURE_WORKSPACES_PLAN.md). "
+            "Must belong to the same owner — discover then defaults its connection "
+            "from the workspace's stored connection when the caller doesn't supply one."
+        ),
+    )
     run_kind: str = Field(
         default="standard",
         description=(
@@ -76,6 +84,7 @@ class MigrationRunResponse(BaseModel):
     owner_identity: str = "anonymous"
     run_kind: str = "standard"
     revises_run_id: uuid.UUID | None = None
+    workspace_id: uuid.UUID | None = None
     schema_snapshot: dict[str, Any] | None = None
     schema_discovered_at: datetime | None = None
     schema_discovery_duration_ms: float | None = None
@@ -141,6 +150,7 @@ class MigrationRunSummaryResponse(BaseModel):
     owner_identity: str = "anonymous"
     run_kind: str = "standard"
     revises_run_id: uuid.UUID | None = None
+    workspace_id: uuid.UUID | None = None
     schema_discovered_at: datetime | None = None
     schema_discovery_duration_ms: float | None = None
     schema_database_engine: str | None = None
@@ -196,6 +206,7 @@ class MigrationRunSummaryResponse(BaseModel):
             owner_identity=run.owner_identity,
             run_kind=run.run_kind,
             revises_run_id=run.revises_run_id,
+            workspace_id=run.workspace_id,
             schema_discovered_at=run.schema_discovered_at,
             schema_discovery_duration_ms=run.schema_discovery_duration_ms,
             schema_database_engine=run.schema_database_engine,

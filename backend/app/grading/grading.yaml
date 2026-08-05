@@ -72,3 +72,17 @@ retrieval:
   adjacent_tiers:
     - [small, medium]
     - [medium, large]
+  # Per-source multiplier applied to final_score after the weights above —
+  # see docs/cross_customer.md §4/§10. Your own graded history is trusted
+  # most; the anonymized cross-customer pool is real (if anonymized)
+  # production outcome data, trusted more than the generic open-source
+  # corpus. Introduced alongside cross-customer memory: before this,
+  # owner and corpus candidates were scored identically (no multiplier,
+  # i.e. an implicit 1.0 for both) — corpus now carries an explicit 0.8 so
+  # cross_customer's 0.9 lands strictly between owner and corpus, rather
+  # than leaving cross_customer to land below corpus by accident depending
+  # on raw semantic-similarity noise.
+  source_weights:
+    owner: 1.0
+    cross_customer: 0.9
+    corpus: 0.8

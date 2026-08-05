@@ -10,13 +10,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.logging import get_logger
 from app.grading.config import get_grading_file
 from app.grading.models import GradingFile
-from app.memory.constants import CORPUS_OWNER_IDENTITY
+from app.memory.constants import CORPUS_OWNER_IDENTITY, MEMORY_ORIGIN_CROSS_CUSTOMER
 from app.memory.embed_text import classify_migration_type
 from app.memory.embedding_client import EmbeddingClient, vector_to_literal
 from app.prediction.memory import (
     MemoryRetrieval,
     MemoryRetrievalResult,
     RetrievedMemory,
+)
+from app.repositories.cross_customer_memory_repository import (
+    CrossCustomerMemoryRepository,
 )
 from app.repositories.migration_memory_repository import MigrationMemoryRepository
 
@@ -82,6 +85,7 @@ class HybridMemoryRetrieval(MemoryRetrieval):
         session: AsyncSession,
         embedding_client: EmbeddingClient,
         repository: MigrationMemoryRepository | None = None,
+        cross_customer_repository: CrossCustomerMemoryRepository | None = None,
         config: GradingFile | None = None,
         owner_identity: str = "anonymous",
         query_risk_flags: list[dict[str, Any]] | None = None,
@@ -91,6 +95,10 @@ class HybridMemoryRetrieval(MemoryRetrieval):
         self._session = session
         self._embed = embedding_client
         self._repo = repository or MigrationMemoryRepository(session)
+        # Optional by design, same as every other cross-customer touchpoint
+        # in this app (docs/cross_customer.md): a caller that doesn't pass
+        # one simply doesn't get that tier merged in, rather than failing.
+        self._cross_customer_repo = cross_customer_repository
         self._config = config
         self._owner_identity = owner_identity
         self._query_risk_flags = query_risk_flags or []
@@ -112,6 +120,7 @@ class HybridMemoryRetrieval(MemoryRetrieval):
             session=self._session,
             embedding_client=self._embed,
             repository=self._repo,
+            cross_customer_repository=self._cross_customer_repo,
             config=self._config,
             owner_identity=owner_identity,
             query_risk_flags=query_risk_flags,
@@ -158,6 +167,26 @@ class HybridMemoryRetrieval(MemoryRetrieval):
             limit=pool,
         )
 
+        # Cross-customer pool (docs/cross_customer.md §4) — a third source,
+        # merged into the same re-rank below, never a separate retrieval
+        # path the caller has to know about. Best-effort: a failure here
+        # degrades to "no cross-customer results this call", never to a
+        # failed prediction — same posture as every other enrichment this
+        # app merges into a request that already has a complete answer
+        # without it.
+        cross_customer_candidates: list[tuple[Any, float]] = []
+        if self._cross_customer_repo is not None:
+            try:
+                cross_customer_candidates = await self._cross_customer_repo.vector_candidates(
+                    query_vector_literal=literal,
+                    limit=pool,
+                )
+            except Exception as exc:  # noqa: BLE001 - enrichment, never blocks retrieval
+                logger.warning(
+                    "Cross-customer memory retrieval failed; continuing without it",
+                    extra={"error": f"{type(exc).__name__}: {exc}"},
+                )
+
         adjacent = {
             frozenset(pair) for pair in cfg.retrieval.adjacent_tiers
         }
@@ -169,6 +198,7 @@ class HybridMemoryRetrieval(MemoryRetrieval):
             + weights.schema_shape
             + weights.risk_flag_overlap
         ) or 1.0
+        source_weights = cfg.retrieval.source_weights
 
         scored: list[dict[str, Any]] = []
         for mem, similarity in candidates:
@@ -181,15 +211,52 @@ class HybridMemoryRetrieval(MemoryRetrieval):
                 mem_complexity=mem.table_complexity,
             )
             flag_score = _flag_overlap(query_flag_ids, mem.risk_flags)
-            final = (
+            base_score = (
                 weights.semantic_similarity * similarity
                 + weights.migration_type_match * type_match
                 + weights.scale_tier_proximity * tier_score
                 + weights.schema_shape * shape
                 + weights.risk_flag_overlap * flag_score
             ) / weight_sum
+            source_tier = "owner" if mem.owner_identity == owner else "corpus"
+            final = base_score * getattr(source_weights, source_tier)
             scored.append(
                 {
+                    "tier": source_tier,
+                    "memory": mem,
+                    "similarity_score": similarity,
+                    "final_score": final,
+                    "factors": {
+                        "semantic_similarity": similarity,
+                        "migration_type_match": type_match,
+                        "scale_tier_proximity": tier_score,
+                        "schema_shape": shape,
+                        "risk_flag_overlap": flag_score,
+                    },
+                }
+            )
+
+        for mem, similarity in cross_customer_candidates:
+            type_match = 1.0 if mem.migration_type == migration_type else 0.0
+            tier_score = _tier_proximity(scale_tier, mem.scale_tier, adjacent)
+            # No index_count/table_complexity on this table by design (the
+            # anonymized record carries no per-account structural detail
+            # beyond scale_tier) — neutral default, same convention
+            # _shape_score already uses when the query itself has no
+            # structural data to compare against.
+            shape = 0.5
+            flag_score = _flag_overlap(query_flag_ids, mem.risk_flags)
+            base_score = (
+                weights.semantic_similarity * similarity
+                + weights.migration_type_match * type_match
+                + weights.scale_tier_proximity * tier_score
+                + weights.schema_shape * shape
+                + weights.risk_flag_overlap * flag_score
+            ) / weight_sum
+            final = base_score * source_weights.cross_customer
+            scored.append(
+                {
+                    "tier": "cross_customer",
                     "memory": mem,
                     "similarity_score": similarity,
                     "final_score": final,
@@ -206,11 +273,68 @@ class HybridMemoryRetrieval(MemoryRetrieval):
         scored.sort(key=lambda row: row["final_score"], reverse=True)
         top = scored[:final_limit]
         threshold = cfg.retrieval.weak_similarity_threshold
+        total_candidate_count = len(candidates) + len(cross_customer_candidates)
 
         retrieved: list[RetrievedMemory] = []
         attribution_rows: list[dict[str, Any]] = []
         for rank, row in enumerate(top, start=1):
             mem = row["memory"]
+            if row["tier"] == "cross_customer":
+                ui_label = (
+                    f"Anonymized pattern from {mem.contributor_count} "
+                    f"other team{'s' if mem.contributor_count != 1 else ''}"
+                )
+                retrieved.append(
+                    RetrievedMemory(
+                        memory_id=mem.id,
+                        migration_run_id=None,
+                        migration_summary=mem.generalized_summary,
+                        actual_duration_seconds=None,
+                        actual_storage_mb=None,
+                        predicted_duration_seconds=None,
+                        predicted_storage_mb=None,
+                        surprise_notes=mem.generalized_surprise_notes,
+                        similarity_score=round(float(row["similarity_score"]), 6),
+                        scale_tier=mem.scale_tier,
+                        memory_origin=MEMORY_ORIGIN_CROSS_CUSTOMER,
+                        not_a_graded_run=True,
+                        source_url=None,
+                        ui_label=ui_label,
+                        lessons_learned=mem.generalized_lessons_learned,
+                        outcome_class=mem.outcome_class,
+                        execution_success=None,
+                        contributor_count=mem.contributor_count,
+                    )
+                )
+                attribution_rows.append(
+                    {
+                        "rank": rank,
+                        "memory_id": str(mem.id),
+                        "migration_run_id": None,
+                        "owner_identity": None,
+                        "tier": "cross_customer",
+                        "migration_type": mem.migration_type,
+                        "scale_tier": mem.scale_tier,
+                        "similarity_score": round(float(row["similarity_score"]), 6),
+                        "final_score": round(float(row["final_score"]), 6),
+                        "re_rank_factors": row["factors"],
+                        "included_in_prompt": True,
+                        "migration_summary": mem.generalized_summary,
+                        "lessons_learned": mem.generalized_lessons_learned,
+                        "surprise_notes": mem.generalized_surprise_notes,
+                        "scalar_accuracy_score": mem.scalar_accuracy_score,
+                        "integrity": {
+                            "kind": MEMORY_ORIGIN_CROSS_CUSTOMER,
+                            "not_a_graded_run": True,
+                            "ui_label": ui_label,
+                            "contributor_count": mem.contributor_count,
+                        },
+                        "source_url": None,
+                        "not_a_graded_run": True,
+                    }
+                )
+                continue
+
             pred = mem.prediction_summary or {}
             exe = mem.execution_summary or {}
             grade = mem.grade_summary or {}
@@ -248,6 +372,7 @@ class HybridMemoryRetrieval(MemoryRetrieval):
                     "memory_id": str(mem.id),
                     "migration_run_id": str(mem.migration_run_id),
                     "owner_identity": mem.owner_identity,
+                    "tier": row["tier"],
                     "migration_type": mem.migration_type,
                     "scale_tier": mem.scale_tier,
                     "similarity_score": round(float(row["similarity_score"]), 6),
@@ -268,11 +393,14 @@ class HybridMemoryRetrieval(MemoryRetrieval):
         truncated = []
         for rank, row in enumerate(scored[final_limit:], start=final_limit + 1):
             mem = row["memory"]
+            mem_id = mem.id
+            run_id = None if row["tier"] == "cross_customer" else mem.migration_run_id
             truncated.append(
                 {
                     "rank": rank,
-                    "memory_id": str(mem.id),
-                    "migration_run_id": str(mem.migration_run_id),
+                    "memory_id": str(mem_id),
+                    "migration_run_id": str(run_id) if run_id else None,
+                    "tier": row["tier"],
                     "similarity_score": round(float(row["similarity_score"]), 6),
                     "final_score": round(float(row["final_score"]), 6),
                     "re_rank_factors": row["factors"],
@@ -285,12 +413,13 @@ class HybridMemoryRetrieval(MemoryRetrieval):
             query_summary=(
                 f"hybrid retrieval owner={owner} corpus={CORPUS_OWNER_IDENTITY} "
                 f"type={migration_type} tier={scale_tier} "
-                f"candidates={len(candidates)} returned={len(retrieved)}"
+                f"candidates={total_candidate_count} returned={len(retrieved)}"
             ),
             attribution={
-                "candidate_count": len(candidates),
+                "candidate_count": total_candidate_count,
                 "owner_identity": owner,
                 "corpus_identity": CORPUS_OWNER_IDENTITY,
+                "cross_customer_candidate_count": len(cross_customer_candidates),
                 "migration_type": migration_type,
                 "scale_tier": scale_tier,
                 "memories": attribution_rows,

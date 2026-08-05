@@ -19,7 +19,12 @@ import {
   type CorpusHealth,
 } from "@/lib/api/endpoints"
 import { mapRunListItem, type RunListItem } from "@/lib/api/map-run"
-import { getCurrentRunId, getOwnerIdentity, setCurrentRunId } from "@/lib/api/owner"
+import {
+  getActiveWorkspaceId,
+  getCurrentRunId,
+  getOwnerIdentity,
+  setCurrentRunId,
+} from "@/lib/api/owner"
 import {
   EmptyNote,
   ErrorNote,
@@ -125,7 +130,11 @@ export default function DashboardPage() {
     async function load() {
       setLoading(true)
       const owner = getOwnerIdentity()
-      const scope = owner ? { owner_identity: owner } : {}
+      const workspaceId = getActiveWorkspaceId()
+      const scope = {
+        ...(owner ? { owner_identity: owner } : {}),
+        ...(workspaceId ? { workspace_id: workspaceId } : {}),
+      }
       const [
         healthRes,
         corpusRes,
@@ -144,7 +153,10 @@ export default function DashboardPage() {
           ...scope,
         }),
         getActivityFeed({ limit: 6, ...scope }),
-        getAccuracyMetrics({ owner_identity: owner || undefined }),
+        getAccuracyMetrics({
+          owner_identity: owner || undefined,
+          workspace_id: workspaceId || undefined,
+        }),
       ])
       if (cancelled) return
 

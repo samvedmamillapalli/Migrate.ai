@@ -3,6 +3,7 @@
 const OWNER_KEY = "oracle:owner_identity"
 const CURRENT_RUN_KEY = "oracle:current_run_id"
 const SECRET_ARN_KEY = "oracle:connection_secret_arn"
+const ACTIVE_WORKSPACE_KEY = "oracle:active_workspace_id"
 
 export function getOwnerIdentity(): string {
   if (typeof window === "undefined") return ""
@@ -56,4 +57,20 @@ export function setConnectionSecretArn(value: string): void {
     return
   }
   window.localStorage.setItem(SECRET_ARN_KEY, normalized)
+}
+
+/** Active workspace — docs/FUTURE_WORKSPACES_PLAN.md. Empty string/null
+ * means "no workspace selected", same convention as owner identity. */
+export function getActiveWorkspaceId(): string {
+  if (typeof window === "undefined") return ""
+  return (window.localStorage.getItem(ACTIVE_WORKSPACE_KEY) || "").trim()
+}
+
+export function setActiveWorkspaceId(id: string | null): void {
+  if (typeof window === "undefined") return
+  if (!id) {
+    window.localStorage.removeItem(ACTIVE_WORKSPACE_KEY)
+    return
+  }
+  window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, id)
 }

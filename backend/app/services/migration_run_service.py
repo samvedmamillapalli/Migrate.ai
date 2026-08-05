@@ -86,6 +86,7 @@ class MigrationRunService:
         *,
         owner_identity: str = "anonymous",
         revises_run_id: uuid.UUID | None = None,
+        workspace_id: uuid.UUID | None = None,
         run_kind: str = "standard",
     ) -> MigrationRun:
         normalized_sql = migration_sql.strip()
@@ -117,6 +118,10 @@ class MigrationRunService:
                 schema_discovery_status=SchemaDiscoveryStatus.PENDING,
                 owner_identity=identity,
                 revises_run_id=revises_run_id,
+                # Caller (the route) is responsible for verifying workspace_id
+                # actually belongs to this owner before it reaches here — see
+                # create_run in app/api/routes/runs.py.
+                workspace_id=workspace_id,
                 run_kind=kind,
             )
             created = await self._repository.create(run)
@@ -227,7 +232,9 @@ class MigrationRunService:
         offset: int = 0,
         limit: int = 50,
         status: MigrationRunStatus | None = None,
+        status_in: list[MigrationRunStatus] | None = None,
         owner_identity: str | None = None,
+        workspace_id: uuid.UUID | None = None,
         run_kind: str | None = None,
         exclude_kinds: list[str] | None = None,
         search: str | None = None,
@@ -247,7 +254,9 @@ class MigrationRunService:
             offset=offset,
             limit=limit,
             status=status,
+            status_in=status_in,
             owner_identity=owner_identity,
+            workspace_id=workspace_id,
             run_kind=run_kind,
             exclude_kinds=exclude_kinds,
             search=search,
@@ -263,7 +272,9 @@ class MigrationRunService:
         self,
         *,
         status: MigrationRunStatus | None = None,
+        status_in: list[MigrationRunStatus] | None = None,
         owner_identity: str | None = None,
+        workspace_id: uuid.UUID | None = None,
         run_kind: str | None = None,
         exclude_kinds: list[str] | None = None,
         search: str | None = None,
@@ -273,7 +284,9 @@ class MigrationRunService:
     ) -> int:
         return await self._repository.count(
             status=status,
+            status_in=status_in,
             owner_identity=owner_identity,
+            workspace_id=workspace_id,
             run_kind=run_kind,
             exclude_kinds=exclude_kinds,
             search=search,
@@ -286,10 +299,12 @@ class MigrationRunService:
         self,
         *,
         owner_identity: str | None = None,
+        workspace_id: uuid.UUID | None = None,
         exclude_kinds: list[str] | None = None,
     ) -> list[str]:
         return await self._repository.distinct_approvers(
             owner_identity=owner_identity,
+            workspace_id=workspace_id,
             exclude_kinds=exclude_kinds,
         )
 

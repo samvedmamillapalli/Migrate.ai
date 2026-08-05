@@ -80,3 +80,34 @@ limitations" section for the user-facing description of this gap.
 
 **Effort:** ~1-2 hours (Lambda code, IAM policy addition, template changes)
 plus one real end-to-end run to confirm a DM arrives with nobody polling.
+
+### 3. Cross-customer automatic promotion hook — code complete, not deployed
+
+**Where:** `backend/app/lambdas/handlers/persist_results.py`,
+`_build_grading_pipeline()`.
+
+**What happens:** code now constructs a `CrossCustomerPromotionService` and
+passes it into `MemoryWriteService(cross_customer_promotion=...)`, matching
+`app/dependencies.py`'s `get_memory_write_service` on the control-plane
+side (docs/cross_customer.md §5). Runs graded through the API
+(`POST /runs/{id}/grade` or similar control-plane paths) already benefit —
+that only needed a `uvicorn` restart. Runs graded through the real Step
+Functions workflow (the `PersistResultsFunction` Lambda, i.e. every actual
+shadow-verified migration in a deployed environment) will keep silently
+skipping automatic promotion (`cross_customer_promotion=None` behavior,
+same as before this change) until this Lambda is redeployed — best-effort
+by design, so this is a missed opportunity, not a broken run.
+
+**Fix:** already written; needs `sam build` + `sam deploy` to take effect.
+
+**Status:** deliberately not deployed yet, per the project's standing rule
+against reflexive build/deploy cycles. Bundle with items #1/#2 above the
+next time a deploy is already happening for another reason, or deploy on
+request.
+
+**Effort:** no additional code. One `sam build`/`sam deploy` cycle (~25
+min), then verify with a real end-to-end run: an owner with
+`memory_sharing_preferences.cross_customer_sharing_enabled = true` running
+a real shadow-verified migration through the full Step Functions workflow,
+confirming a `cross_customer_memories` row appears afterward without the
+manual script being invoked.

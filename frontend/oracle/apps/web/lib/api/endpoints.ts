@@ -126,9 +126,12 @@ export function listRuns(params?: {
   limit?: number
   offset?: number
   owner_identity?: string
+  workspace_id?: string
   run_kind?: string
   /** Server-side run status filter, e.g. "awaiting_approval" (decision queue). */
   status?: RunStatusFilter
+  /** Comma-separated statuses, e.g. "pending,predicting,awaiting_approval,running". */
+  status_in?: string
   /** Comma-separated run_kind values to exclude, e.g. "chaos,debug". */
   exclude_kinds?: string
   /** Case-insensitive substring match on the migration SQL (server-side). */
@@ -143,8 +146,10 @@ export function listRuns(params?: {
   if (params?.limit != null) q.set("limit", String(params.limit))
   if (params?.offset != null) q.set("offset", String(params.offset))
   if (params?.owner_identity) q.set("owner_identity", params.owner_identity)
+  if (params?.workspace_id) q.set("workspace_id", params.workspace_id)
   if (params?.run_kind) q.set("run_kind", params.run_kind)
   if (params?.status) q.set("status", params.status)
+  if (params?.status_in) q.set("status_in", params.status_in)
   if (params?.exclude_kinds) q.set("exclude_kinds", params.exclude_kinds)
   if (params?.q) q.set("q", params.q)
   if (params?.risk) q.set("risk", params.risk)
@@ -157,9 +162,13 @@ export function listRuns(params?: {
 }
 
 /** Distinct approver identities, for the history filter dropdown. */
-export function listApprovers(params?: { owner_identity?: string }) {
+export function listApprovers(params?: {
+  owner_identity?: string
+  workspace_id?: string
+}) {
   const q = new URLSearchParams()
   if (params?.owner_identity) q.set("owner_identity", params.owner_identity)
+  if (params?.workspace_id) q.set("workspace_id", params.workspace_id)
   const qs = q.toString()
   return api<{ approvers: string[] }>(`/runs/approvers${qs ? `?${qs}` : ""}`)
 }
@@ -173,10 +182,12 @@ export type RunVolume = {
 export function getRunVolume(params?: {
   days?: number
   owner_identity?: string
+  workspace_id?: string
 }) {
   const q = new URLSearchParams()
   if (params?.days != null) q.set("days", String(params.days))
   if (params?.owner_identity) q.set("owner_identity", params.owner_identity)
+  if (params?.workspace_id) q.set("workspace_id", params.workspace_id)
   const qs = q.toString()
   return api<RunVolume>(`/runs/volume${qs ? `?${qs}` : ""}`)
 }
@@ -194,10 +205,12 @@ export function discardRun(runId: string) {
 export function getActivityFeed(params?: {
   limit?: number
   owner_identity?: string
+  workspace_id?: string
 }) {
   const q = new URLSearchParams()
   if (params?.limit != null) q.set("limit", String(params.limit))
   if (params?.owner_identity) q.set("owner_identity", params.owner_identity)
+  if (params?.workspace_id) q.set("workspace_id", params.workspace_id)
   const qs = q.toString()
   return api<ActivityFeed>(`/runs/activity${qs ? `?${qs}` : ""}`)
 }
@@ -210,6 +223,7 @@ export function createRun(body: {
   migration_sql: string
   owner_identity: string
   revises_run_id?: string | null
+  workspace_id?: string | null
 }) {
   return api<MigrationRun>("/runs", { method: "POST", body })
 }
@@ -318,9 +332,13 @@ export function getModelTraces(runId: string) {
   return api<ModelTracesResponse>(`/runs/${runId}/model-traces`)
 }
 
-export function getAccuracyMetrics(params?: { owner_identity?: string }) {
+export function getAccuracyMetrics(params?: {
+  owner_identity?: string
+  workspace_id?: string
+}) {
   const q = new URLSearchParams()
   if (params?.owner_identity) q.set("owner_identity", params.owner_identity)
+  if (params?.workspace_id) q.set("workspace_id", params.workspace_id)
   const qs = q.toString()
   return api<AccuracyMetrics>(`/runs/metrics/accuracy${qs ? `?${qs}` : ""}`)
 }
@@ -464,4 +482,112 @@ export function disconnectSlack() {
   return api<SlackDisconnectResponse>("/api/slack/disconnect", {
     method: "POST",
   })
+}
+
+export type MemorySharingStatusResponse =
+  components["schemas"]["MemorySharingStatusResponse"]
+export type MemorySharingPreviewResponse =
+  components["schemas"]["MemorySharingPreviewResponse"]
+export type MemorySharingSetRequest =
+  components["schemas"]["MemorySharingSetRequest"]
+
+/**
+ * Current cross-customer memory sharing opt-in state for this account —
+ * see docs/cross_customer.md. Default is off; a missing preference row
+ * means "not enabled", never implicit consent.
+ *
+ * `ownerIdentity` is ignored server-side once auth is enforced (the token
+ * owner always wins) — pass `getOwnerIdentity()` so local/anon dev (no
+ * Clerk configured) still resolves against the right identity, same
+ * pattern as `searchMemories`/`browseMemories`.
+ */
+export function getMemorySharingStatus(ownerIdentity?: string) {
+  const q = new URLSearchParams()
+  if (ownerIdentity) q.set("owner_identity", ownerIdentity)
+  const qs = q.toString()
+  return api<MemorySharingStatusResponse>(
+    `/api/memory-sharing/status${qs ? `?${qs}` : ""}`
+  )
+}
+
+/**
+ * A live, real example of what would be shared, built from this account's
+ * own most recently graded run — never written to the database. Meant to
+ * be shown before the user confirms opting in (docs/cross_customer.md §6).
+ */
+export function getMemorySharingPreview(ownerIdentity?: string) {
+  const q = new URLSearchParams()
+  if (ownerIdentity) q.set("owner_identity", ownerIdentity)
+  const qs = q.toString()
+  return api<MemorySharingPreviewResponse>(
+    `/api/memory-sharing/preview${qs ? `?${qs}` : ""}`
+  )
+}
+
+export function setMemorySharing(enabled: boolean, ownerIdentity?: string) {
+  return api<MemorySharingStatusResponse>("/api/memory-sharing/set", {
+    method: "POST",
+    body: {
+      enabled,
+      owner_identity: ownerIdentity || null,
+    } satisfies MemorySharingSetRequest,
+  })
+}
+
+/**
+ * Workspaces — docs/FUTURE_WORKSPACES_PLAN.md. A workspace scopes runs to
+ * one target database (a name + a stored connection). Owner-scoped
+ * everywhere, same tenancy pattern as the run endpoints above.
+ */
+export type Workspace = components["schemas"]["WorkspaceResponse"]
+export type WorkspaceList = components["schemas"]["WorkspaceListResponse"]
+export type WorkspaceCreateRequest = components["schemas"]["WorkspaceCreateRequest"]
+export type WorkspaceUpdateRequest = components["schemas"]["WorkspaceUpdateRequest"]
+
+export function listWorkspaces(ownerIdentity?: string) {
+  const q = new URLSearchParams()
+  if (ownerIdentity) q.set("owner_identity", ownerIdentity)
+  const qs = q.toString()
+  return api<WorkspaceList>(`/workspaces${qs ? `?${qs}` : ""}`)
+}
+
+export function getWorkspace(workspaceId: string, ownerIdentity?: string) {
+  const q = new URLSearchParams()
+  if (ownerIdentity) q.set("owner_identity", ownerIdentity)
+  const qs = q.toString()
+  return api<Workspace>(`/workspaces/${workspaceId}${qs ? `?${qs}` : ""}`)
+}
+
+export function createWorkspace(body: {
+  name: string
+  owner_identity?: string | null
+  connection_secret_arn?: string | null
+  database_url?: string | null
+}) {
+  return api<Workspace>("/workspaces", {
+    method: "POST",
+    body: body satisfies WorkspaceCreateRequest,
+  })
+}
+
+export function updateWorkspace(
+  workspaceId: string,
+  body: {
+    name?: string | null
+    connection_secret_arn?: string | null
+    database_url?: string | null
+    clear_connection?: boolean
+  }
+) {
+  return api<Workspace>(`/workspaces/${workspaceId}`, {
+    method: "PATCH",
+    body: {
+      ...body,
+      clear_connection: body.clear_connection ?? false,
+    } satisfies WorkspaceUpdateRequest,
+  })
+}
+
+export function deleteWorkspace(workspaceId: string) {
+  return api<void>(`/workspaces/${workspaceId}`, { method: "DELETE" })
 }

@@ -256,6 +256,381 @@ matches on vocabulary instead of meaning and this beat falls flat.
 
 ## Change Log
 
+### 2026-08-05c — Concurrent shadow executions: Active Runs list + (explicitly requested) per-owner cap
+
+Executed `docs/FUTURE_CONCURRENT_SHADOW_PLAN.md`'s Prompt. Re-checked its
+core finding by re-reading `try_admit`/`count_active` directly (still
+true, unchanged) rather than trusting it blindly. Two independent pieces:
+
+**1. Active Runs list** (the plan's recommended piece — confirmed still
+missing, the earlier backendfix.md entry was the same planning note, not
+a build record):
+- Backend: `status_in=` query param on `GET /runs` (comma-separated,
+  e.g. `pending,predicting,awaiting_approval,running`), threaded through
+  `MigrationRunRepository._apply_filters/list/count`,
+  `MigrationRunService.list_migration_runs/count_migration_runs`, and the
+  route — additive, existing `status=` single-value filter untouched.
+- Frontend: new `components/active-runs-panel.tsx`, mounted at the top of
+  the Current Migration page (`current-migration-workspace.tsx`) — the
+  exact page the plan identifies as assuming one run in focus. Queries
+  the owner's non-terminal runs (excluding chaos/debug, scoped to the
+  active workspace, same conventions as every other list on this page),
+  renders nothing when there's nothing extra to show (0 runs, or exactly
+  1 that's already the pinned "current" run) so it never adds empty-state
+  noise to a page that already has one.
+
+**2. Per-owner concurrency cap** — the plan explicitly recommends
+**against** building this before Aug 18 ("nobody asked for it, no
+contention to solve"). A human explicitly overrode that recommendation
+this session ("just build it ignore where it says dont build before
+august 18. do as i say") — the exact condition the plan's own Prompt
+gates this work behind. Additive on top of the global cap, per the plan's
+design:
+- `ShadowClusterRepository.count_active_for_owner(owner_identity)` — same
+  `ACTIVE_SHADOW_STATUSES` predicate as `count_active`, joined to
+  `migration_runs` (the only owner column reachable, since
+  `shadow_clusters` itself carries none).
+- `settings.shadow_max_concurrent_per_owner: int | None`, default `None`
+  — unset means no per-owner limit, identical to today's behavior.
+  `shadow_max_concurrent` (the global cap) is untouched, same meaning,
+  same default.
+- `ShadowClusterService.try_admit` takes optional `owner_identity` /
+  `max_concurrent_per_owner`; when both are given, checks the owner's own
+  count in the same serializable transaction as the existing global
+  count — a second read, not a second transaction, so no new race window.
+  `app/shadow/concurrency.py::acquire_slot` and
+  `app/lambdas/handlers/provision_shadow.py` (the real
+  `ProvisionShadowCluster` Lambda) now pass `run.owner_identity` and
+  `settings.shadow_max_concurrent_per_owner` through — **this Lambda
+  needs a SAM redeploy before the cap takes effect in the real demo
+  path**; noted in `docs/DEPLOYMENT.md`.
+- 6 new unit tests (`tests/unit/test_shadow_cluster_admission.py`):
+  global-cap-only unaffected when no per-owner cap is passed, owner
+  rejected at its own cap even with global capacity free, a different
+  owner unaffected by the first owner's cap, existing-shadow reuse skips
+  every check. Full suite 146/146.
+
+**Live verification, real CockroachDB Cloud, zero shadow-cluster cost**
+(per the plan's own note: `try_admit` only inserts a control-plane row —
+the actual CockroachDB Cloud cluster gets created later, by the Lambda's
+`provider.create()` call, which this verification never reaches):
+created 4 real `migration_runs` rows (2 under a synthetic owner A, 1 under
+owner B, 1 more under A) and called the real, unmodified
+`ShadowClusterService.try_admit` against the real database with a global
+cap of 5 and a per-owner cap of 1 — owner A's first run admitted, owner
+A's second run rejected *while the global count was nowhere near its
+cap*, owner B's run admitted independently, and a final call with no
+owner/cap args (the default path) still admitted normally, proving the
+opt-in cap doesn't change existing behavior when unset. All rows deleted
+afterward; re-ran the cleanup check to confirm zero residue.
+
+Active Runs panel: live-verified in the browser — created two real
+pending runs, confirmed the panel rendered both (SQL snippet, status
+pill, the pinned one labeled "current"), confirmed it disappears when
+there's nothing non-terminal to show.
+
+**Environment note, same MissingGreenlet class as noted for the workspace
+work above, new manifestation**: a bare `asyncio.run()` proof script
+crashes on the *second* ORM `session.refresh()`-triggering operation in
+one session (create → commit → touch a previously-loaded object's
+attribute) — happens identically whether pre_ping is on/off, pooled or
+`NullPool`, policy- or `loop_factory`-selected event loop. Root cause
+isolated to `session.refresh()`/expired-attribute lazy-loads specifically
+(plain `text()` queries never hit it, proven earlier). The real running
+app never hits this (its request-per-session lifecycle doesn't chain
+multiple commits through one session the way a proof script does) —
+confirmed by driving the same admission logic through
+`starlette.testclient.TestClient` (which properly bridges the async
+context) via a temporary, fully-removed diagnostic route instead. Also
+found and fixed a second, unrelated bug this surfaced: `MigrationRun.id`
+(`default=uuid.uuid4`) is **not** set until `flush()` — reading `.id`
+right after `MigrationRun(...)` construction, before `create()`, silently
+returns `None`.
+
+Also found and cleaned up ~23 orphaned `migration_runs`/1 `shadow_clusters`
+row(s) left behind by earlier crashed attempts at this same live
+verification (owner_identity `concurrency-test-owner-a`/`-b`) — the
+in-route cleanup only runs on a successful pass, so a crash before it
+leaves garbage; swept up with a second temporary route before the final
+clean run.
+
+Full backend suite 146/146, frontend typecheck clean, both pieces
+live-verified against the real database/app.
+
+### 2026-08-05b — Overview and Past Migrations are now workspace-scoped
+
+Follow-up to the entry directly below. Human feedback after using the
+switcher built there: *"the overview should be different for each
+workspace, like it should show a different set of analytics, migrations,
+and whatnot."* This also reverses the previous entry's deliberate
+non-decision on the history page — the new instruction explicitly named
+"migrations," so Past Migrations is now scoped too.
+
+**What changed** (backend) — all four additive/optional, no existing
+caller broke:
+- `app/memory/metrics.py::fetch_accuracy_metrics` gained an optional
+  `workspace_id` param, applied to every grade/approval query except the
+  `retrieval`/`memory_corpus` sub-query, which stays owner-wide on purpose
+  — same locked reasoning as the memory-retrieval decision above: memory
+  retrieval and analytics/history are different scoping axes.
+- `app/services/activity_feed.py::fetch_run_volume` /
+  `fetch_activity_feed` — same `workspace_id` param, same
+  `CAST(:workspace_id AS UUID) IS NULL OR mr.workspace_id = CAST(...)`
+  passthrough pattern already used elsewhere in this file.
+- `MigrationRunRepository.distinct_approvers` /
+  `MigrationRunService.list_approvers` — same param.
+- `GET /runs/metrics/accuracy`, `/runs/approvers`, `/runs/volume`,
+  `/runs/activity` all accept an optional `workspace_id` query param now.
+- Full suite: 140/140 unchanged.
+
+**What changed** (frontend):
+- `lib/api/endpoints.ts`: `getAccuracyMetrics` / `getActivityFeed` /
+  `getRunVolume` / `listApprovers` all forward an optional `workspace_id`.
+- `app/dashboard/page.tsx` (Overview) and
+  `app/dashboard/migrations/history/page.tsx` (Past Migrations) both read
+  `getActiveWorkspaceId()` and pass it into every scoped call — reversing
+  the previous entry's deliberate deferral on the history page.
+- `npx tsc --noEmit`: clean.
+
+**Live verification, real CockroachDB Cloud + real Clerk auth, via the
+actual running app in a browser** (Playwright, signed in as the real
+Clerk test account): created a second, empty workspace under the same
+owner; Overview and Past Migrations both went to zero (Current Migration,
+Decision Queue, Recent Activity, Latest Migration, Graded, Migration
+Success Rate, Approval Decisions) while the untouched Memory-corpus count
+stayed at its owner-wide value (38 ready), exactly matching the locked
+retrieval-stays-owner-wide decision. Switched back to "Default" and every
+number returned to its non-empty value (6 graded, 2 proceeded, 2
+migrations listed, etc.). Deleted the test workspace afterward.
+
+**Environment note, expanding the port-8000 note two entries below**: hit
+the same class of issue again mid-verification, this time on 8003 (the
+frontend's actual configured port) and again on a fresh 8010 — a
+`netstat`/`Get-NetTCPConnection`-visible LISTENING entry whose PID
+`Get-Process`/`Stop-Process`/`taskkill` all report as not existing. This
+time it was reproducible enough to pin down: it's not one immortal ghost,
+it's leftover reload-worker processes from earlier `dev.py restart`
+invocations in the same session not fully exiting when the parent
+reloader is killed, and Windows briefly (or, if the parent is also
+already gone, indefinitely) keeps their LISTENING socket entry visible
+after the process itself is gone. Two consequences worth knowing:
+1. With two live listeners on the same port, the OS silently splits
+   traffic between the stale one (old code) and the fresh one (new code)
+   — requests to the *same URL* nondeterministically get different
+   answers. This is what made the first two live-browser checks in this
+   session look like a real scoping bug when the code was actually
+   correct — confirmed independently via a direct DB-level function call
+   *and* a full in-process ASGI `TestClient` call against the real route
+   (auth bypassed via monkeypatch for that one diagnostic run only, not
+   shipped), both giving the right answer before the port was ever fixed.
+2. The fix: `Get-Process python*` (not `-Id <phantom>`) to find every
+   real python.exe still alive, `Stop-Process -Force` all of them, then
+   restart once. Killing by the phantom PID directly never works; killing
+   every *real* python process does, because it's their still-attached
+   listening sockets that were confusing `netstat`'s PID attribution, not
+   a genuine orphaned/unkillable process.
+
+Full backend suite (140/140) and frontend typecheck both clean; live
+browser verification passed after the port was cleared as above.
+
+### 2026-08-05 — Workspaces built (Feature 1 from docs/FUTURE_WORKSPACES_PLAN.md)
+
+Follow-up to the 2026-08-04 planning-only entry below: the human explicitly
+authorized building it now (edited the plan doc directly — removed "Do not
+build this before August 18" from the summary, and answered the retrieval-
+scoping open question in the doc itself: *"every single migration ran
+should be in the memory, and every migration that does run will use that
+same memory database and all of the migrations taken into account before
+proceeding with the user's current one."*). That is an explicit **owner-
+wide** decision — `app/memory/retrieval.py` was **not touched**, per the
+plan's own recommendation, and this is now live-verified (below), not just
+asserted.
+
+**Decisions resolved** (the plan's Open Questions, using judgment per the
+human's "do the recommended action" instruction):
+- Retrieval scoping: owner-wide, unchanged. Explicit human decision, not a
+  default.
+- Connection validation at workspace-creation time: yes, a real lightweight
+  connectivity check (`SELECT version()` via `SchemaAnalysisConnection.ping()`,
+  not a full schema discovery) — fails fast on a broken connection rather
+  than silently storing a bad pointer. `app/services/connection_secrets.py::verify_connection_ping`.
+- Workspace deletion: `ON DELETE SET NULL` as the plan proposed — deleting a
+  workspace orphans its runs back to "no workspace," never deletes run
+  history. No application-level cascade code; the FK does it.
+- Secret naming: same store, `migration-oracle/connections/workspace/{workspace_id}`
+  vs. the existing `migration-oracle/connections/{run_id}` — distinguishable
+  in the AWS console, no collision risk either way (different UUID spaces).
+
+**What changed** (backend):
+- New `workspaces` table (`app/database/models/workspace.py`,
+  migration `t3o1l8g2i608`) — `owner_identity` (plain string, matching the
+  existing convention; **not** a relationship to `app_users`, confirmed
+  still dead code, see below), `name`, `connection_secret_arn`
+  (pointer-only, same convention as `MigrationRun.connection_secret_arn`),
+  `connection_label` (display-only), `is_default`.
+- `migration_runs.workspace_id` — nullable FK, `ON DELETE SET NULL`. Same
+  migration backfills an implicit "Default" workspace per existing
+  `owner_identity` and points every pre-existing run at it — applied for
+  real against the live dev database: 13 default workspaces created, all
+  45 existing runs got a non-null `workspace_id` (0 left null).
+- Extracted `app/services/connection_secrets.py` from three near-duplicated
+  private helpers in `app/api/routes/runs.py` (`_store_connection_url` /
+  `_load_connection` / `_parse_database_url`) so workspaces reuse the exact
+  same store/load path instead of a second copy. `runs.py` now imports from
+  it; the old private copies are gone.
+- `POST /runs/{id}/discover` and `POST /runs/{id}/start-workflow`: when the
+  caller provides neither `connection_secret_arn` nor `database_url`, and
+  the run belongs to a workspace with a stored connection, that connection
+  is used automatically. `DiscoverSchemaRequest`'s old hard
+  "must provide one" Pydantic validator was removed (moved to the route,
+  which now has workspace context to check first) — a request with truly
+  nothing available (no payload, no workspace, or a workspace with no
+  stored connection) still gets a clean 422.
+- `WorkspaceRepository` / `WorkspaceService` / `app/schemas/workspace.py` /
+  `app/api/routes/workspaces.py` (`POST/GET /workspaces`,
+  `GET/PATCH/DELETE /workspaces/{id}`, all owner-scoped like every other
+  route in this app) / DI wiring in `app/dependencies.py`.
+- `POST /runs` accepts optional `workspace_id` (route verifies it belongs
+  to the resolved owner before the service ever sees it — never trust a
+  client-supplied workspace_id without an ownership check, same posture as
+  `get_owned_run`). `GET /runs` accepts `workspace_id` as a list filter.
+  `MigrationRunResponse` / `MigrationRunSummaryResponse` both expose
+  `workspace_id`.
+- Confirmed `app_users` is **still** dead code (only reference: the
+  `auth_enabled`-gated legacy custom register/login flow in
+  `app/api/routes/auth.py`) — re-verified before building on top of
+  anything, per the plan's own explicit instruction not to assume.
+- 13 new unit tests, `tests/unit/test_workspace_service.py` — full suite
+  now 140/140.
+
+**What changed** (frontend):
+- Deleted `components/team-switcher.tsx` and `components/nav-projects.tsx`
+  — confirmed dead shadcn template scaffolding (zero mount points in
+  `app-sidebar.tsx`, hardcoded fake data, no real wiring) per the plan's own
+  finding; not resurrected, replaced outright.
+- New `components/workspace-switcher.tsx` (real data via `listWorkspaces`,
+  mounted in the sidebar header) and `components/workspace-settings-panel.tsx`
+  (create/list/delete, mounted on the Settings page, linked from the
+  switcher's "Manage workspaces"). `lib/api/owner.ts` gained
+  `getActiveWorkspaceId`/`setActiveWorkspaceId` (same localStorage
+  convention as owner identity / current run). Run-creation call sites
+  (`current-migration-workspace.tsx`, `migrations/new/page.tsx`,
+  `new-migration-dialog.tsx`) now pass the active workspace.
+- Deliberately **not** wired: a workspace filter on the Past Migrations
+  history list. Adding a silent always-on filter there would have changed
+  existing visible behavior (fewer runs shown) with no toggle to see
+  "all workspaces" — flagged as a deferred nice-to-have rather than shipped
+  as a confusing surprise.
+- `npx tsc --noEmit`: clean throughout.
+
+**Live verification** (real CockroachDB Cloud, real Clerk auth, real
+Bedrock — not mocked), two scripts, both re-run to a clean PASS after fixing
+real issues found along the way:
+- `scripts/prove_workspaces.py` (real HTTP, real Clerk test-account token
+  per call since tokens are ~60s-lived): two workspaces under one owner,
+  each with an independently stored connection secret; `POST /discover`
+  with an **empty payload** succeeded for both, each correctly resolving
+  its own workspace's stored connection (no cross-contamination — verified
+  the two runs resolved to different secret ARNs); a run with no workspace
+  and no connection still 422s cleanly. One real finding along the way:
+  using the app's own control-plane `DATABASE_URL` (write-capable) as a
+  workspace connection got correctly rejected with 403 by the existing
+  read-only enforcement — not a bug, the safety net working as designed;
+  fixed the *proof script* to use the real judge-facing read-only
+  credential instead.
+- `scripts/prove_workspace_memory_scope.py` (direct service calls): a full
+  graded run (predict → approve → local-verify → grade → remember) under
+  workspace A, then a second run under workspace B (same owner, different
+  workspace) — confirmed the workspace-A memory is reachable via the exact
+  `owner_identity IN (...)` scoped vector-candidate query
+  `HybridMemoryRetrieval` itself issues, while predicting under workspace
+  B. (A secondary, informational check — whether that memory lands in the
+  *final top-5 ranked* results shown in `explainability.memory` — came back
+  negative in this run; traced that to real embedding-similarity ranking
+  against the ~20-entry open-source corpus, not a scoping bug: an
+  owner-only-scoped query with no corpus competing found the memory
+  immediately. Rewrote the script's pass/fail signal to check reachability
+  directly rather than top-K ranking luck, which is what "owner-wide, not
+  workspace-scoped" actually means at the query level.)
+
+Environment note for whoever runs these scripts next: this session hit a
+Windows port-8000 listener (PID reported by `netstat`/`Get-NetTCPConnection`
+but invisible to `Get-Process`/`Stop-Process`/`taskkill` — never resolved,
+possibly a WSL2/namespace artifact) that `scripts/dev.py restart` couldn't
+reclaim. Worked around by running the dev server on port 8010
+(`python scripts/dev.py restart --port 8010`) rather than fighting it
+further. If port 8000 is mysteriously unresponsive-but-occupied again, try
+a different port before assuming the app itself is broken.
+
+Full backend suite (140/140) and frontend typecheck both clean after all of
+the above.
+
+### 2026-08-04 — Future features plan (workspaces, concurrent shadow, GitHub PR integration): planning only, nothing implemented
+
+Task was explicitly planning-and-feasibility only, no code changes. Read this
+file (note: task instructions said "backendfix.md at the repo root" — it is
+actually at `docs/backendfix.md`, not repo root; flagging in case that's a
+stale assumption elsewhere) plus `migration_runs`, `app_users`,
+`shadow_clusters`, `app/shadow/concurrency.py`,
+`app/services/shadow_cluster_service.py`, the Step Functions ASL, and
+searched for any existing GitHub-related code or workspace/project concept
+before writing anything.
+
+Three separate planning documents (not one combined doc — the task's final
+instruction asked for three, superseding its own earlier "one file" draft
+structure), each self-contained with its own prompt at the bottom for a
+future session to execute:
+
+- `docs/FUTURE_WORKSPACES_PLAN.md` — new `workspaces` table (owner_identity +
+  name + stored `connection_secret_arn`), nullable `migration_runs.workspace_id`,
+  backfill migration for existing runs. Explicitly flags that the memory-
+  retrieval scoping tradeoff (owner-wide vs workspace-scoped) touches this
+  file's own locked "retrieval scopes to owner + `__migration_oracle_corpus__`"
+  decision and needs a human decision, not a default — recommends staying
+  owner-wide (no change to `app/memory/retrieval.py`) as the safe default.
+  Confirmed `app_users` is still dead code (only referenced by the legacy
+  `auth_enabled`-gated custom register/login flow in `app/api/routes/auth.py`,
+  nothing else joins to it) — do not build workspace ownership on top of it.
+  Confirmed `components/team-switcher.tsx` / `components/nav-projects.tsx`
+  (frontend) are dead, unwired shadcn template scaffolding, not a decided or
+  partially-built workspace switcher — not mounted anywhere in
+  `app-sidebar.tsx`. Recommendation: do not build before August 18.
+- `docs/FUTURE_CONCURRENT_SHADOW_PLAN.md` — **the actual finding worth
+  knowing**: traced `ShadowClusterService.try_admit` and
+  `ShadowClusterRepository.count_active` exactly, and the global
+  `SHADOW_MAX_CONCURRENT` cap has zero owner-awareness anywhere in the
+  admission path — a single owner can already occupy multiple concurrent
+  shadow-cluster slots today, no code change needed. The only real gap is a
+  small frontend "your active runs" list (Current Migration page currently
+  assumes one run in focus, a UI limitation not a backend one) — cheap,
+  additive, worth actually building if there's spare time before the
+  deadline. The richer "per-user cap M < N layered on the global cap N" is
+  real new work with a real infra-cost tradeoff (more concurrent CockroachDB
+  Cloud clusters), documented but not recommended now since nobody asked for
+  it and there's no contention to solve yet.
+- `docs/FUTURE_GITHUB_INTEGRATION_PLAN.md` — GitHub App + webhook
+  (recommended over polling), file-path detection heuristic scoped
+  explicitly to this project's own `alembic/versions/` convention
+  (explicitly does not generalize to arbitrary customer migration tooling —
+  scoped out on purpose, not solved), approval model recommendation (a):
+  auto-predict then hold at the existing `POST /runs/{id}/approve` gate,
+  report to the PR via comment + check run, human approves through a link
+  into the app — zero change to the locked approval model. Flags
+  auto-approval (option (b)) as a real, separate change to a locked safety
+  decision that needs an explicit human sign-off, never a default. States
+  the dependency plainly: this feature needs a stored, reusable
+  per-repository database connection, which does not exist without
+  workspaces (`connection_secret_arn` is created fresh per-run today,
+  `f"migration-oracle/connections/{run_id}"` — confirmed via
+  `_store_connection_url` in `app/api/routes/runs.py`), so it is downstream
+  of Feature 1 and cannot be built first regardless of demo appeal.
+
+Zero code changes in this task. Nothing in "Decisions already locked" above
+was touched; two of the three documents explicitly flag where their own
+proposals *would* touch a locked decision if built carelessly (retrieval
+scoping in workspaces; the approval model in GitHub integration) rather than
+silently deciding either one.
+
 ### 2026-07-29c — Not a code bug: pasting SQL 404'd because the dev frontend was pointed at the wrong Clerk instance
 
 User reported that pasting a migration SQL and submitting produced Next.js's

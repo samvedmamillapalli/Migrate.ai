@@ -88,14 +88,23 @@ class ShadowClusterService:
         scale_tier: str,
         max_concurrent: int,
         max_lifetime_minutes: int,
+        owner_identity: str | None = None,
+        max_concurrent_per_owner: int | None = None,
     ) -> ShadowCluster | None:
-        """Atomically admit a run under the concurrency cap.
+        """Atomically admit a run under the concurrency cap(s).
 
         Counts active clusters and inserts the PROVISIONING row in a single
         serializable transaction. Returns the new row if a slot was free, or
-        ``None`` if the cap is currently reached. CockroachDB's serializable
+        ``None`` if a cap is currently reached. CockroachDB's serializable
         isolation plus the 40001 retry make the count-then-insert race-safe
         across processes.
+
+        ``owner_identity``/``max_concurrent_per_owner`` are optional and
+        additive: when either is unset, only the global cap applies — this is
+        the default, unchanged behavior. When both are given, the run must
+        also be under that owner's own count, checked in the same
+        transaction as the global count so admission is still a single
+        atomic decision.
         """
         existing = await self._repository.get_by_migration_run_id(run_id)
         if existing is not None:
@@ -107,6 +116,13 @@ class ShadowClusterService:
             if active >= max_concurrent:
                 await self._session.rollback()
                 return None
+            if owner_identity and max_concurrent_per_owner is not None:
+                active_for_owner = await self._repository.count_active_for_owner(
+                    owner_identity
+                )
+                if active_for_owner >= max_concurrent_per_owner:
+                    await self._session.rollback()
+                    return None
             now = datetime.now(UTC)
             cluster = ShadowCluster(
                 migration_run_id=run_id,

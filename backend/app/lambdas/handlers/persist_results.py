@@ -16,10 +16,17 @@ from app.lambdas.runtime import (
 from app.memory.embedding_client import AwsTitanEmbeddingClient, MockEmbeddingClient
 from app.memory.writer import MemoryWriteService
 from app.prediction.bedrock_client import AwsBedrockClient, MockBedrockClient
+from app.repositories.cross_customer_memory_repository import (
+    CrossCustomerMemoryRepository,
+)
 from app.repositories.execution_result_repository import ExecutionResultRepository
 from app.repositories.grade_repository import GradeRepository
+from app.repositories.memory_sharing_preference_repository import (
+    MemorySharingPreferenceRepository,
+)
 from app.repositories.migration_memory_repository import MigrationMemoryRepository
 from app.repositories.migration_run_repository import MigrationRunRepository
+from app.services.cross_customer_promotion_service import CrossCustomerPromotionService
 from app.services.execution_service import ExecutionService
 from app.services.grading_pipeline_service import GradingPipelineService
 
@@ -99,6 +106,26 @@ def _build_grading_pipeline(session, runtime) -> GradingPipelineService:
             ) from exc
         embedding = MockEmbeddingClient()
 
+    # Automatic cross-customer promotion (docs/cross_customer.md §5) — same
+    # service the control-plane's get_memory_write_service wires in
+    # (app/dependencies.py), reused here so a real shadow-verified run
+    # graded through Step Functions gets the same treatment as one graded
+    # through the API. Reuses the bedrock/embedding clients already
+    # resolved above rather than constructing a third set.
+    cross_customer_promotion = CrossCustomerPromotionService(
+        session=session,
+        cross_customer_repository=CrossCustomerMemoryRepository(session),
+        sharing_preference_repository=MemorySharingPreferenceRepository(session),
+        bedrock_client=bedrock,
+        bedrock_model_id=(
+            aws.bedrock_recommendation_model_id
+            or aws.bedrock_prediction_model_id
+            or "mock-model"
+        ),
+        embedding_client=embedding,
+        embedding_model_id=aws.bedrock_embedding_model_id,
+    )
+
     return GradingPipelineService(
         session=session,
         migration_run_repository=MigrationRunRepository(session),
@@ -108,6 +135,7 @@ def _build_grading_pipeline(session, runtime) -> GradingPipelineService:
             repository=MigrationMemoryRepository(session),
             embedding_client=embedding,
             embedding_model_id=aws.bedrock_embedding_model_id,
+            cross_customer_promotion=cross_customer_promotion,
         ),
         bedrock_client=bedrock,
         prose_model_id=aws.bedrock_prediction_model_id or "mock-model",

@@ -11,15 +11,23 @@ from app.aws.exceptions import AwsConfigurationError
 from app.database import DatabaseSessionManager
 from app.prediction.bedrock_client import AwsBedrockClient, BedrockClient, MockBedrockClient
 from app.repositories.approval_repository import ApprovalRepository
+from app.repositories.cross_customer_memory_repository import (
+    CrossCustomerMemoryRepository,
+)
 from app.repositories.execution_result_repository import ExecutionResultRepository
 from app.repositories.grade_repository import GradeRepository
+from app.repositories.memory_sharing_preference_repository import (
+    MemorySharingPreferenceRepository,
+)
 from app.repositories.migration_memory_repository import MigrationMemoryRepository
 from app.repositories.migration_run_repository import MigrationRunRepository
 from app.repositories.prediction_repository import PredictionRepository
 from app.repositories.shadow_cluster_repository import ShadowClusterRepository
 from app.repositories.slack_installation_repository import SlackInstallationRepository
+from app.repositories.workspace_repository import WorkspaceRepository
 from app.services.approval_service import ApprovalService
 from app.services.closed_loop_service import ClosedLoopService
+from app.services.cross_customer_promotion_service import CrossCustomerPromotionService
 from app.services.execution_service import ExecutionService
 from app.services.grading_pipeline_service import GradingPipelineService
 from app.services.migration_run_service import MigrationRunService
@@ -30,6 +38,7 @@ from app.services.slack_notification_service import SlackNotificationService
 from app.services.slack_oauth_service import SlackOAuthService
 from app.services.workflow_orchestration_service import WorkflowOrchestrationService
 from app.services.local_shadow_verify_service import LocalShadowVerifyService
+from app.services.workspace_service import WorkspaceService
 from app.memory.embedding_client import (
     AwsTitanEmbeddingClient,
     EmbeddingClient,
@@ -103,6 +112,23 @@ def get_migration_run_service(
 
 
 MigrationRunSvc = Annotated[MigrationRunService, Depends(get_migration_run_service)]
+
+
+def get_workspace_repository(session: DbSession) -> WorkspaceRepository:
+    return WorkspaceRepository(session)
+
+
+WorkspaceRepo = Annotated[WorkspaceRepository, Depends(get_workspace_repository)]
+
+
+def get_workspace_service(
+    session: DbSession,
+    repository: WorkspaceRepo,
+) -> WorkspaceService:
+    return WorkspaceService(repository=repository, session=session)
+
+
+WorkspaceSvc = Annotated[WorkspaceService, Depends(get_workspace_service)]
 
 
 def get_schema_discovery_service(
@@ -289,6 +315,12 @@ def get_memory_retrieval(
         session=session,
         embedding_client=embedding,
         repository=MigrationMemoryRepository(session),
+        # Anonymized, opt-in cross-tenant pool — docs/cross_customer.md.
+        # Optional by construction (HybridMemoryRetrieval degrades to
+        # "no cross-customer results" if this were ever None), passed here
+        # so the real /predict path actually benefits from it, not just
+        # code that supports it in isolation.
+        cross_customer_repository=CrossCustomerMemoryRepository(session),
     )
 
 
@@ -377,17 +409,52 @@ def get_memory_repository(session: DbSession) -> MigrationMemoryRepository:
 MemoryRepo = Annotated[MigrationMemoryRepository, Depends(get_memory_repository)]
 
 
+def get_cross_customer_promotion_service(
+    session: DbSession,
+    bedrock: BedrockClientDep,
+    embedding: EmbeddingClientDep,
+    aws_settings: AwsSettingsDep,
+) -> CrossCustomerPromotionService:
+    """docs/cross_customer.md §5 — the automatic promotion hook's service.
+
+    Same model-id fallback already used for prediction/recommendation calls
+    elsewhere in this module (recommendation model first, prediction model
+    as a fallback) since generalization is a recommendation-shaped task, not
+    a from-scratch prediction.
+    """
+    return CrossCustomerPromotionService(
+        session=session,
+        cross_customer_repository=CrossCustomerMemoryRepository(session),
+        sharing_preference_repository=MemorySharingPreferenceRepository(session),
+        bedrock_client=bedrock,
+        bedrock_model_id=(
+            aws_settings.bedrock_recommendation_model_id
+            or aws_settings.bedrock_prediction_model_id
+            or "mock-model"
+        ),
+        embedding_client=embedding,
+        embedding_model_id=aws_settings.bedrock_embedding_model_id,
+    )
+
+
+CrossCustomerPromotionSvc = Annotated[
+    CrossCustomerPromotionService, Depends(get_cross_customer_promotion_service)
+]
+
+
 def get_memory_write_service(
     session: DbSession,
     memory_repo: MemoryRepo,
     embedding: EmbeddingClientDep,
     aws_settings: AwsSettingsDep,
+    cross_customer_promotion: CrossCustomerPromotionSvc,
 ) -> MemoryWriteService:
     return MemoryWriteService(
         session=session,
         repository=memory_repo,
         embedding_client=embedding,
         embedding_model_id=aws_settings.bedrock_embedding_model_id,
+        cross_customer_promotion=cross_customer_promotion,
     )
 
 

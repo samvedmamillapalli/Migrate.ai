@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 
 import { SidebarSettingsMenu } from "@/components/sidebar-settings-menu"
+import { WorkspaceSwitcher } from "@/components/workspace-switcher"
 import { listMemories, listRuns } from "@/lib/api/endpoints"
 import { getOwnerIdentity } from "@/lib/api/owner"
 import {
@@ -155,7 +156,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <div className="text-foreground text-[15px] leading-tight font-bold tracking-tight">
               Migration Oracle
             </div>
-            <div className="text-muted-foreground text-xs">Workspace</div>
           </div>
           <button
             type="button"
@@ -165,6 +165,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           >
             <PanelLeftClose className="size-4" />
           </button>
+        </div>
+        <div className="mt-3">
+          <WorkspaceSwitcher />
         </div>
       </SidebarHeader>
 

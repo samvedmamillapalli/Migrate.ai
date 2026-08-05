@@ -16,7 +16,9 @@ from app.api.middleware_auth import SessionAuthMiddleware
 from app.api.routes.auth import router as auth_router
 from app.api.routes.health import router as health_router
 from app.api.routes.memories import router as memories_router
+from app.api.routes.memory_sharing import router as memory_sharing_router
 from app.api.routes.runs import router as runs_router
+from app.api.routes.workspaces import router as workspaces_router
 from app.api.routes.slack import router as slack_router
 from app.aws import (
     AwsClientFactory,
@@ -239,7 +241,9 @@ def create_app() -> FastAPI:
     app.include_router(auth_router)
     app.include_router(health_router)
     app.include_router(runs_router)
+    app.include_router(workspaces_router)
     app.include_router(memories_router)
+    app.include_router(memory_sharing_router)
     app.include_router(slack_router)
 
     # Legacy static /ui console retired — operators use the Next.js app

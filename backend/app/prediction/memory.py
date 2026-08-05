@@ -37,6 +37,10 @@ class RetrievedMemory(BaseModel):
     not_a_graded_run: bool = False
     source_url: str | None = None
     ui_label: str | None = None
+    # Cross-customer pool only (docs/cross_customer.md §7) — how many
+    # distinct promotions collapsed into this one anonymized row. None for
+    # every other memory_origin.
+    contributor_count: int | None = None
     lessons_learned: str | None = None
     # Measured outcome of the remembered run. Present only for graded shadow
     # runs — open-source incidents and seed rows leave these None, which is

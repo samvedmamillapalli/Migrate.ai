@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from app.database.models.migration_memory import MigrationMemory
     from app.database.models.prediction import Prediction
     from app.database.models.shadow_cluster import ShadowCluster
+    from app.database.models.workspace import Workspace
 
 
 class MigrationRunStatus(str, enum.Enum):
@@ -82,6 +83,7 @@ class MigrationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_migration_runs_owner_identity", "owner_identity"),
         Index("ix_migration_runs_revises_run_id", "revises_run_id"),
         Index("ix_migration_runs_run_kind", "run_kind"),
+        Index("ix_migration_runs_workspace_id", "workspace_id"),
     )
 
     migration_sql: Mapped[str] = mapped_column(Text, nullable=False)
@@ -91,6 +93,16 @@ class MigrationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         nullable=False,
         default="anonymous",
         server_default="anonymous",
+    )
+    # Optional: which workspace's target database this run belongs to.
+    # Nullable — see docs/FUTURE_WORKSPACES_PLAN.md's migration path;
+    # existing runs are backfilled to an implicit default workspace, but the
+    # column itself stays nullable so a one-off run without a workspace is
+    # still possible. SET NULL (not CASCADE) on workspace deletion: deleting
+    # a workspace must never delete migration history.
+    workspace_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("workspaces.id", ondelete="SET NULL"),
+        nullable=True,
     )
     # "standard" | "chaos" | "debug". Lets the UI (and accuracy queries) tell a
     # real user migration apart from a deliberate chaos/failure test or a
@@ -254,6 +266,10 @@ class MigrationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         cascade="all, delete-orphan",
         passive_deletes=True,
     )
+    # No cascade, no back_populates: this run points AT a workspace, it is
+    # not owned by it — deleting a workspace must never delete run history
+    # (see workspace_id's ondelete="SET NULL" above).
+    workspace: Mapped[Workspace | None] = relationship("Workspace", uselist=False)
 
     def __repr__(self) -> str:
         return f"MigrationRun(id={self.id!s}, status={self.status.value!r})"
