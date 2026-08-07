@@ -63,3 +63,20 @@ Document stack name `migration-oracle`, region `us-east-1`. After deploy, restar
 ## CORS
 
 Add the production frontend origin to `CORS_ORIGINS` (comma-separated, no wildcards). Restart the API.
+
+## GitHub PR integration (optional)
+
+`POST /webhooks/github` is a route on this same FastAPI app — no separate
+Lambda/API Gateway needed, since the app already has a public URL once
+hosted per this doc. Set once a GitHub App is registered
+([`docs/GITHUB_APP_SETUP.md`](GITHUB_APP_SETUP.md) has the exact steps):
+
+```env
+GITHUB_APP_ID=...
+GITHUB_APP_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+GITHUB_WEBHOOK_SECRET=...
+```
+
+Webhook URL to register on the App: `https://<your-api-domain>/webhooks/github`.
+The route is public (no Bearer token — GitHub authenticates itself via
+`X-Hub-Signature-256`, allowlisted in `app/api/middleware_auth.py`).

@@ -104,8 +104,10 @@ class MigrationRunService:
         if len(identity) > 256:
             raise ValidationError("owner_identity must be at most 256 characters")
         kind = (run_kind or "standard").strip().lower() or "standard"
-        if kind not in {"standard", "chaos", "debug"}:
-            raise ValidationError("run_kind must be one of: standard, chaos, debug")
+        if kind not in {"standard", "chaos", "debug", "github_pr"}:
+            raise ValidationError(
+                "run_kind must be one of: standard, chaos, debug, github_pr"
+            )
 
         if revises_run_id is not None:
             # Ensure the referenced run exists (soft link; no cascade).

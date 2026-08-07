@@ -14,7 +14,10 @@ import {
   setConnectionSecretArn,
 } from "@/lib/api/owner"
 import {
+  disconnectGithub,
   disconnectSlack,
+  getGithubInstallUrl,
+  getGithubStatus,
   getHealth,
   getMemoriesHealth,
   getMemorySharingPreview,
@@ -24,6 +27,7 @@ import {
   isSfnReady,
   setMemorySharing,
   type CorpusHealth,
+  type GithubStatusResponse,
   type HealthResponse,
   type MemorySharingPreviewResponse,
   type MemorySharingStatusResponse,
@@ -159,6 +163,15 @@ export default function SettingsPage() {
   const [slackActionError, setSlackActionError] = React.useState<
     string | null
   >(null)
+  const [githubStatus, setGithubStatus] =
+    React.useState<GithubStatusResponse | null>(null)
+  const [githubBanner, setGithubBanner] = React.useState<
+    "connected" | "error" | null
+  >(null)
+  const [githubBusy, setGithubBusy] = React.useState(false)
+  const [githubActionError, setGithubActionError] = React.useState<
+    string | null
+  >(null)
   const [sharingStatus, setSharingStatus] =
     React.useState<MemorySharingStatusResponse | null>(null)
   const [sharingPreview, setSharingPreview] =
@@ -178,6 +191,17 @@ export default function SettingsPage() {
       // Best-effort — the panel below shows "unknown" rather than blocking
       // the rest of the settings page on a Slack lookup failure.
       setSlackStatus(null)
+    }
+  }, [])
+
+  const refreshGithubStatus = React.useCallback(async () => {
+    try {
+      setGithubStatus(await getGithubStatus())
+    } catch {
+      // Best-effort, same as Slack above — no backend route exists yet
+      // (TODO(backend): GET /api/github/status), so this always falls
+      // through to the "unknown/not connected" rendering below.
+      setGithubStatus(null)
     }
   }, [])
 
@@ -201,21 +225,29 @@ export default function SettingsPage() {
     }
     void load()
     void refreshSlackStatus()
+    void refreshGithubStatus()
     void refreshSharingStatus()
     return () => {
       cancelled = true
     }
-  }, [refreshSlackStatus, refreshSharingStatus])
+  }, [refreshSlackStatus, refreshGithubStatus, refreshSharingStatus])
 
   // The backend redirects here with ?slack=connected|error after the OAuth
   // callback completes (see SLACK_INSTALL_SUCCESS_REDIRECT /
   // SLACK_INSTALL_ERROR_REDIRECT in backend/app/config.py). Read it once,
   // then strip it from the URL so a page refresh doesn't re-show the banner.
+  // TODO(backend): the GitHub side of this (?github=connected|error) needs
+  // the same redirect-back convention once /api/github/install exists.
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const slackParam = params.get("slack")
+    const githubParam = params.get("github")
     if (slackParam === "connected" || slackParam === "error") {
       setSlackBanner(slackParam)
+      router.replace("/dashboard/settings")
+    }
+    if (githubParam === "connected" || githubParam === "error") {
+      setGithubBanner(githubParam)
       router.replace("/dashboard/settings")
     }
   }, [router])
@@ -246,6 +278,35 @@ export default function SettingsPage() {
       )
     } finally {
       setSlackBusy(false)
+    }
+  }
+
+  async function handleGithubConnect() {
+    setGithubBusy(true)
+    setGithubActionError(null)
+    try {
+      const { authorize_url } = await getGithubInstallUrl()
+      window.location.href = authorize_url
+    } catch (err) {
+      setGithubActionError(
+        err instanceof ApiError ? err.message : "Could not start GitHub connect."
+      )
+      setGithubBusy(false)
+    }
+  }
+
+  async function handleGithubDisconnect() {
+    setGithubBusy(true)
+    setGithubActionError(null)
+    try {
+      await disconnectGithub()
+      await refreshGithubStatus()
+    } catch (err) {
+      setGithubActionError(
+        err instanceof ApiError ? err.message : "Could not disconnect GitHub."
+      )
+    } finally {
+      setGithubBusy(false)
     }
   }
 
@@ -468,6 +529,67 @@ export default function SettingsPage() {
                 {slackActionError}
               </p>
             ) : null}
+          </Panel>
+
+          <Panel className="px-6 py-5" delay={0.125}>
+            <Label className="mb-4">GitHub account</Label>
+            {githubBanner === "connected" ? (
+              <div className="mb-4 rounded-lg border border-[var(--tone-pass-border)] bg-[var(--tone-pass-bg)] px-3 py-2 text-[13px] text-[var(--tone-pass-fg)]">
+                GitHub connected. Teammates you invite by GitHub handle can be
+                matched to a verified account.
+              </div>
+            ) : null}
+            {githubBanner === "error" ? (
+              <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
+                GitHub connection failed. Please try connecting again.
+              </div>
+            ) : null}
+
+            <Row
+              title={
+                githubStatus?.connected
+                  ? `Connected — @${githubStatus.username ?? "unknown"}`
+                  : "Not connected"
+              }
+              detail={
+                githubStatus?.connected
+                  ? "Your GitHub identity is linked to this account."
+                  : githubStatus?.configured === false
+                    ? "GitHub OAuth is not configured on this server yet."
+                    : "Connect GitHub to verify your identity for workspace invites and (later) repository integration."
+              }
+            >
+              {githubStatus?.connected ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={githubBusy}
+                  onClick={() => void handleGithubDisconnect()}
+                >
+                  {githubBusy ? "Disconnecting…" : "Disconnect"}
+                </Button>
+              ) : (
+                <Button
+                  variant="default"
+                  size="sm"
+                  disabled={githubBusy || githubStatus?.configured === false}
+                  onClick={() => void handleGithubConnect()}
+                >
+                  {githubBusy ? "Redirecting…" : "Connect GitHub"}
+                </Button>
+              )}
+            </Row>
+            {githubActionError ? (
+              <p className="mt-2 text-[12px] leading-snug text-destructive">
+                {githubActionError}
+              </p>
+            ) : null}
+            <p className="text-muted-foreground mt-3 text-[11.5px] leading-snug">
+              Not built on the server yet — TODO(backend): a GitHub OAuth app
+              + `/api/github/install`, `/api/github/status`,
+              `/api/github/disconnect` routes, mirroring
+              `backend/app/api/routes/slack.py`.
+            </p>
           </Panel>
 
           <Panel className="px-6 py-5" delay={0.13}>

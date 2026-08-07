@@ -16,6 +16,7 @@ from app.database.mixins import TimestampMixin, UUIDPrimaryKeyMixin
 if TYPE_CHECKING:
     from app.database.models.approval import Approval
     from app.database.models.execution_result import ExecutionResult
+    from app.database.models.github_pull_request_link import GithubPullRequestLink
     from app.database.models.grade import Grade
     from app.database.models.learned_outcome import LearnedOutcome
     from app.database.models.migration_memory import MigrationMemory
@@ -270,6 +271,13 @@ class MigrationRun(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     # not owned by it — deleting a workspace must never delete run history
     # (see workspace_id's ondelete="SET NULL" above).
     workspace: Mapped[Workspace | None] = relationship("Workspace", uselist=False)
+    github_pr_link: Mapped[GithubPullRequestLink | None] = relationship(
+        "GithubPullRequestLink",
+        back_populates="migration_run",
+        uselist=False,
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     def __repr__(self) -> str:
         return f"MigrationRun(id={self.id!s}, status={self.status.value!r})"

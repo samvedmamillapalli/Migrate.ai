@@ -137,7 +137,8 @@ export interface paths {
          *
          *     Scoped to the same owner as the Recent-runs list when one is known (auth
          *     session, or an explicit query param), so this card and "Recent" never show
-         *     two different populations side by side without saying so.
+         *     two different populations side by side without saying so. ``workspace_id``
+         *     narrows further to one workspace's runs (docs/FUTURE_WORKSPACES_PLAN.md).
          */
         get: operations["get_accuracy_metrics_runs_metrics_accuracy_get"];
         put?: never;
@@ -956,6 +957,60 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/webhooks/github/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Github Integration Status
+         * @description Whether this server can do GitHub PR integration at all, plus the
+         *     App's public install link. Public-safe: exposes no credentials, only
+         *     whether they are present and the App's already-public slug.
+         */
+        get: operations["github_integration_status_webhooks_github_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/webhooks/github": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive Github Webhook
+         * @description Verify and acknowledge fast; do the real work afterwards.
+         *
+         *     GitHub's webhook delivery timeout is **10 seconds**, and this pipeline
+         *     (schema discovery against a real database, then two Bedrock calls)
+         *     routinely takes much longer. Processing inline made GitHub record the
+         *     delivery as failed — "context deadline exceeded" after 10s — even though
+         *     the run was created correctly, which risks GitHub disabling the webhook
+         *     and turns any redelivery into a duplicate run. So: verify the signature
+         *     (cheap, and the security boundary), then hand off and return 202.
+         *
+         *     ``GithubWebhookService`` is deliberately *not* injected here — the
+         *     background task builds its own against a fresh session, since the
+         *     request-scoped session is closed by the time it runs.
+         */
+        post: operations["receive_github_webhook_webhooks_github_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1151,6 +1206,22 @@ export interface components {
              * Format: date-time
              */
             updated_at: string;
+        };
+        /**
+         * GithubIntegrationStatus
+         * @description Drives the workspace-settings panel's GitHub section, so the UI can
+         *     tell a user to install the App instead of silently accepting a repo
+         *     name that will never produce a webhook.
+         */
+        GithubIntegrationStatus: {
+            /** Configured */
+            configured: boolean;
+            /** Webhook Secret Set */
+            webhook_secret_set: boolean;
+            /** App Slug */
+            app_slug?: string | null;
+            /** Install Url */
+            install_url?: string | null;
         };
         /** GradeResponse */
         GradeResponse: {
@@ -1949,6 +2020,16 @@ export interface components {
              * @description One-shot connection URL; stored as a secret, never persisted on the row
              */
             database_url?: string | null;
+            /**
+             * Github Repo Full Name
+             * @description "owner/repo", e.g. "my-org/my-service"
+             */
+            github_repo_full_name?: string | null;
+            /**
+             * Github Migration Glob
+             * @description Glob matched against changed file paths to detect a migration in a PR. Defaults to backend/alembic/versions/*.py.
+             */
+            github_migration_glob?: string | null;
         };
         /** WorkspaceListResponse */
         WorkspaceListResponse: {
@@ -1982,6 +2063,13 @@ export interface components {
              * @default false
              */
             is_default: boolean;
+            /** Github Repo Full Name */
+            github_repo_full_name?: string | null;
+            /**
+             * Github Migration Glob
+             * @default backend/alembic/versions/*.py
+             */
+            github_migration_glob: string;
             /**
              * Created At
              * Format: date-time
@@ -2006,6 +2094,15 @@ export interface components {
              * @default false
              */
             clear_connection: boolean;
+            /** Github Repo Full Name */
+            github_repo_full_name?: string | null;
+            /**
+             * Clear Github Repo
+             * @default false
+             */
+            clear_github_repo: boolean;
+            /** Github Migration Glob */
+            github_migration_glob?: string | null;
         };
     };
     responses: never;
@@ -2172,6 +2269,8 @@ export interface operations {
         parameters: {
             query?: {
                 status?: components["schemas"]["MigrationRunStatus"] | null;
+                /** @description Comma-separated statuses, e.g. pending,predicting,awaiting_approval,running */
+                status_in?: string | null;
                 owner_identity?: string | null;
                 workspace_id?: string | null;
                 run_kind?: string | null;
@@ -2253,6 +2352,7 @@ export interface operations {
         parameters: {
             query?: {
                 owner_identity?: string | null;
+                workspace_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -2286,6 +2386,7 @@ export interface operations {
         parameters: {
             query?: {
                 owner_identity?: string | null;
+                workspace_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -2319,6 +2420,7 @@ export interface operations {
         parameters: {
             query?: {
                 owner_identity?: string | null;
+                workspace_id?: string | null;
                 days?: number;
             };
             header?: never;
@@ -2353,6 +2455,7 @@ export interface operations {
         parameters: {
             query?: {
                 owner_identity?: string | null;
+                workspace_id?: string | null;
                 limit?: number;
             };
             header?: never;
@@ -3613,6 +3716,46 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SlackDisconnectResponse"];
+                };
+            };
+        };
+    };
+    github_integration_status_webhooks_github_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GithubIntegrationStatus"];
+                };
+            };
+        };
+    };
+    receive_github_webhook_webhooks_github_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

@@ -44,3 +44,12 @@ class WorkspaceRepository(BaseRepository[Workspace]):
         )
         result = await self._session.execute(query)
         return result.scalar_one_or_none()
+
+    async def get_by_github_repo_full_name(self, repo_full_name: str) -> Workspace | None:
+        """docs/FUTURE_GITHUB_INTEGRATION_PLAN.md — one repo maps to at most
+        one workspace (enforced by a partial unique index on the column)."""
+        query = select(Workspace).where(
+            Workspace.github_repo_full_name == repo_full_name
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()

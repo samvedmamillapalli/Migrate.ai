@@ -63,3 +63,11 @@ class SlackOAuthError(AppError):
 
 class SlackStateError(AppError):
     """Raised when the Slack OAuth `state` parameter is invalid or expired."""
+
+
+class GithubWebhookError(AppError):
+    """Raised when a GitHub webhook payload fails signature verification or is malformed."""
+
+
+class GithubApiError(AppError):
+    """Raised when a call to the GitHub REST API (App JWT, installation token, PR files/comments/check runs) fails."""

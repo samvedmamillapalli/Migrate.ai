@@ -20,6 +20,7 @@ from app.api.routes.memory_sharing import router as memory_sharing_router
 from app.api.routes.runs import router as runs_router
 from app.api.routes.workspaces import router as workspaces_router
 from app.api.routes.slack import router as slack_router
+from app.api.routes.github import router as github_router
 from app.aws import (
     AwsClientFactory,
     AwsConfigurationError,
@@ -245,6 +246,7 @@ def create_app() -> FastAPI:
     app.include_router(memories_router)
     app.include_router(memory_sharing_router)
     app.include_router(slack_router)
+    app.include_router(github_router)
 
     # Legacy static /ui console retired — operators use the Next.js app
     # (frontend/oracle). Keep frontend/ on disk only as historical reference.

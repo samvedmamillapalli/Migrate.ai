@@ -6,6 +6,7 @@ from app.database.models.ccloud_audit_event import CCloudAuditEvent
 from app.database.models.cockroachdb_skill_doc import CockroachDBSkillDoc
 from app.database.models.cross_customer_memory import CrossCustomerMemory
 from app.database.models.execution_result import ExecutionResult
+from app.database.models.github_pull_request_link import GithubPullRequestLink
 from app.database.models.grade import Grade
 from app.database.models.learned_outcome import LearnedOutcome
 from app.database.models.memory_sharing_preference import MemorySharingPreference
@@ -40,6 +41,7 @@ __all__ = [
     "CompatibilityRisk",
     "CrossCustomerMemory",
     "ExecutionResult",
+    "GithubPullRequestLink",
     "Grade",
     "LearnedOutcome",
     "MemorySharingPreference",

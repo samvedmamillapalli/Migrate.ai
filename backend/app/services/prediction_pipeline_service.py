@@ -32,6 +32,7 @@ from app.repositories.prediction_repository import PredictionRepository
 from app.schema_analysis.models import DatabaseMetadata
 from app.services.migration_run_service import MigrationRunService
 from app.services.pipeline_progress import set_progress
+from app.services.github_notification_service import GithubNotificationService
 from app.services.slack_helpers import derive_migration_name
 from app.services.slack_notification_service import SlackNotificationService
 # clear_progress available for TTL cleanup if needed later.
@@ -66,6 +67,7 @@ class PredictionPipelineService:
         skills_retrieval: SkillsRetrieval | None = None,
         policy_engine: PolicyEngine | None = None,
         slack_notifications: SlackNotificationService | None = None,
+        github_notifications: GithubNotificationService | None = None,
     ) -> None:
         self._session = session
         self._runs = migration_run_repository
@@ -80,6 +82,7 @@ class PredictionPipelineService:
         self._skills = skills_retrieval or StubSkillsRetrieval()
         self._policy_engine = policy_engine or PolicyEngine()
         self._slack_notifications = slack_notifications
+        self._github_notifications = github_notifications
 
     async def run_prediction_pipeline(
         self,
@@ -294,6 +297,7 @@ class PredictionPipelineService:
                 scale_tier=tier,
             )
             await self._notify_prediction_ready(persisted)
+            await self._notify_github_prediction_ready(persisted)
             _prog(run_id, "done", "Prediction pipeline complete — awaiting approval", 100)
             return persisted
 
@@ -406,6 +410,23 @@ class PredictionPipelineService:
         except Exception:
             logger.warning(
                 "Slack prediction_ready notification failed",
+                extra={"run_id": str(run.id)},
+                exc_info=True,
+            )
+
+    async def _notify_github_prediction_ready(self, run: MigrationRun) -> None:
+        """Best-effort GitHub PR comment + check run after the prediction
+        commits — docs/FUTURE_GITHUB_INTEGRATION_PLAN.md's "Proposed Result
+        Reporting". No-ops (via ``GithubNotificationService`` itself) for
+        the vast majority of runs, which have no linked PR at all.
+        """
+        if self._github_notifications is None:
+            return
+        try:
+            await self._github_notifications.send_prediction_ready(run)
+        except Exception:
+            logger.warning(
+                "GitHub prediction_ready notification failed",
                 extra={"run_id": str(run.id)},
                 exc_info=True,
             )

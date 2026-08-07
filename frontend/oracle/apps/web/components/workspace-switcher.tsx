@@ -1,10 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { ChevronsUpDown, Database, Pencil, Plus } from "lucide-react"
+import { ChevronsUpDown, Database, Pencil, Plus, Users } from "lucide-react"
 
 import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog"
 import { EditWorkspaceDialog } from "@/components/edit-workspace-dialog"
+import { InviteMembersDialog } from "@/components/invite-members-dialog"
 import { listWorkspaces, type Workspace } from "@/lib/api/endpoints"
 import { getActiveWorkspaceId, getOwnerIdentity, setActiveWorkspaceId } from "@/lib/api/owner"
 import {
@@ -44,6 +45,8 @@ export function WorkspaceSwitcher() {
   const [activeId, setActiveId] = React.useState<string>("")
   const [createOpen, setCreateOpen] = React.useState(false)
   const [editingWorkspace, setEditingWorkspace] = React.useState<Workspace | null>(null)
+  const [invitingWorkspace, setInvitingWorkspace] =
+    React.useState<Workspace | null>(null)
 
   const load = React.useCallback(async () => {
     const owner = getOwnerIdentity()
@@ -195,6 +198,19 @@ export function WorkspaceSwitcher() {
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuGroup>
+                {active ? (
+                  <DropdownMenuItem
+                    className="gap-2 p-2"
+                    onClick={() => setInvitingWorkspace(active)}
+                  >
+                    <div className="flex size-6 items-center justify-center rounded-md border bg-transparent">
+                      <Users className="size-4" />
+                    </div>
+                    <div className="font-medium text-muted-foreground">
+                      Manage members
+                    </div>
+                  </DropdownMenuItem>
+                ) : null}
                 <DropdownMenuItem
                   className="gap-2 p-2"
                   onClick={() => setCreateOpen(true)}
@@ -225,6 +241,13 @@ export function WorkspaceSwitcher() {
         }}
         onUpdated={handleUpdated}
         onDeleted={handleDeleted}
+      />
+      <InviteMembersDialog
+        workspace={invitingWorkspace}
+        open={invitingWorkspace !== null}
+        onOpenChange={(open) => {
+          if (!open) setInvitingWorkspace(null)
+        }}
       />
     </>
   )

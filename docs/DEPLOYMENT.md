@@ -16,6 +16,15 @@
 
 Control-plane + frontend hosting: [`docs/HOSTING.md`](HOSTING.md).
 
+**2026-08-05 — GitHub PR integration (code built, not yet live-verified —
+needs a registered GitHub App).** New migration `v5q3n0i4k820` (repo-to-
+workspace link + `github_pull_request_links` table) — run
+`alembic upgrade head` before deploying. New route `POST /webhooks/github`
+lives on the FastAPI app itself (no new Lambda/API Gateway — see
+[`docs/HOSTING.md`](HOSTING.md#github-pr-integration-optional)), gated
+behind `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` / `GITHUB_WEBHOOK_SECRET`.
+Full manual setup: [`docs/GITHUB_APP_SETUP.md`](GITHUB_APP_SETUP.md).
+
 **2026-08-05 — optional per-owner shadow concurrency cap, needs a redeploy
 to take effect in the demo path.** `ProvisionShadowCluster`
 (`app/lambdas/handlers/provision_shadow.py`) now also passes

@@ -222,3 +222,86 @@ async def test_delete_workspace_deletes_row_only_no_cascade_logic(
 
     repository.delete.assert_awaited_once_with(workspace)
     session.commit.assert_awaited()
+
+
+# ------------------------------------------------- github repo linking
+
+
+@pytest.mark.asyncio
+async def test_create_workspace_rejects_repo_already_linked_elsewhere(
+    service: WorkspaceService, repository: AsyncMock
+) -> None:
+    """docs/FUTURE_GITHUB_INTEGRATION_PLAN.md: one repo maps to at most one
+    workspace, globally — not just per-owner."""
+    repository.get_by_owner_and_name.return_value = None
+    repository.get_by_github_repo_full_name.return_value = _workspace(
+        id=uuid.uuid4(), github_repo_full_name="acme/widgets"
+    )
+    with pytest.raises(ConflictError):
+        await service.create_workspace(
+            owner_identity="owner-1",
+            name="Prod",
+            github_repo_full_name="acme/widgets",
+        )
+    repository.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_create_workspace_defaults_migration_glob(
+    service: WorkspaceService, repository: AsyncMock
+) -> None:
+    repository.get_by_owner_and_name.return_value = None
+    repository.get_by_github_repo_full_name.return_value = None
+    created = _workspace(name="Prod")
+    repository.create.return_value = created
+
+    await service.create_workspace(owner_identity="owner-1", name="Prod")
+
+    created_arg = repository.create.await_args.args[0]
+    assert created_arg.github_migration_glob == "backend/alembic/versions/*.py"
+
+
+@pytest.mark.asyncio
+async def test_update_workspace_rejects_repo_linked_to_a_different_workspace(
+    service: WorkspaceService, repository: AsyncMock
+) -> None:
+    workspace = _workspace()
+    other = _workspace(id=uuid.uuid4(), github_repo_full_name="acme/widgets")
+    repository.get_owned.return_value = workspace
+    repository.get_by_github_repo_full_name.return_value = other
+
+    with pytest.raises(ConflictError):
+        await service.update_workspace(
+            workspace.id, "owner-1", github_repo_full_name="acme/widgets"
+        )
+
+
+@pytest.mark.asyncio
+async def test_update_workspace_can_relink_its_own_repo(
+    service: WorkspaceService, repository: AsyncMock
+) -> None:
+    """A workspace re-submitting the repo it already owns must not trip the
+    uniqueness check against itself."""
+    workspace = _workspace(github_repo_full_name="acme/widgets")
+    repository.get_owned.return_value = workspace
+    repository.get_by_github_repo_full_name.return_value = workspace
+    repository.update.return_value = workspace
+
+    result = await service.update_workspace(
+        workspace.id, "owner-1", github_repo_full_name="acme/widgets"
+    )
+    assert result.github_repo_full_name == "acme/widgets"
+
+
+@pytest.mark.asyncio
+async def test_update_workspace_clear_github_repo(
+    service: WorkspaceService, repository: AsyncMock
+) -> None:
+    workspace = _workspace(github_repo_full_name="acme/widgets")
+    repository.get_owned.return_value = workspace
+    repository.update.return_value = workspace
+
+    result = await service.update_workspace(
+        workspace.id, "owner-1", clear_github_repo=True
+    )
+    assert result.github_repo_full_name is None

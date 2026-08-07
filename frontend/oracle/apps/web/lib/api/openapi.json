@@ -240,6 +240,24 @@
             }
           },
           {
+            "name": "status_in",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Comma-separated statuses, e.g. pending,predicting,awaiting_approval,running",
+              "title": "Status In"
+            },
+            "description": "Comma-separated statuses, e.g. pending,predicting,awaiting_approval,running"
+          },
+          {
             "name": "owner_identity",
             "in": "query",
             "required": false,
@@ -459,7 +477,7 @@
           "migration-runs"
         ],
         "summary": "Get Accuracy Metrics",
-        "description": "Plain SQL accuracy / learning metrics (Phase 11 chart source).\n\nScoped to the same owner as the Recent-runs list when one is known (auth\nsession, or an explicit query param), so this card and \"Recent\" never show\ntwo different populations side by side without saying so.",
+        "description": "Plain SQL accuracy / learning metrics (Phase 11 chart source).\n\nScoped to the same owner as the Recent-runs list when one is known (auth\nsession, or an explicit query param), so this card and \"Recent\" never show\ntwo different populations side by side without saying so. ``workspace_id``\nnarrows further to one workspace's runs (docs/FUTURE_WORKSPACES_PLAN.md).",
         "operationId": "get_accuracy_metrics_runs_metrics_accuracy_get",
         "parameters": [
           {
@@ -478,6 +496,23 @@
                 }
               ],
               "title": "Owner Identity"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workspace Id"
             }
           }
         ],
@@ -533,6 +568,23 @@
               ],
               "title": "Owner Identity"
             }
+          },
+          {
+            "name": "workspace_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workspace Id"
+            }
           }
         ],
         "responses": {
@@ -586,6 +638,23 @@
                 }
               ],
               "title": "Owner Identity"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workspace Id"
             }
           },
           {
@@ -652,6 +721,23 @@
                 }
               ],
               "title": "Owner Identity"
+            }
+          },
+          {
+            "name": "workspace_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Workspace Id"
             }
           },
           {
@@ -2506,6 +2592,48 @@
           }
         }
       }
+    },
+    "/webhooks/github/status": {
+      "get": {
+        "tags": [
+          "github"
+        ],
+        "summary": "Github Integration Status",
+        "description": "Whether this server can do GitHub PR integration at all, plus the\nApp's public install link. Public-safe: exposes no credentials, only\nwhether they are present and the App's already-public slug.",
+        "operationId": "github_integration_status_webhooks_github_status_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GithubIntegrationStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/github": {
+      "post": {
+        "tags": [
+          "github"
+        ],
+        "summary": "Receive Github Webhook",
+        "description": "Verify and acknowledge fast; do the real work afterwards.\n\nGitHub's webhook delivery timeout is **10 seconds**, and this pipeline\n(schema discovery against a real database, then two Bedrock calls)\nroutinely takes much longer. Processing inline made GitHub record the\ndelivery as failed \u2014 \"context deadline exceeded\" after 10s \u2014 even though\nthe run was created correctly, which risks GitHub disabling the webhook\nand turns any redelivery into a duplicate run. So: verify the signature\n(cheap, and the security boundary), then hand off and return 202.\n\n``GithubWebhookService`` is deliberately *not* injected here \u2014 the\nbackground task builds its own against a fresh session, since the\nrequest-scoped session is closed by the time it runs.",
+        "operationId": "receive_github_webhook_webhooks_github_post",
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -2930,6 +3058,47 @@
           "updated_at"
         ],
         "title": "ExecutionResultResponse"
+      },
+      "GithubIntegrationStatus": {
+        "properties": {
+          "configured": {
+            "type": "boolean",
+            "title": "Configured"
+          },
+          "webhook_secret_set": {
+            "type": "boolean",
+            "title": "Webhook Secret Set"
+          },
+          "app_slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "App Slug"
+          },
+          "install_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Install Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "configured",
+          "webhook_secret_set"
+        ],
+        "title": "GithubIntegrationStatus",
+        "description": "Drives the workspace-settings panel's GitHub section, so the UI can\ntell a user to install the App instead of silently accepting a repo\nname that will never produce a webhook."
       },
       "GradeResponse": {
         "properties": {
@@ -5238,6 +5407,32 @@
             ],
             "title": "Database Url",
             "description": "One-shot connection URL; stored as a secret, never persisted on the row"
+          },
+          "github_repo_full_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Repo Full Name",
+            "description": "\"owner/repo\", e.g. \"my-org/my-service\""
+          },
+          "github_migration_glob": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 512
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Migration Glob",
+            "description": "Glob matched against changed file paths to detect a migration in a PR. Defaults to backend/alembic/versions/*.py."
           }
         },
         "type": "object",
@@ -5314,6 +5509,22 @@
             "title": "Is Default",
             "default": false
           },
+          "github_repo_full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Repo Full Name"
+          },
+          "github_migration_glob": {
+            "type": "string",
+            "title": "Github Migration Glob",
+            "default": "backend/alembic/versions/*.py"
+          },
           "created_at": {
             "type": "string",
             "format": "date-time",
@@ -5376,6 +5587,33 @@
             "type": "boolean",
             "title": "Clear Connection",
             "default": false
+          },
+          "github_repo_full_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Repo Full Name"
+          },
+          "clear_github_repo": {
+            "type": "boolean",
+            "title": "Clear Github Repo",
+            "default": false
+          },
+          "github_migration_glob": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Migration Glob"
           }
         },
         "type": "object",

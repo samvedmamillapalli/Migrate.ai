@@ -68,15 +68,25 @@ export type ApiOptions = Omit<RequestInit, "body"> & {
   quiet?: boolean
   /** Clerk session token for API authentication */
   clerkToken?: string | null
+  /**
+   * Skip waiting on the auth bridge entirely. Only for public, token-keyed
+   * endpoints whose URL parameter IS the credential (e.g. invite previews)
+   * — everything else must still resolve a token first, or the request can
+   * stall behind the auth bridge's ready-wait in contexts where its
+   * fallback timer is throttled (background tabs, preview iframes).
+   */
+  skipAuth?: boolean
 }
 
 export async function api<T = unknown>(
   path: string,
   options: ApiOptions = {}
 ): Promise<T> {
-  const { body, quiet: _quiet, headers, clerkToken, ...rest } = options
+  const { body, quiet: _quiet, headers, clerkToken, skipAuth, ...rest } = options
   const key = demoApiKey()
-  const token = clerkToken ?? (await resolveAuthToken())
+  const token = skipAuth
+    ? null
+    : clerkToken ?? (await resolveAuthToken())
   const res = await fetch(`${apiBaseUrl()}${path}`, {
     ...rest,
     headers: {

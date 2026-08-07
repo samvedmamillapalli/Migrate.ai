@@ -28,6 +28,7 @@ from app.database.models import CCloudAuditEvent, MigrationRun, MigrationRunStat
 from app.database.retry import with_txn_retry
 from app.repositories.ccloud_audit_event_repository import CCloudAuditEventRepository
 from app.repositories.migration_run_repository import MigrationRunRepository
+from app.services.github_notification_service import GithubNotificationService
 from app.services.slack_helpers import derive_migration_name
 from app.services.slack_notification_service import SlackNotificationService
 from app.shadow.ccloud_cli_client import CCloudCliError, fetch_audit_events
@@ -74,12 +75,14 @@ class WorkflowOrchestrationService:
         aws_clients: AwsClientFactory,
         aws_settings: AwsSettings,
         slack_notifications: SlackNotificationService | None = None,
+        github_notifications: GithubNotificationService | None = None,
     ) -> None:
         self._repository = repository
         self._session = session
         self._aws_clients = aws_clients
         self._aws_settings = aws_settings
         self._slack_notifications = slack_notifications
+        self._github_notifications = github_notifications
 
     async def start_for_run(
         self,
@@ -283,6 +286,7 @@ class WorkflowOrchestrationService:
 
         if just_became_terminal:
             await self._notify_terminal(updated)
+            await self._notify_github_terminal(updated.id)
 
         if just_became_terminal and _CCLOUD_AUDIT_TRAIL_ENABLED:
             # ccloud CLI audit-trail corroboration (docs/cockroach_hookup.md §4):
@@ -453,6 +457,30 @@ class WorkflowOrchestrationService:
                 exc_info=True,
             )
 
+    async def _notify_github_terminal(self, run_id: uuid.UUID) -> None:
+        """Best-effort predicted-vs-measured PR comment when a run first
+        becomes terminal — docs/FUTURE_GITHUB_INTEGRATION_PLAN.md's terminal
+        follow-up. No-ops for the vast majority of runs (no linked PR).
+
+        Unlike ``_notify_terminal``, this needs ``prediction`` /
+        ``execution_result`` / ``grade`` loaded to build the comparison
+        table, which the caller's plain ``get_by_id_or_raise(run_id)`` row
+        doesn't carry — fetched fresh here with ``load_children=True``.
+        """
+        if self._github_notifications is None:
+            return
+        try:
+            full_run = await self._repository.get_by_id_or_raise(
+                run_id, load_children=True
+            )
+            await self._github_notifications.send_terminal_result(full_run)
+        except Exception:
+            logger.warning(
+                "GitHub terminal notification failed",
+                extra={"run_id": str(run_id)},
+                exc_info=True,
+            )
+
     async def abort_for_run(
         self,
         run_id: uuid.UUID,
@@ -519,4 +547,5 @@ class WorkflowOrchestrationService:
                 updated,
                 description_override=f"Shadow workflow aborted by operator: {reason}",
             )
+            await self._notify_github_terminal(updated.id)
         return updated

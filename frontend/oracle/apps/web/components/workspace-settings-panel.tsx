@@ -1,12 +1,17 @@
 "use client"
 
 import * as React from "react"
-import { Trash2 } from "lucide-react"
+import { Trash2, UserPlus } from "lucide-react"
 
+import { InviteMembersDialog } from "@/components/invite-members-dialog"
+import { WorkspaceMembersPanel } from "@/components/workspace-members-panel"
 import {
   createWorkspace,
   deleteWorkspace,
+  getGithubIntegrationStatus,
   listWorkspaces,
+  updateWorkspace,
+  type GithubIntegrationStatus,
   type Workspace,
 } from "@/lib/api/endpoints"
 import { ApiError } from "@/lib/api/client"
@@ -19,7 +24,9 @@ import { cn } from "@workspace/ui/lib/utils"
 /**
  * Workspace management — docs/FUTURE_WORKSPACES_PLAN.md. A workspace scopes
  * runs to one target database; this panel is the create/list/delete surface
- * (linked from the sidebar switcher's "Manage workspaces").
+ * (linked from the sidebar switcher's "Manage workspaces"). Each row also
+ * opens the invite dialog (UserPlus) and the panel below lists the active
+ * workspace's accepted members.
  */
 export function WorkspaceSettingsPanel() {
   const [workspaces, setWorkspaces] = React.useState<Workspace[] | null>(null)
@@ -31,6 +38,24 @@ export function WorkspaceSettingsPanel() {
   const [createError, setCreateError] = React.useState<string | null>(null)
 
   const [deletingId, setDeletingId] = React.useState<string | null>(null)
+  const [invitingWorkspace, setInvitingWorkspace] =
+    React.useState<Workspace | null>(null)
+
+  // GitHub PR integration (docs/GITHUB_APP_SETUP.md) — repo linking.
+  const [editingRepoId, setEditingRepoId] = React.useState<string | null>(null)
+  const [repoInput, setRepoInput] = React.useState("")
+  const [globInput, setGlobInput] = React.useState("")
+  const [repoSaving, setRepoSaving] = React.useState(false)
+  const [repoError, setRepoError] = React.useState<string | null>(null)
+  const [github, setGithub] = React.useState<GithubIntegrationStatus | null>(null)
+
+  React.useEffect(() => {
+    // Best-effort: the GitHub section degrades to "not configured" guidance
+    // rather than breaking the whole settings page if this call fails.
+    void getGithubIntegrationStatus()
+      .then(setGithub)
+      .catch(() => setGithub(null))
+  }, [])
 
   const refresh = React.useCallback(async () => {
     const owner = getOwnerIdentity()
@@ -101,6 +126,61 @@ export function WorkspaceSettingsPanel() {
     }
   }
 
+  function startEditRepo(workspace: Workspace) {
+    setEditingRepoId(workspace.id)
+    setRepoInput(workspace.github_repo_full_name ?? "")
+    setGlobInput(
+      workspace.github_migration_glob || "backend/alembic/versions/*.py"
+    )
+    setRepoError(null)
+  }
+
+  async function handleSaveRepo(workspace: Workspace) {
+    setRepoSaving(true)
+    setRepoError(null)
+    try {
+      const trimmed = repoInput.trim()
+      await updateWorkspace(workspace.id, {
+        github_repo_full_name: trimmed || null,
+        clear_github_repo: trimmed.length === 0,
+        github_migration_glob: globInput.trim() || null,
+      })
+      setEditingRepoId(null)
+      await refresh()
+    } catch (err) {
+      // The server verifies the GitHub App can actually see this repo, so
+      // its message ("not installed on ..." + install link) is the useful
+      // one — surface it verbatim rather than a generic failure.
+      setRepoError(
+        err instanceof ApiError ? err.message : "Could not link this repo."
+      )
+    } finally {
+      setRepoSaving(false)
+    }
+  }
+
+  async function handleUnlinkRepo(workspace: Workspace) {
+    setRepoSaving(true)
+    setRepoError(null)
+    try {
+      await updateWorkspace(workspace.id, { clear_github_repo: true })
+      setEditingRepoId(null)
+      await refresh()
+    } catch (err) {
+      setRepoError(
+        err instanceof ApiError ? err.message : "Could not unlink this repo."
+      )
+    } finally {
+      setRepoSaving(false)
+    }
+  }
+
+  // The members section below always reflects the currently active
+  // workspace (same localStorage convention as the sidebar switcher).
+  const activeWorkspace =
+    workspaces?.find((workspace) => workspace.id === getActiveWorkspaceId()) ??
+    null
+
   return (
     <div id="workspaces" className="scroll-mt-24">
       <Label className="mb-4">Workspaces</Label>
@@ -124,32 +204,155 @@ export function WorkspaceSettingsPanel() {
           {workspaces.map((workspace) => (
             <div
               key={workspace.id}
-              className={cn(
-                "border-border flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5"
-              )}
+              className={cn("border-border rounded-lg border px-3 py-2.5")}
             >
-              <div className="min-w-0">
-                <div className="text-foreground flex items-center gap-2 text-[13.5px] font-semibold">
-                  <span className="truncate">{workspace.name}</span>
-                  {workspace.is_default ? (
-                    <span className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-[10px] font-bold">
-                      DEFAULT
-                    </span>
-                  ) : null}
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-foreground flex items-center gap-2 text-[13.5px] font-semibold">
+                    <span className="truncate">{workspace.name}</span>
+                    {workspace.is_default ? (
+                      <span className="bg-muted text-muted-foreground rounded-full px-2 py-0.5 text-[10px] font-bold">
+                        DEFAULT
+                      </span>
+                    ) : null}
+                  </div>
+                  <p className="text-muted-foreground truncate text-[12px]">
+                    {workspace.connection_label ?? "No connection configured"}
+                  </p>
+                  <p className="text-muted-foreground truncate text-[11.5px]">
+                    {workspace.github_repo_full_name
+                      ? `GitHub: ${workspace.github_repo_full_name}`
+                      : "No GitHub repo linked"}
+                  </p>
                 </div>
-                <p className="text-muted-foreground truncate text-[12px]">
-                  {workspace.connection_label ?? "No connection configured"}
-                </p>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => startEditRepo(workspace)}
+                  >
+                    {workspace.github_repo_full_name ? "Edit repo" : "Link repo"}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setInvitingWorkspace(workspace)}
+                    aria-label={`Invite people to ${workspace.name}`}
+                  >
+                    <UserPlus className="size-3.5" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={deletingId === workspace.id}
+                    onClick={() => void handleDelete(workspace)}
+                    aria-label={`Delete ${workspace.name}`}
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={deletingId === workspace.id}
-                onClick={() => void handleDelete(workspace)}
-                aria-label={`Delete ${workspace.name}`}
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
+
+              {editingRepoId === workspace.id ? (
+                <div className="border-border mt-3 space-y-2.5 border-t pt-3">
+                  {github && !github.configured ? (
+                    <p className="bg-muted rounded-md px-2.5 py-2 text-[11.5px] leading-snug">
+                      This server has no GitHub App configured, so linking a
+                      repo won&apos;t do anything yet. See{" "}
+                      <span className="font-mono">docs/GITHUB_APP_SETUP.md</span>.
+                    </p>
+                  ) : (
+                    <div className="bg-muted rounded-md px-2.5 py-2 text-[11.5px] leading-snug">
+                      <span className="font-semibold">Step 1:</span> install the
+                      Migration Oracle GitHub App on the repo you want to watch.
+                      {github?.install_url ? (
+                        <>
+                          {" "}
+                          <a
+                            href={github.install_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary font-semibold underline underline-offset-2"
+                          >
+                            Install on GitHub →
+                          </a>
+                        </>
+                      ) : null}
+                      <br />
+                      <span className="font-semibold">Step 2:</span> enter that
+                      repo below. We&apos;ll check the App can actually see it
+                      before saving.
+                    </div>
+                  )}
+                  <div>
+                    <Label className="mb-1 text-[11px]">
+                      GitHub repo (owner/repo)
+                    </Label>
+                    <Input
+                      value={repoInput}
+                      onChange={(e) => setRepoInput(e.target.value)}
+                      placeholder="e.g. my-org/my-service"
+                      className="h-9 font-mono text-xs"
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div>
+                    <Label className="mb-1 text-[11px]">
+                      Migration file glob
+                    </Label>
+                    <Input
+                      value={globInput}
+                      onChange={(e) => setGlobInput(e.target.value)}
+                      placeholder="backend/alembic/versions/*.py"
+                      className="h-9 font-mono text-xs"
+                      autoComplete="off"
+                    />
+                    <p className="text-muted-foreground mt-1 text-[11px] leading-snug">
+                      Which changed files in a PR count as a migration. Use{" "}
+                      <span className="font-mono">migrations/*.sql</span> for
+                      plain SQL files, or{" "}
+                      <span className="font-mono">
+                        backend/alembic/versions/*.py
+                      </span>{" "}
+                      for Alembic (the SQL must be inside an{" "}
+                      <span className="font-mono">op.execute(...)</span> call).
+                    </p>
+                  </div>
+                  {repoError ? (
+                    <p className="text-destructive text-[12px] leading-snug">
+                      {repoError}
+                    </p>
+                  ) : null}
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="default"
+                      size="sm"
+                      disabled={repoSaving}
+                      onClick={() => void handleSaveRepo(workspace)}
+                    >
+                      {repoSaving ? "Saving…" : "Save"}
+                    </Button>
+                    {workspace.github_repo_full_name ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={repoSaving}
+                        onClick={() => void handleUnlinkRepo(workspace)}
+                      >
+                        Unlink
+                      </Button>
+                    ) : null}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={repoSaving}
+                      onClick={() => setEditingRepoId(null)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : null}
             </div>
           ))}
         </div>
@@ -186,6 +389,21 @@ export function WorkspaceSettingsPanel() {
           {creating ? "Creating…" : "Create workspace"}
         </Button>
       </form>
+
+      <div className="border-border mt-6 border-t pt-5">
+        <WorkspaceMembersPanel
+          key={activeWorkspace?.id ?? "none"}
+          workspace={activeWorkspace}
+        />
+      </div>
+
+      <InviteMembersDialog
+        workspace={invitingWorkspace}
+        open={invitingWorkspace !== null}
+        onOpenChange={(open) => {
+          if (!open) setInvitingWorkspace(null)
+        }}
+      />
     </div>
   )
 }

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.aws import AwsClientFactory, AwsSettings, get_aws_settings
 from app.aws.exceptions import AwsConfigurationError
+from app.config import get_settings
 from app.database import DatabaseSessionManager
 from app.prediction.bedrock_client import AwsBedrockClient, BedrockClient, MockBedrockClient
 from app.repositories.approval_repository import ApprovalRepository
@@ -15,6 +16,9 @@ from app.repositories.cross_customer_memory_repository import (
     CrossCustomerMemoryRepository,
 )
 from app.repositories.execution_result_repository import ExecutionResultRepository
+from app.repositories.github_pull_request_link_repository import (
+    GithubPullRequestLinkRepository,
+)
 from app.repositories.grade_repository import GradeRepository
 from app.repositories.memory_sharing_preference_repository import (
     MemorySharingPreferenceRepository,
@@ -29,6 +33,8 @@ from app.services.approval_service import ApprovalService
 from app.services.closed_loop_service import ClosedLoopService
 from app.services.cross_customer_promotion_service import CrossCustomerPromotionService
 from app.services.execution_service import ExecutionService
+from app.services.github_notification_service import GithubNotificationService
+from app.services.github_webhook_service import GithubWebhookService
 from app.services.grading_pipeline_service import GradingPipelineService
 from app.services.migration_run_service import MigrationRunService
 from app.services.prediction_pipeline_service import PredictionPipelineService
@@ -211,12 +217,39 @@ SlackNotificationSvc = Annotated[
 ]
 
 
+def get_github_pull_request_link_repository(
+    session: DbSession,
+) -> GithubPullRequestLinkRepository:
+    return GithubPullRequestLinkRepository(session)
+
+
+GithubPullRequestLinkRepo = Annotated[
+    GithubPullRequestLinkRepository, Depends(get_github_pull_request_link_repository)
+]
+
+
+def get_github_notification_service(
+    session: DbSession,
+    pr_link_repository: GithubPullRequestLinkRepo,
+) -> GithubNotificationService:
+    return GithubNotificationService(
+        pr_link_repository=pr_link_repository,
+        session=session,
+    )
+
+
+GithubNotificationSvc = Annotated[
+    GithubNotificationService, Depends(get_github_notification_service)
+]
+
+
 def get_workflow_orchestration_service(
     session: DbSession,
     repository: MigrationRunRepo,
     aws_clients: AwsClients,
     aws_settings: AwsSettingsDep,
     slack_notifications: SlackNotificationSvc,
+    github_notifications: GithubNotificationSvc,
 ) -> WorkflowOrchestrationService:
     return WorkflowOrchestrationService(
         repository=repository,
@@ -224,6 +257,7 @@ def get_workflow_orchestration_service(
         aws_clients=aws_clients,
         aws_settings=aws_settings,
         slack_notifications=slack_notifications,
+        github_notifications=github_notifications,
     )
 
 
@@ -365,6 +399,7 @@ def get_prediction_pipeline_service(
     memory: MemoryRetrievalDep,
     skills: SkillsRetrievalDep,
     slack_notifications: SlackNotificationSvc,
+    github_notifications: GithubNotificationSvc,
 ) -> PredictionPipelineService:
     model_id = aws_settings.bedrock_prediction_model_id
     if not model_id and not isinstance(bedrock, MockBedrockClient):
@@ -386,6 +421,7 @@ def get_prediction_pipeline_service(
         memory_retrieval=memory,
         skills_retrieval=skills,
         slack_notifications=slack_notifications,
+        github_notifications=github_notifications,
     )
 
 
@@ -393,6 +429,85 @@ PredictionPipelineSvc = Annotated[
     PredictionPipelineService,
     Depends(get_prediction_pipeline_service),
 ]
+
+
+def get_github_webhook_service(
+    session: DbSession,
+    workspace_repository: WorkspaceRepo,
+    pr_link_repository: GithubPullRequestLinkRepo,
+    migration_run_service: MigrationRunSvc,
+    discovery: SchemaDiscoverySvc,
+    prediction: PredictionPipelineSvc,
+) -> GithubWebhookService:
+    return GithubWebhookService(
+        session=session,
+        workspace_repository=workspace_repository,
+        pr_link_repository=pr_link_repository,
+        migration_run_service=migration_run_service,
+        discovery_service=discovery,
+        prediction_service=prediction,
+        settings=get_settings(),
+    )
+
+
+GithubWebhookSvc = Annotated[
+    GithubWebhookService, Depends(get_github_webhook_service)
+]
+
+
+def build_github_webhook_service_for_session(
+    request: Request, session: AsyncSession
+) -> GithubWebhookService:
+    """Build the webhook service against a caller-supplied session.
+
+    The webhook route answers GitHub immediately and does the real work
+    (discover + two Bedrock calls) afterwards, because GitHub's delivery
+    timeout is 10s and that work takes far longer. By the time the
+    background work runs, the request-scoped session from ``get_db_session``
+    is already closed — so that path opens its own session and rebuilds the
+    service here, reusing the exact same dependency factories the normal
+    request path uses rather than duplicating their wiring.
+
+    ``request`` is only read for ``request.app.state`` (app-scoped: AWS
+    clients, settings, test overrides), which stays valid after the response
+    has been sent.
+    """
+    aws_settings = get_aws_settings_dep(request)
+    run_repo = MigrationRunRepository(session)
+    embedding = get_embedding_client(request, aws_settings)
+    slack_notifications = get_slack_notification_service(
+        session,
+        SlackInstallationRepository(session),
+        get_slack_oauth_service(session, SlackInstallationRepository(session)),
+    )
+    github_notifications = get_github_notification_service(
+        session, GithubPullRequestLinkRepository(session)
+    )
+    prediction = get_prediction_pipeline_service(
+        session=session,
+        run_repo=run_repo,
+        prediction_repo=PredictionRepository(session),
+        run_service=MigrationRunService(repository=run_repo, session=session),
+        bedrock=get_bedrock_client(request, aws_settings),
+        aws_settings=aws_settings,
+        memory=get_memory_retrieval(request, session, embedding),
+        skills=get_skills_retrieval(request, session, embedding),
+        slack_notifications=slack_notifications,
+        github_notifications=github_notifications,
+    )
+    return GithubWebhookService(
+        session=session,
+        workspace_repository=WorkspaceRepository(session),
+        pr_link_repository=GithubPullRequestLinkRepository(session),
+        migration_run_service=MigrationRunService(
+            repository=run_repo, session=session
+        ),
+        discovery_service=SchemaDiscoveryService(
+            repository=run_repo, session=session
+        ),
+        prediction_service=prediction,
+        settings=get_settings(),
+    )
 
 
 def get_grade_repository(session: DbSession) -> GradeRepository:
@@ -506,6 +621,7 @@ def get_approval_service(
     approval_repo: ApprovalRepo,
     run_service: MigrationRunSvc,
     slack_notifications: SlackNotificationSvc,
+    github_notifications: GithubNotificationSvc,
 ) -> ApprovalService:
     workflow = None
     try:
@@ -522,6 +638,7 @@ def get_approval_service(
                 aws_clients=factory,
                 aws_settings=aws_settings,
                 slack_notifications=slack_notifications,
+                github_notifications=github_notifications,
             )
     except Exception:  # noqa: BLE001
         workflow = None
@@ -545,6 +662,7 @@ def get_closed_loop_service(
     session: DbSession,
     run_repo: MigrationRunRepo,
     slack_notifications: SlackNotificationSvc,
+    github_notifications: GithubNotificationSvc,
 ) -> ClosedLoopService:
     workflow = None
     try:
@@ -561,6 +679,7 @@ def get_closed_loop_service(
                 aws_clients=factory,
                 aws_settings=aws_settings,
                 slack_notifications=slack_notifications,
+                github_notifications=github_notifications,
             )
     except Exception:  # noqa: BLE001
         workflow = None

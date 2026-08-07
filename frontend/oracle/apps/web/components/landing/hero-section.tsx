@@ -16,7 +16,7 @@ export function HeroSection() {
           your database does.
         </span>
       </h1>
-      <p className="animate-rise text-muted-foreground mx-auto mt-6 max-w-xl text-[15px] leading-relaxed [animation-delay:120ms]">
+      <p className="animate-text-reveal text-muted-foreground mx-auto mt-6 max-w-xl text-[15px] leading-relaxed [animation-delay:250ms]">
         Migration Oracle predicts, verifies, grades, and continuously improves
         database migrations using shadow execution and agentic memory.
       </p>

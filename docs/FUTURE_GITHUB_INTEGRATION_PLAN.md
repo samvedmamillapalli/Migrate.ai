@@ -1,6 +1,16 @@
 # Future Feature Plan: GitHub Pull-Request Integration
 
-Status: **planning only, not built. Depends on `docs/FUTURE_WORKSPACES_PLAN.md`.**
+Status: **code built, 2026-08-05 — not yet live-verified.** Workspaces
+(this plan's hard dependency) is built and live-verified; see
+`docs/backendfix.md`'s 2026-08-05 Change Log entry for exactly what got
+built and, just as importantly, what has **not** been verified yet: no
+GitHub App is registered, so the real end-to-end path (a real repo, a real
+PR, a real webhook firing) has not happened. That is a manual, human,
+browser-based step — `docs/GITHUB_APP_SETUP.md` is the exact walkthrough.
+The rest of this document is preserved as-written (the original
+recommendation-against-building-yet, superseded below) since the mechanism,
+approval model, and detection-heuristic design are exactly what got built —
+only the "when" changed, not the "what."
 Companion document: `docs/FUTURE_CONCURRENT_SHADOW_PLAN.md`.
 
 ## Summary and Recommendation
@@ -231,6 +241,25 @@ own:
   requires passing checks), or only post a warning comment? This is a real
   product decision about how much authority this tool gets over a team's
   merge process, not a technical one.
+
+
+1. Auto-approval below a risk threshold
+Recommended: no auto-approval, always require a human.
+Why: migrations touch real data and can break production. Even a "low risk" one can go wrong in a way the tool didn't predict. A person approving takes ten seconds. A bad auto-approved migration can cost hours or data. The safe default is always making a person click approve, and only loosening that once you have a track record proving the tool's risk scoring is actually reliable.
+
+2. One repo to one workspace vs richer mapping
+Recommended: stick with one repo to one workspace for now.
+Why: building the flexible mapping (letting one repo split into multiple workspaces) is extra work for a case you don't know you'll ever need. Building it now means guessing at a design with no real user to test it against. Simpler to ship the basic version, and if a customer actually shows up with a monorepo needing this, you'll understand their actual setup and build the right thing instead of a guessed one.
+
+3. Who gets tagged in the PR comment
+Recommended: tag the PR author by default, for now.
+Why: it's the one option that requires nothing extra to build. The author is always known the moment a PR exists. Reviewer lists or workspace owners need a whole roles and membership system that doesn't exist yet. Start simple, add smarter tagging once you actually build out team roles.
+
+4. Does a failed migration block the merge
+Recommended: warning comment only, don't block the merge, at least at first.
+Why: this is the riskiest one to get wrong in the other direction. If your tool blocks merges and it's wrong even occasionally, teams will stop trusting it fast, or worse, disable it entirely. Starting as advisory only lets it prove itself. Blocking merges is a bigger trust step that should come later once teams have seen the tool be right consistently.
+
+Overall theme: for all four, the simplest and safest option wins right now, since you don't have real customers yet to justify the more complex version. Add complexity once you have actual usage telling you it's needed.
 
 ## Prompt
 

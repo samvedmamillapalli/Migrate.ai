@@ -204,6 +204,36 @@ class Settings(BaseSettings):
         validation_alias="SLACK_DEFAULT_CHANNEL",
     )
 
+    # --- GitHub App Integration ---
+    # docs/FUTURE_GITHUB_INTEGRATION_PLAN.md. A GitHub App (not OAuth, not a
+    # personal access token) receives `pull_request` webhooks and posts back
+    # a PR comment + check run. Unlike Slack, there is no user-driven OAuth
+    # install flow here: a repo owner installs the App on github.com, and the
+    # link to a Migration Oracle workspace is made explicitly in-app via
+    # `Workspace.github_repo_full_name` (see app/database/models/workspace.py).
+    github_app_id: str | None = Field(
+        default=None,
+        validation_alias="GITHUB_APP_ID",
+    )
+    # PEM-encoded RSA private key downloaded once at App-registration time.
+    # Used to sign short-lived JWTs (RS256) that are exchanged for
+    # per-installation access tokens — never stored or transmitted itself.
+    github_app_private_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="GITHUB_APP_PRIVATE_KEY",
+    )
+    # HMAC-SHA256 secret configured on the App's webhook settings page.
+    # Every inbound webhook's `X-Hub-Signature-256` header is verified
+    # against this before the payload is trusted at all.
+    github_webhook_secret: SecretStr | None = Field(
+        default=None,
+        validation_alias="GITHUB_WEBHOOK_SECRET",
+    )
+    github_api_base_url: str = Field(
+        default="https://api.github.com",
+        validation_alias="GITHUB_API_BASE_URL",
+    )
+
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, value: str) -> str:

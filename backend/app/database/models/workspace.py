@@ -13,7 +13,7 @@ connection string, at rest.
 
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Index, String, UniqueConstraint
+from sqlalchemy import Boolean, Index, String, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database.base import Base
@@ -26,6 +26,18 @@ class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         Index("ix_workspaces_owner_identity", "owner_identity"),
         UniqueConstraint(
             "owner_identity", "name", name="uq_workspaces_owner_identity_name"
+        ),
+        # One repo maps to at most one workspace, globally — docs/
+        # FUTURE_GITHUB_INTEGRATION_PLAN.md's Open Questions recommend
+        # one-repo-to-one-workspace for now (richer monorepo mapping is
+        # explicitly deferred). A partial unique index (not a plain unique
+        # column) so most workspaces, which have no linked repo, can all
+        # share NULL.
+        Index(
+            "uq_workspaces_github_repo_full_name",
+            "github_repo_full_name",
+            unique=True,
+            postgresql_where=text("github_repo_full_name IS NOT NULL"),
         ),
     )
 
@@ -40,6 +52,25 @@ class Workspace(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     connection_label: Mapped[str | None] = mapped_column(String(256), nullable=True)
     is_default: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=False, server_default="false"
+    )
+    # docs/FUTURE_GITHUB_INTEGRATION_PLAN.md: "owner/repo" this workspace is
+    # linked to. A GitHub App installed on this repo will resolve incoming
+    # `pull_request` webhooks to this workspace's stored connection. NULL
+    # means "no repo linked" (the common case).
+    github_repo_full_name: Mapped[str | None] = mapped_column(
+        String(256), nullable=True
+    )
+    # Glob pattern (fnmatch-style, matched against each changed file's repo-
+    # relative path) used to detect a migration file in a PR's diff. Kept
+    # per-workspace/per-repo rather than hardcoded, since different repos use
+    # different migration tooling (Alembic, Django, Rails, raw SQL, ...) —
+    # see the plan's "Proposed Detection Heuristic" section. Defaults to this
+    # project's own Alembic convention, the only heuristic this plan commits to.
+    github_migration_glob: Mapped[str] = mapped_column(
+        String(512),
+        nullable=False,
+        default="backend/alembic/versions/*.py",
+        server_default="backend/alembic/versions/*.py",
     )
 
     def __repr__(self) -> str:

@@ -41,6 +41,9 @@ def _clean_owner(owner_identity: str) -> str:
     return identity
 
 
+_DEFAULT_GITHUB_MIGRATION_GLOB = "backend/alembic/versions/*.py"
+
+
 class WorkspaceService:
     def __init__(self, repository: WorkspaceRepository, session: AsyncSession) -> None:
         self._repository = repository
@@ -55,6 +58,8 @@ class WorkspaceService:
         connection_label: str | None = None,
         workspace_id: uuid.UUID | None = None,
         is_default: bool = False,
+        github_repo_full_name: str | None = None,
+        github_migration_glob: str | None = None,
     ) -> Workspace:
         identity = _clean_owner(owner_identity)
         clean_name = _clean_name(name)
@@ -64,6 +69,9 @@ class WorkspaceService:
             raise ConflictError(
                 f"Workspace already exists for this owner: {clean_name!r}"
             )
+        repo_full_name = (github_repo_full_name or "").strip() or None
+        if repo_full_name is not None:
+            await self._assert_repo_available(repo_full_name, workspace_id=None)
 
         async def _commit() -> Workspace:
             entity = Workspace(
@@ -73,6 +81,11 @@ class WorkspaceService:
                 connection_secret_arn=(connection_secret_arn or "").strip() or None,
                 connection_label=(connection_label or "").strip() or None,
                 is_default=is_default,
+                github_repo_full_name=repo_full_name,
+                github_migration_glob=(
+                    (github_migration_glob or "").strip()
+                    or _DEFAULT_GITHUB_MIGRATION_GLOB
+                ),
             )
             created = await self._repository.create(entity)
             await self._session.commit()
@@ -103,6 +116,19 @@ class WorkspaceService:
             raise NotFoundError(f"Workspace not found: {workspace_id}")
         return workspace
 
+    async def _assert_repo_available(
+        self, repo_full_name: str, *, workspace_id: uuid.UUID | None
+    ) -> None:
+        """docs/FUTURE_GITHUB_INTEGRATION_PLAN.md: one repo maps to at most
+        one workspace, globally (not just per-owner) — a repo already linked
+        elsewhere must be rejected here, before it ever reaches the
+        database's partial unique index."""
+        existing = await self._repository.get_by_github_repo_full_name(repo_full_name)
+        if existing is not None and existing.id != workspace_id:
+            raise ConflictError(
+                f"Repo {repo_full_name!r} is already linked to another workspace"
+            )
+
     async def update_workspace(
         self,
         workspace_id: uuid.UUID,
@@ -112,10 +138,14 @@ class WorkspaceService:
         connection_secret_arn: str | None = None,
         connection_label: str | None = None,
         clear_connection: bool = False,
+        github_repo_full_name: str | None = None,
+        clear_github_repo: bool = False,
+        github_migration_glob: str | None = None,
     ) -> Workspace:
         """``clear_connection=True`` explicitly detaches the stored
         connection (distinct from leaving ``connection_secret_arn=None``,
-        which means "don't touch the existing value")."""
+        which means "don't touch the existing value"). ``clear_github_repo``
+        follows the same convention for unlinking a repo."""
         workspace = await self.get_owned_workspace(workspace_id, owner_identity)
 
         if name is not None:
@@ -136,6 +166,21 @@ class WorkspaceService:
         elif connection_secret_arn is not None:
             workspace.connection_secret_arn = connection_secret_arn.strip() or None
             workspace.connection_label = (connection_label or "").strip() or None
+
+        if clear_github_repo:
+            workspace.github_repo_full_name = None
+        elif github_repo_full_name is not None:
+            repo_full_name = github_repo_full_name.strip() or None
+            if repo_full_name is not None:
+                await self._assert_repo_available(
+                    repo_full_name, workspace_id=workspace.id
+                )
+            workspace.github_repo_full_name = repo_full_name
+
+        if github_migration_glob is not None:
+            workspace.github_migration_glob = (
+                github_migration_glob.strip() or _DEFAULT_GITHUB_MIGRATION_GLOB
+            )
 
         async def _commit() -> Workspace:
             updated = await self._repository.update(workspace)

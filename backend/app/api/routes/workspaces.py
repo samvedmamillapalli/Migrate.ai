@@ -24,6 +24,7 @@ from app.services.connection_secrets import (
     store_connection_url,
     verify_connection_ping,
 )
+from app.services.github_setup import assert_repo_installed
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -66,6 +67,11 @@ async def create_workspace(
     request: Request,
 ) -> WorkspaceResponse:
     owner = resolve_owner_identity(request, payload.owner_identity)
+    if payload.github_repo_full_name:
+        # Checked before anything is stored: a repo the App can't see would
+        # save cleanly and then never fire a webhook, with nothing anywhere
+        # telling the user why.
+        await assert_repo_installed(payload.github_repo_full_name)
     workspace_id = uuid.uuid4()
     secret_arn, label = await _resolve_connection(
         request,
@@ -79,6 +85,8 @@ async def create_workspace(
         connection_secret_arn=secret_arn,
         connection_label=label,
         workspace_id=workspace_id,
+        github_repo_full_name=payload.github_repo_full_name,
+        github_migration_glob=payload.github_migration_glob,
     )
     return WorkspaceResponse.from_workspace(workspace)
 
@@ -117,6 +125,8 @@ async def update_workspace(
     request: Request,
 ) -> WorkspaceResponse:
     owner = resolve_owner_identity(request, None)
+    if payload.github_repo_full_name and not payload.clear_github_repo:
+        await assert_repo_installed(payload.github_repo_full_name)
     secret_arn: str | None = None
     label: str | None = None
     if not payload.clear_connection and (
@@ -135,6 +145,9 @@ async def update_workspace(
         connection_secret_arn=secret_arn,
         connection_label=label,
         clear_connection=payload.clear_connection,
+        github_repo_full_name=payload.github_repo_full_name,
+        clear_github_repo=payload.clear_github_repo,
+        github_migration_glob=payload.github_migration_glob,
     )
     return WorkspaceResponse.from_workspace(workspace)
 

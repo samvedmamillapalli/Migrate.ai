@@ -62,9 +62,7 @@ export const clerkAppearance: Appearance = {
       filter: "none",
     },
     lastAuthenticationStrategyBadge: {
-      backgroundColor: "oklch(0.4 0.135 25.8)",
-      color: "oklch(0.985 0.006 85)",
-      fontSize: "0.65rem",
+      display: "none",
     },
     dividerLine: {
       backgroundColor: "oklch(0.905 0.012 70)",

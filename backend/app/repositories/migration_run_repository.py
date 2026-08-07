@@ -40,6 +40,7 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
                 selectinload(MigrationRun.grade),
                 selectinload(MigrationRun.memory),
                 selectinload(MigrationRun.workspace),
+                selectinload(MigrationRun.github_pr_link),
             )
         elif load_summary_children:
             # Narrow loader for list responses: only the four children whose

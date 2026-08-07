@@ -484,6 +484,50 @@ export function disconnectSlack() {
   })
 }
 
+/**
+ * GitHub account connection — same shape as the Slack OAuth panel above
+ * (install-url redirect, status poll, disconnect), but there is no
+ * `/api/github/*` router in the backend yet (see
+ * docs/FUTURE_GITHUB_INTEGRATION_PLAN.md — that doc covers PR/webhook
+ * automation, a separate and larger feature; this is just "who is this
+ * GitHub identity" for collaboration, e.g. matching invited teammates to a
+ * verified account instead of a typed handle). Hand-written placeholder
+ * types, same convention as the workspace invite/member types below; swap
+ * for `components["schemas"][...]` once the backend route exists.
+ */
+export type GithubStatusResponse = {
+  connected: boolean
+  /** False when the server has no GitHub OAuth app configured at all. */
+  configured?: boolean
+  username?: string | null
+  avatar_url?: string | null
+}
+
+export type GithubInstallAuthorizeResponse = {
+  authorize_url: string
+}
+
+export type GithubDisconnectResponse = {
+  connected: false
+}
+
+/** TODO(backend): GET /api/github/status — no route exists yet. */
+export function getGithubStatus() {
+  return api<GithubStatusResponse>("/api/github/status")
+}
+
+/** TODO(backend): GET /api/github/install — no route exists yet. */
+export function getGithubInstallUrl() {
+  return api<GithubInstallAuthorizeResponse>("/api/github/install")
+}
+
+/** TODO(backend): POST /api/github/disconnect — no route exists yet. */
+export function disconnectGithub() {
+  return api<GithubDisconnectResponse>("/api/github/disconnect", {
+    method: "POST",
+  })
+}
+
 export type MemorySharingStatusResponse =
   components["schemas"]["MemorySharingStatusResponse"]
 export type MemorySharingPreviewResponse =
@@ -563,6 +607,8 @@ export function createWorkspace(body: {
   owner_identity?: string | null
   connection_secret_arn?: string | null
   database_url?: string | null
+  github_repo_full_name?: string | null
+  github_migration_glob?: string | null
 }) {
   return api<Workspace>("/workspaces", {
     method: "POST",
@@ -577,6 +623,9 @@ export function updateWorkspace(
     connection_secret_arn?: string | null
     database_url?: string | null
     clear_connection?: boolean
+    github_repo_full_name?: string | null
+    clear_github_repo?: boolean
+    github_migration_glob?: string | null
   }
 ) {
   return api<Workspace>(`/workspaces/${workspaceId}`, {
@@ -584,10 +633,150 @@ export function updateWorkspace(
     body: {
       ...body,
       clear_connection: body.clear_connection ?? false,
+      clear_github_repo: body.clear_github_repo ?? false,
     } satisfies WorkspaceUpdateRequest,
   })
 }
 
 export function deleteWorkspace(workspaceId: string) {
   return api<void>(`/workspaces/${workspaceId}`, { method: "DELETE" })
+}
+
+/**
+ * GitHub **PR integration** status — docs/GITHUB_APP_SETUP.md. Distinct from
+ * the GitHub *identity* connection above: this one is live and backed by a
+ * real route (`GET /webhooks/github/status`), and drives the repo-linking
+ * form in the workspace settings panel. It reports whether this server has
+ * a GitHub App configured and where the user should install it.
+ */
+export type GithubIntegrationStatus =
+  components["schemas"]["GithubIntegrationStatus"]
+
+export function getGithubIntegrationStatus() {
+  return api<GithubIntegrationStatus>("/webhooks/github/status")
+}
+
+/**
+ * Workspace invites + members.
+ *
+ * Designed against an API contract that does not exist yet (no membership
+ * table, no invite/token model, no email sending) — this is the UI shape to
+ * build toward. The types below are hand-written placeholders (same pattern
+ * as ActivityEvent / HealthResponse); swap them for
+ * `components["schemas"][...]` from schema.ts once `npm run gen:api` picks
+ * up the backend routes.
+ */
+export type WorkspaceInviteMethod = "email" | "github" | "link"
+
+export type WorkspaceInvite = {
+  id: string
+  workspace_id: string
+  workspace_name?: string | null
+  inviter_identity: string
+  method: WorkspaceInviteMethod
+  /** Email address when method is "email". */
+  email?: string | null
+  /** GitHub username when method is "github". */
+  github_username?: string | null
+  /** Short-lived token — present on link invites (and the create response). */
+  token?: string | null
+  /** pending | accepted | revoked | expired */
+  status: string
+  created_at: string | null
+  expires_at?: string | null
+  accepted_at?: string | null
+  accepted_by?: string | null
+}
+
+export type WorkspaceInviteList = {
+  items: WorkspaceInvite[]
+  total: number
+}
+
+export type WorkspaceMember = {
+  id: string
+  workspace_id: string
+  user_identity: string
+  display_name?: string | null
+  email?: string | null
+  avatar_url?: string | null
+  /** owner | member */
+  role: string
+  joined_at: string | null
+}
+
+export type WorkspaceMemberList = {
+  items: WorkspaceMember[]
+  total: number
+}
+
+/** Public, token-keyed invite preview — the token is the credential. */
+export type InvitePreview = {
+  workspace_name: string
+  inviter_identity: string
+  inviter_display_name?: string | null
+  method: WorkspaceInviteMethod
+  /** pending | accepted | revoked | expired */
+  status: string
+  expires_at?: string | null
+}
+
+export type InviteAcceptResponse = {
+  workspace_id: string
+  workspace_name: string
+}
+
+export function createWorkspaceInvite(
+  workspaceId: string,
+  body: {
+    method: WorkspaceInviteMethod
+    email?: string | null
+    github_username?: string | null
+  }
+) {
+  return api<WorkspaceInvite>(`/workspaces/${workspaceId}/invites`, {
+    method: "POST",
+    body,
+  })
+}
+
+export function listWorkspaceInvites(workspaceId: string) {
+  return api<WorkspaceInviteList>(`/workspaces/${workspaceId}/invites`)
+}
+
+export function revokeWorkspaceInvite(
+  workspaceId: string,
+  inviteId: string
+) {
+  return api<WorkspaceInvite>(
+    `/workspaces/${workspaceId}/invites/${inviteId}`,
+    { method: "DELETE" }
+  )
+}
+
+export function listWorkspaceMembers(workspaceId: string) {
+  return api<WorkspaceMemberList>(`/workspaces/${workspaceId}/members`)
+}
+
+export function removeWorkspaceMember(workspaceId: string, memberId: string) {
+  return api<void>(`/workspaces/${workspaceId}/members/${memberId}`, {
+    method: "DELETE",
+  })
+}
+
+/**
+ * Public invite preview — no auth required, the token in the URL is the
+ * credential. Skips the auth bridge entirely so the acceptance page renders
+ * for signed-out visitors without waiting on token resolution (which can
+ * stall in throttled tabs if the bridge hasn't initialized).
+ */
+export function getInvitePreview(token: string) {
+  return api<InvitePreview>(`/invites/${token}`, { skipAuth: true })
+}
+
+/** Accept a pending invite and join the workspace. Requires auth. */
+export function acceptInvite(token: string) {
+  return api<InviteAcceptResponse>(`/invites/${token}/accept`, {
+    method: "POST",
+  })
 }

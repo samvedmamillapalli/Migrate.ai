@@ -13,6 +13,7 @@ import { cn } from "@workspace/ui/lib/utils"
 export type TextRevealPart = {
   text: string
   italic?: boolean
+  className?: string
 }
 
 export type TextRevealLine = {
@@ -96,11 +97,16 @@ export function TextReveal({
           >
             {line.parts.map((part, partIndex) =>
               part.italic ? (
-                <em key={partIndex} className="font-medium italic">
+                <em
+                  key={partIndex}
+                  className={cn("font-medium italic", part.className)}
+                >
                   {part.text}
                 </em>
               ) : (
-                <span key={partIndex}>{part.text}</span>
+                <span key={partIndex} className={part.className}>
+                  {part.text}
+                </span>
               )
             )}
           </motion.span>

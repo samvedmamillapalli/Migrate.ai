@@ -256,6 +256,248 @@ matches on vocabulary instead of meaning and this beat falls flat.
 
 ## Change Log
 
+### 2026-08-07d — Merged `samrita`'s frontend into `Samved` (frontend-only, selective)
+
+`samrita` was confirmed **frontend-only** (16 files, zero backend changes).
+Merged file-by-file rather than `git merge`, because this branch had a large
+uncommitted backend+frontend change set in the working tree.
+
+**Taken wholesale** (no overlap with in-flight work): landing page
+(`hero-section`, `site-data`, `text-reveal`), `login-form`, `signup-form`,
+`clerk-appearance`, `globals.css`, `workspace-switcher`, `middleware.ts`
+(adds `/invite(.*)` public route), `client.ts` (adds `skipAuth` for
+token-keyed public endpoints), and the whole invite/members surface
+(`invite-members-dialog`, `workspace-members-panel`, `app/invite/[token]`),
+plus `app/dashboard/settings/page.tsx`.
+
+**Hand-merged** (both branches edited these):
+- `lib/api/endpoints.ts` — took samrita's as the base (it is a superset),
+  then re-applied this branch's three additions: `github_repo_full_name` /
+  `github_migration_glob` on create/update workspace, and the PR-integration
+  status call.
+- `components/workspace-settings-panel.tsx` — took samrita's (invite button
+  + members panel) as the base, re-applied the GitHub repo-linking form.
+
+**Naming collision resolved deliberately.** Both branches defined
+`getGithubStatus`, but they are *different features*: samrita's is a GitHub
+**identity** connection (OAuth connect/disconnect, for matching invited
+teammates — their own comment says so) hitting `/api/github/*`; this
+branch's is the **PR integration** hitting `/webhooks/github/status`. Kept
+both; renamed this branch's to `getGithubIntegrationStatus` to match its
+`GithubIntegrationStatus` type.
+
+**Known-unbuilt backend, deliberately kept (human decision).** The invite /
+members / GitHub-identity UI calls seven routes that do not exist:
+`/api/github/{status,install,disconnect}`,
+`/workspaces/{id}/{invites,members}`, `/invites/{token}{,/accept}`. The
+human explicitly chose to keep this frontend and build the backend later.
+All of it error-handles (try/catch → message, never a crash), so nothing
+takes down a page. Note for whoever builds it: `/invites/*` currently
+returns **401**, not 404 — `SessionAuthMiddleware._PUBLIC_PREFIXES` will
+need `/invites` added for the unauthenticated preview to work.
+
+Verified: `next build` succeeds (17 routes incl. `/invite/[token]`),
+`npx tsc --noEmit` clean, backend suite 185/185, landing page renders in a
+real browser, backend healthy on **:8003** (not 8000 — the frontend's
+`.env.local` and the Slack redirect both point at 8003; `scripts/dev.py`
+defaults to 8000, which is wrong for this project — use
+`python run_server.py 8003`).
+
+### 2026-08-07c — GitHub webhook: 10s delivery timeout + redelivery duplication, both found by inspecting GitHub's own delivery log
+
+Post-verification bug hunt on the live integration. Checking
+`GET /app/hook/deliveries` (GitHub's own record of what it saw, not ours)
+showed the first real PR delivery as **failed**, despite the run being
+created correctly:
+
+```
+pull_request opened → giving up after 1 attempt(s):
+context deadline exceeded (Client.Timeout exceeded while awaiting headers)
+code=500 dur=10s
+```
+
+**Bug 1 — GitHub's webhook timeout is 10s; this pipeline is much slower.**
+The handler ran discovery (real database round trip) plus two Bedrock calls
+inline before responding. GitHub gave up at 10s and recorded a failure,
+which risks it disabling the webhook after repeated failures, and makes
+every redelivery a fresh duplicate run. Fixed: `POST /webhooks/github` now
+verifies the signature (cheap, and the actual security boundary), hands the
+payload to a `BackgroundTasks` job, and returns **202** immediately. The
+background job opens its **own** database session —
+`build_github_webhook_service_for_session` in `app/dependencies.py`, which
+reuses the existing dependency factories rather than duplicating their
+wiring — because the request-scoped session is closed the moment the
+response is sent. Verified against a real redelivery: `code=202 dur=0.87s`,
+where the same delivery previously logged `code=500 dur=10s`.
+
+**Bug 2 — redelivery would have created duplicate runs.** No idempotency
+anywhere: GitHub redelivers both manually (deliveries UI) and automatically
+after a failed delivery, always with the same head sha. Each one would have
+meant a second `MigrationRun` — a duplicate shadow cluster's real cost and a
+duplicate PR comment. Fixed with
+`GithubPullRequestLinkRepository.get_by_pr_head_sha`, checked before any
+GitHub API call so a redelivery storm can't burn installation-token
+requests either. Verified live: after redelivering the failed delivery,
+still exactly 1 PR link and 1 `github_pr` run.
+
+Note the failure shape common to both this entry and 2026-08-07b: the
+feature looked correct from inside (right run, right prediction, right
+gate) while being broken from the outside. Neither was visible without
+checking the *counterparty's* view — GitHub's delivery log and the actual
+posted comment — which is worth doing for any outbound integration, not
+just this one.
+
+Tests: `test_redelivered_webhook_for_same_head_sha_creates_no_duplicate_run`.
+Suite 184 → 185. Route status changed 200 → 202, `openapi.json`/`schema.ts`
+regenerated, `npx tsc --noEmit` clean.
+
+### 2026-08-07b — GitHub PR integration LIVE-VERIFIED end to end, plus a real ordering bug found by doing it
+
+**First real PR, first real webhook, first real posted comment.**
+`samvedmamillapalli/test_repo` PR #2, a `migrations/*.sql` file containing
+`ALTER TABLE demo_items ADD COLUMN discount_pct INT NOT NULL DEFAULT 0;`,
+against the real `customer_demo` read-only database. Confirmed: webhook
+fired → workspace resolved → SQL extracted → `MigrationRun` created with
+`run_kind=github_pr` under the correct workspace → **real** schema discovery
+succeeded → **real** Bedrock prediction (6.8s / 0.0MB / rollback_risk=high /
+confidence 0.62) → `policy_decision=allow_with_warning` with two genuine
+deterministic risk flags → held at `awaiting_approval` exactly like every
+other run → PR comment + check run posted by `migration-oracle[bot]` with
+those real numbers and a working deep link. Check-run conclusion `neutral`,
+never `failure` — advisory only, as the plan's resolved Open Question #4
+requires.
+
+**The bug that first real PR exposed:** the run came out correct but
+`check_run_id` and `initial_comment_id` were both NULL and **nothing was
+posted to GitHub**. Cause: `GithubWebhookService` created the
+`github_pull_request_links` row *after* calling `run_prediction_pipeline`,
+but `PredictionPipelineService` fires its prediction-ready hook *inside*
+that call, and `GithubNotificationService.send_prediction_ready` resolves
+where to post by looking that row up by run id. The lookup returned None,
+so the whole notification silently no-op'd — a best-effort path failing
+invisibly, precisely the failure shape this codebase's `except → warn →
+return None` convention is prone to. Fixed by creating **and committing**
+the link row immediately after run creation, before discover/predict.
+Regression test `test_pr_link_is_committed_before_prediction_runs` asserts
+the actual call ordering, not just the end state, since the end state
+(a link row exists) looks identical either way. Suite 183 → 184.
+
+Note for hosting: the PR comment's deep link comes from `FRONTEND_URL`,
+which is `http://localhost:3000` in dev — fine locally, but it must be the
+real public frontend origin before anyone outside this machine clicks it.
+
+### 2026-08-07 — GitHub PR integration: closed the two silent-failure gaps in the link flow
+
+Found while walking a real user (the human) through setup: the repo-linking
+flow had two failure modes that produced **no error anywhere the user could
+see**, which is exactly the "degrade visibly rather than silently" rule in
+the Working Rules above.
+
+1. **Linking a repo the App isn't installed on saved cleanly and then never
+   fired a webhook.** GitHub only sends `pull_request` events for repos where
+   the App has an installation, and nothing in this app checked that. A user
+   would type a repo, see success, open a PR, and get silence with no
+   diagnostic. Now `POST/PATCH /workspaces` calls
+   `app/services/github_setup.py::assert_repo_installed`, which resolves
+   `GET /repos/{owner}/{repo}/installation` via the App JWT and rejects with
+   a 422 naming the repo and linking the App's public install page. A
+   transient GitHub outage deliberately does **not** block the save (the
+   webhook path re-resolves the installation per event anyway) — only a
+   definitive 404 does.
+2. **No way for the UI to know whether GitHub integration was configured at
+   all.** New public `GET /webhooks/github/status` returns
+   `configured` / `webhook_secret_set` / `app_slug` / `install_url`. Exposes
+   no credentials — only whether they're present, plus the App's
+   already-public slug.
+
+Frontend: the workspace settings panel's repo form now leads with the
+two-step flow (install the App on GitHub → then name the repo here),
+renders the real install link from that endpoint, degrades to "no App
+configured" guidance when the server has none, and explains the glob field
+in terms of both supported conventions instead of just Alembic's.
+
+11 new tests (`tests/unit/test_github_setup.py`); suite 172 → 183.
+`npx tsc --noEmit` clean. Note the product-level point this surfaced: the
+install step is done by the *user* from the App's public install URL, not
+by an operator adding repos — it's a GitHub security boundary (an App
+cannot read a repo or post PR comments without an explicit installation),
+identical to how Vercel/Dependabot/CodeRabbit work.
+
+### 2026-08-05d — GitHub PR integration built (Feature 3 from docs/FUTURE_GITHUB_INTEGRATION_PLAN.md) — code complete, not yet live-verified
+
+Follow-up to the 2026-08-05 workspaces entry below, which this feature is
+explicitly downstream of. Built per the plan's own recommendation: approval
+model (a) only (auto-predict, hold at the existing approval gate, report
+to the PR, human approves via the exact `POST /runs/{id}/approve` flow) —
+**no auto-approval was built**, matching the plan's explicit instruction not
+to build option (b) without a separate human decision (none was given).
+The plan's four Open Questions were already answered in the plan doc itself
+(no auto-approval; one repo → one workspace; tag the PR author; warning
+comment only, never block the merge) — followed as written, not relitigated.
+
+**What changed** (backend):
+- `Workspace.github_repo_full_name` (partial-unique — one repo maps to at
+  most one workspace) + `Workspace.github_migration_glob` (per-repo
+  detection heuristic, defaults to this project's own
+  `backend/alembic/versions/*.py`). New `github_pull_request_links` table
+  (one row per PR-triggered `MigrationRun`, `ON DELETE CASCADE`, same
+  pattern as `approvals`). Migration `v5q3n0i4k820`.
+- `app/services/github_app_client.py` — GitHub App JWT (RS256) + per-
+  installation access tokens, list PR files, fetch file content, post PR
+  comment, create/update check run. `app/services/github_webhook_service.py`
+  — HMAC-SHA256 signature verification, migration-file glob matching, a
+  deliberately bounded SQL-extraction heuristic (`.sql` files as-is;
+  `.py`/Alembic files scanned for `op.execute(...)` string literals only —
+  schema-builder-only migrations are explicitly unsupported, not half-
+  solved), workspace resolution, and the create → discover → predict
+  pipeline reusing the exact same services the UI-driven flow uses.
+- New public route `POST /webhooks/github` on the existing FastAPI app
+  (not a new Lambda/API Gateway — the app already gets a public URL once
+  hosted per `docs/HOSTING.md`, which the original plan flagged as the
+  fallback when a stable URL exists). Allowlisted in
+  `app/api/middleware_auth.py`'s public-path list since GitHub authenticates
+  via signature, not a Bearer token.
+- `app/services/github_notification_service.py` — mirrors
+  `SlackNotificationService`'s best-effort, fire-and-forget posture exactly.
+  Hooked into `PredictionPipelineService._notify_prediction_ready` (initial
+  prediction comment + check run) and `WorkflowOrchestrationService.
+  _notify_terminal` / `abort_for_run` (terminal predicted-vs-measured
+  follow-up), the same two points Slack's lifecycle notifications already
+  hook. Check-run conclusions are **never** `failure`/`action_required` —
+  only `success`/`neutral` — enforcing "advisory only, never blocks the
+  merge" at the code level, not just in a comment's wording.
+- `run_kind` gained a fourth value, `github_pr` (alongside `standard` /
+  `chaos` / `debug`) — reachable only via the webhook path, not the
+  `POST /runs` UI schema, so a user can't hand-create a run claiming to be
+  PR-triggered.
+- 26 new unit tests (`test_github_webhook_helpers.py` — signature/glob/SQL-
+  extraction pure functions; `test_github_webhook_service.py` — orchestration
+  with the GitHub API and connection loading mocked; 5 new cases in
+  `test_workspace_service.py` for repo-link uniqueness). Full suite:
+  172/172.
+
+**What changed** (frontend):
+- `workspace-settings-panel.tsx` gained a per-workspace "Link repo" /
+  "Edit repo" inline form (repo full name + migration glob), using
+  `updateWorkspace`'s new `github_repo_full_name` / `clear_github_repo` /
+  `github_migration_glob` fields. `openapi.json` + generated `schema.ts`
+  refreshed from the live `app.openapi()` output. `npx tsc --noEmit`: clean.
+
+**Verification status — deliberately not claimed as done.** Unlike every
+other entry in this log, this feature's own plan doc requires "a real test
+repository and a real PR" to call it verified, and **no GitHub App has been
+registered yet** — that is a manual, human, browser-based step this session
+cannot perform (see `docs/GITHUB_APP_SETUP.md`, written for the human to
+follow). `scripts/prove_github_integration.py` proves everything reachable
+without one: real HTTP workspace-repo linking + the one-repo-one-workspace
+409 + webhook signature rejection against the running dev API, and an
+in-process real-DB pipeline run (real workspace resolution, real SQL
+extraction, real `MigrationRun` creation, real schema discovery, real
+prediction) with only the `api.github.com` calls mocked. That is not the
+same as the plan's own bar — do not report this feature as fully verified
+until a human has completed `docs/GITHUB_APP_SETUP.md` and a real PR has
+been observed end to end.
+
 ### 2026-08-05c — Concurrent shadow executions: Active Runs list + (explicitly requested) per-owner cap
 
 Executed `docs/FUTURE_CONCURRENT_SHADOW_PLAN.md`'s Prompt. Re-checked its

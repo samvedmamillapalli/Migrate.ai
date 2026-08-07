@@ -23,6 +23,9 @@ _PUBLIC_PREFIXES = (
     "/auth/register",
     "/auth/status",
     "/api/slack/oauth/callback",
+    # GitHub's webhook POST carries no Bearer token — it authenticates itself
+    # via X-Hub-Signature-256, verified inside the route handler.
+    "/webhooks/github",
 )
 
 

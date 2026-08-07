@@ -42,9 +42,7 @@ export function SignupForm({
         </CardContent>
       </Card>
 
-      <p className="text-muted-foreground text-center text-xs leading-relaxed">
-        By continuing, you agree to our Terms of Service and Privacy Policy.
-      </p>
+
     </div>
   )
 }
