@@ -6,6 +6,7 @@ from app.database.models.ccloud_audit_event import CCloudAuditEvent
 from app.database.models.cockroachdb_skill_doc import CockroachDBSkillDoc
 from app.database.models.cross_customer_memory import CrossCustomerMemory
 from app.database.models.execution_result import ExecutionResult
+from app.database.models.github_identity import GithubIdentity
 from app.database.models.github_pull_request_link import GithubPullRequestLink
 from app.database.models.grade import Grade
 from app.database.models.learned_outcome import LearnedOutcome
@@ -28,6 +29,8 @@ from app.database.models.shadow_cluster import (
     ShadowClusterStatus,
 )
 from app.database.models.workspace import Workspace
+from app.database.models.workspace_invite import WorkspaceInvite, WorkspaceInviteMethod, WorkspaceInviteStatus
+from app.database.models.workspace_member import WorkspaceMember, WorkspaceMemberRole
 
 __all__ = [
     "ACTIVE_SHADOW_STATUSES",
@@ -41,6 +44,7 @@ __all__ = [
     "CompatibilityRisk",
     "CrossCustomerMemory",
     "ExecutionResult",
+    "GithubIdentity",
     "GithubPullRequestLink",
     "Grade",
     "LearnedOutcome",
@@ -59,4 +63,9 @@ __all__ = [
     "UUIDPrimaryKeyMixin",
     "WorkflowStatus",
     "Workspace",
+    "WorkspaceInvite",
+    "WorkspaceInviteMethod",
+    "WorkspaceInviteStatus",
+    "WorkspaceMember",
+    "WorkspaceMemberRole",
 ]

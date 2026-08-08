@@ -23,9 +23,16 @@ _PUBLIC_PREFIXES = (
     "/auth/register",
     "/auth/status",
     "/api/slack/oauth/callback",
+    "/api/github/oauth/callback",
     # GitHub's webhook POST carries no Bearer token — it authenticates itself
     # via X-Hub-Signature-256, verified inside the route handler.
     "/webhooks/github",
+    # GET /invites/{token} is unauthenticated by design (the token is the
+    # credential). POST /invites/{token}/accept still requires a real
+    # session — the middleware validates any Bearer token present
+    # regardless of this allowlist, and resolve_owner_identity enforces
+    # auth_enforced() same as every other authenticated route.
+    "/invites",
 )
 
 

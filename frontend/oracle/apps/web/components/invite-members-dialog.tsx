@@ -37,8 +37,9 @@ import { cn } from "@workspace/ui/lib/utils"
  * revocable). Below the tabs: this workspace's pending invites with a revoke
  * button per row, reusing the workspace-row visual pattern.
  *
- * The endpoints it calls don't exist in the backend yet — this is the UI
- * shape to build toward (see lib/api/endpoints.ts).
+ * Backed by real workspace_invites rows (docs/backendfix.md 2026-08-07) —
+ * roster only: accepting an invite adds a workspace_members row, which
+ * grants visibility of the workspace, not access to its migration runs.
  */
 export function InviteMembersDialog({
   workspace,

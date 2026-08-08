@@ -28,10 +28,13 @@ from app.repositories.migration_run_repository import MigrationRunRepository
 from app.repositories.prediction_repository import PredictionRepository
 from app.repositories.shadow_cluster_repository import ShadowClusterRepository
 from app.repositories.slack_installation_repository import SlackInstallationRepository
+from app.repositories.workspace_invite_repository import WorkspaceInviteRepository
+from app.repositories.workspace_member_repository import WorkspaceMemberRepository
 from app.repositories.workspace_repository import WorkspaceRepository
 from app.services.approval_service import ApprovalService
 from app.services.closed_loop_service import ClosedLoopService
 from app.services.cross_customer_promotion_service import CrossCustomerPromotionService
+from app.services.email_service import EmailService
 from app.services.execution_service import ExecutionService
 from app.services.github_notification_service import GithubNotificationService
 from app.services.github_webhook_service import GithubWebhookService
@@ -44,6 +47,7 @@ from app.services.slack_notification_service import SlackNotificationService
 from app.services.slack_oauth_service import SlackOAuthService
 from app.services.workflow_orchestration_service import WorkflowOrchestrationService
 from app.services.local_shadow_verify_service import LocalShadowVerifyService
+from app.services.workspace_invite_service import WorkspaceInviteService
 from app.services.workspace_service import WorkspaceService
 from app.memory.embedding_client import (
     AwsTitanEmbeddingClient,
@@ -127,14 +131,72 @@ def get_workspace_repository(session: DbSession) -> WorkspaceRepository:
 WorkspaceRepo = Annotated[WorkspaceRepository, Depends(get_workspace_repository)]
 
 
+def get_workspace_member_repository(session: DbSession) -> WorkspaceMemberRepository:
+    return WorkspaceMemberRepository(session)
+
+
+WorkspaceMemberRepo = Annotated[
+    WorkspaceMemberRepository, Depends(get_workspace_member_repository)
+]
+
+
+def get_workspace_invite_repository(session: DbSession) -> WorkspaceInviteRepository:
+    return WorkspaceInviteRepository(session)
+
+
+WorkspaceInviteRepo = Annotated[
+    WorkspaceInviteRepository, Depends(get_workspace_invite_repository)
+]
+
+
 def get_workspace_service(
     session: DbSession,
     repository: WorkspaceRepo,
+    member_repository: WorkspaceMemberRepo,
 ) -> WorkspaceService:
-    return WorkspaceService(repository=repository, session=session)
+    return WorkspaceService(
+        repository=repository, session=session, member_repository=member_repository
+    )
 
 
 WorkspaceSvc = Annotated[WorkspaceService, Depends(get_workspace_service)]
+
+
+def get_email_service(request: Request) -> EmailService | None:
+    """None when AWS isn't available — email is best-effort, and invite
+    creation/listing/revocation for every method (not just email) must keep
+    working even when this app runs with AWS disabled entirely (local dev),
+    same posture as the optional Slack/workflow wiring below."""
+    try:
+        factory = getattr(request.app.state, "aws_clients", None)
+        aws_settings = getattr(request.app.state, "aws_settings", None)
+        if factory is not None and aws_settings is not None:
+            return EmailService(aws_clients=factory, aws_settings=aws_settings)
+    except Exception:  # noqa: BLE001
+        pass
+    return None
+
+
+EmailSvc = Annotated[EmailService | None, Depends(get_email_service)]
+
+
+def get_workspace_invite_service(
+    session: DbSession,
+    repository: WorkspaceInviteRepo,
+    workspace_service: WorkspaceSvc,
+    email_service: EmailSvc,
+) -> WorkspaceInviteService:
+    return WorkspaceInviteService(
+        repository=repository,
+        workspace_service=workspace_service,
+        session=session,
+        email_service=email_service,
+    )
+
+
+WorkspaceInviteSvc = Annotated[
+    WorkspaceInviteService, Depends(get_workspace_invite_service)
+]
 
 
 def get_schema_discovery_service(

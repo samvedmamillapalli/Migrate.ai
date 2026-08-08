@@ -115,6 +115,15 @@ class AwsSettings(BaseSettings):
         validation_alias="AWS_S3_ENDPOINT_URL",
     )
 
+    # SES (workspace invite emails — app/services/email_service.py). Must be
+    # a verified sender identity in the SES console; SES sandbox mode also
+    # requires the recipient to be verified until the account is out of
+    # sandbox. Unset means email sending is skipped (logged, not fatal).
+    ses_sender_email: str | None = Field(
+        default=None,
+        validation_alias="SES_SENDER_EMAIL",
+    )
+
     # Secrets Manager
     user_database_secret_prefix: str = Field(
         default="migration-oracle/connections",

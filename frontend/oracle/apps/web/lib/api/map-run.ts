@@ -1394,19 +1394,48 @@ function diffColumnDetails(
  * compute the diff, since production and shadow are different clusters and
  * differences between them would not be migration effects.
  */
+/**
+ * Narrows a discovered table list down to the one table this migration's SQL
+ * actually names (via `primaryTableName`). Schema discovery and shadow
+ * seeding necessarily capture the whole database — the wizard's table
+ * browser is reference-only and never submits a structured "target table"
+ * field, `createRun` only ever sends `migration_sql` — so without this every
+ * table in the database would show up in the comparison, not just the one
+ * the migration touches. Falls back to the full list when there's no target
+ * (unparseable SQL) or the target isn't present on this side, so an
+ * unrecognized statement degrades to today's behavior instead of showing
+ * nothing.
+ */
+function filterToTargetTable(
+  tables: ClusterTableView[],
+  targetTable: string | null
+): ClusterTableView[] {
+  if (!targetTable) return tables
+  const filtered = tables.filter((t) => t.name.toLowerCase() === targetTable)
+  return filtered.length > 0 ? filtered : tables
+}
+
 export function mapClusterComparison(
   run: MigrationRun | null,
   shadow: ShadowCluster | null
 ): ClusterComparisonView {
-  const before = shadow ? readSnapshotTables(shadow.schema_snapshot_before) : []
-  const after = shadow ? readSnapshotTables(shadow.schema_snapshot_after) : []
+  const targetTable = primaryTableName(run?.migration_sql)
+  const before = shadow
+    ? filterToTargetTable(readSnapshotTables(shadow.schema_snapshot_before), targetTable)
+    : []
+  const after = shadow
+    ? filterToTargetTable(readSnapshotTables(shadow.schema_snapshot_after), targetTable)
+    : []
 
   // Nothing captured on the shadow cluster yet. The customer's own schema is
   // already known the moment "Discover schema" succeeds, so show that as the
   // source card rather than an empty panel — the left half of this comparison
   // never has to wait for a shadow run.
   if (before.length === 0 && after.length === 0) {
-    const productionTables = readSnapshotTables(run?.schema_snapshot)
+    const productionTables = filterToTargetTable(
+      readSnapshotTables(run?.schema_snapshot),
+      targetTable
+    )
     const sourceCard = buildCard(run?.schema_snapshot, productionTables, false)
     const status = (shadow?.status || "").toLowerCase()
     const preMigrate = ["provisioning", "ready", "seeding"].includes(status)

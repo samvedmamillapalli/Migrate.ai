@@ -29,8 +29,9 @@ import { Button } from "@workspace/ui/components/button"
  *    /dashboard;
  *  - revoked / expired / already-accepted → clear inline messaging, no toast.
  *
- * The preview endpoints don't exist in the backend yet — this is the UI
- * shape to build toward (see lib/api/endpoints.ts).
+ * Backed by real GET/POST /invites/{token} routes (docs/backendfix.md
+ * 2026-08-07). "expired" is computed server-side by comparing expires_at
+ * to now, never a stored status.
  */
 export default function InvitePage() {
   const params = useParams<{ token: string }>()

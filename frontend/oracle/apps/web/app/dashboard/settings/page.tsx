@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation"
 import { useAuth, useUser } from "@clerk/nextjs"
 import { Moon, Sun } from "lucide-react"
 
-import { apiBaseUrl } from "@/lib/api/client"
 import { DashboardSignOutButton } from "@/components/dashboard-sign-out-button"
 import {
   getConnectionSecretArn,
@@ -40,50 +39,85 @@ import { WorkspaceSettingsPanel } from "@/components/workspace-settings-panel"
 import { Button } from "@workspace/ui/components/button"
 import { Input } from "@workspace/ui/components/input"
 import {
-  EmptyNote,
+  ErrorNote,
   Label,
   PageHeader,
   Panel,
   ToneDot,
+  toneText,
 } from "@workspace/ui/components/ui-kit"
 import { cn } from "@workspace/ui/lib/utils"
 
 /**
  * Settings.
  *
- * The design's settings page has seven controls — workspace name, shadow
+ * The design's original mockup had seven controls — workspace name, shadow
  * on/off, auto-approve, a confidence threshold slider, email and Slack
  * alerts, and "clear agent memory". Most still don't exist in this system:
- * there is no workspace entity, no per-user policy override, and no
- * memory-delete endpoint. Auto-approve is deliberately absent rather than
- * merely unimplemented — a mandatory human gate is the point of the
- * product. Slack alerts are the one control that's now real — see the
- * "Slack notifications" panel below, backed by `/api/slack/*`.
+ * there is no per-user policy override and no memory-delete endpoint.
+ * Auto-approve is deliberately absent rather than merely unimplemented — a
+ * mandatory human gate is the point of the product.
  *
- * The rest of the page keeps the design's layout and shows what is actually
- * true: the identity requests are scoped to, the theme, the live execution
- * policy as reported by /health, and the connection secret used to start a
- * shadow.
+ * Layout is grouped into compact cards (General, Execution, Integrations,
+ * Workspaces, Advanced) rather than the mockup's flat list, with System
+ * Health pinned full-width at the top so it's visible without scrolling.
+ * Everything shown is either live server state (execution policy via
+ * /health, integration status, agent memory counts) or a real, working
+ * control — including GitHub identity connect (docs/backendfix.md
+ * 2026-08-08) and workspace invites/members (2026-08-07e), both real now.
  */
 
+/**
+ * One labeled row — title, a one-line detail, a trailing action, and an
+ * optional expandable `footer` (e.g. an edit field or a preview panel) that
+ * stays inside the row's own border so spacing/dividers stay consistent
+ * whether or not a row has extra content underneath.
+ */
 function Row({
   title,
   detail,
   children,
+  footer,
 }: {
-  title: string
-  detail: string
+  title: React.ReactNode
+  detail: React.ReactNode
   children?: React.ReactNode
+  footer?: React.ReactNode
 }) {
   return (
-    <div className="border-border flex items-center justify-between gap-6 border-b py-4 last:border-0">
-      <div>
-        <div className="text-foreground text-[13.5px] font-semibold">
-          {title}
+    <div className="border-border border-b py-4 last:border-0">
+      <div className="flex items-center justify-between gap-6">
+        <div>
+          <div className="text-foreground text-[13.5px] font-semibold">
+            {title}
+          </div>
+          <p className="text-muted-foreground mt-0.5 text-[13px]">{detail}</p>
         </div>
-        <p className="text-muted-foreground mt-0.5 text-[13px]">{detail}</p>
+        {children}
       </div>
-      {children}
+      {footer ? <div className="mt-3">{footer}</div> : null}
+    </div>
+  )
+}
+
+/** One dependency in the System Health strip. `ok === null` means unknown. */
+function Health({ name, ok }: { name: string; ok: boolean | null }) {
+  return (
+    <div className="flex items-center gap-2">
+      <ToneDot tone={ok === null ? "neutral" : ok ? "pass" : "fail"} />
+      <span className="text-foreground text-sm font-semibold">{name}</span>
+      <span
+        className={cn(
+          "text-sm",
+          ok === null
+            ? "text-muted-foreground"
+            : ok
+              ? toneText("pass")
+              : toneText("fail")
+        )}
+      >
+        {ok === null ? "Unknown" : ok ? "Ready" : "Needs setup"}
+      </span>
     </div>
   )
 }
@@ -108,6 +142,59 @@ function StatePill({ on, onLabel, offLabel }: { on: boolean | null; onLabel: str
       {on ? onLabel : offLabel}
     </span>
   )
+}
+
+/** Known `shadow_provider` config values (see backend/app/config.py) mapped
+ * to names a user would recognize, rather than the internal setting name. */
+const SHADOW_PROVIDER_LABELS: Record<string, string> = {
+  ccloud_api: "CockroachDB Cloud",
+  mock: "Local (mock)",
+}
+function formatShadowProvider(provider: string | null | undefined): string {
+  if (!provider) return "—"
+  return SHADOW_PROVIDER_LABELS[provider] ?? titleCase(provider)
+}
+
+function formatEnvironment(env: string | null | undefined): string {
+  if (!env) return "—"
+  return titleCase(env)
+}
+
+function titleCase(raw: string): string {
+  return raw
+    .split(/[_-]+/)
+    .filter(Boolean)
+    .map((w) => w[0]!.toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ")
+}
+
+/**
+ * A Bedrock model id (e.g. "us.anthropic.claude-haiku-4-5-20251001-v1:0" or
+ * the older "anthropic.claude-3-5-sonnet-20241022-v2:0") isn't something a
+ * user should have to parse. Recognizes both of Anthropic's Bedrock naming
+ * conventions — family-first (Claude 4+) and version-first (Claude 3.x) —
+ * and falls back to the raw id rather than guessing wrong.
+ */
+function formatModelId(modelId: string | null | undefined): string | null {
+  if (!modelId) return null
+  const familyFirst = modelId.match(
+    /claude-(haiku|sonnet|opus)-(\d+)(?:-(\d+))?-\d{8}-v\d+/i
+  )
+  if (familyFirst) {
+    const [, family, major, minor] = familyFirst
+    const version = minor ? `${major}.${minor}` : major
+    return `Claude ${titleCase(family!)} ${version}`
+  }
+  const versionFirst = modelId.match(
+    /claude-(\d+)(?:-(\d+))?-(haiku|sonnet|opus)-\d{8}-v\d+/i
+  )
+  if (versionFirst) {
+    const [, major, minor, family] = versionFirst
+    const version = minor ? `${major}.${minor}` : major
+    return `Claude ${version} ${titleCase(family!)}`
+  }
+  if (/^amazon\.titan-embed/i.test(modelId)) return "Amazon Titan Embeddings"
+  return modelId
 }
 
 function ThemeModeField() {
@@ -151,8 +238,10 @@ export default function SettingsPage() {
   const { isLoaded, isSignedIn } = useAuth()
   const { user } = useUser()
   const [secretArn, setSecretArn] = React.useState("")
+  const [editingSecret, setEditingSecret] = React.useState(false)
   const [mounted, setMounted] = React.useState(false)
   const [health, setHealth] = React.useState<HealthResponse | null>(null)
+  const [healthError, setHealthError] = React.useState<string | null>(null)
   const [corpus, setCorpus] = React.useState<CorpusHealth | null>(null)
   const [slackStatus, setSlackStatus] =
     React.useState<SlackStatusResponse | null>(null)
@@ -198,9 +287,6 @@ export default function SettingsPage() {
     try {
       setGithubStatus(await getGithubStatus())
     } catch {
-      // Best-effort, same as Slack above — no backend route exists yet
-      // (TODO(backend): GET /api/github/status), so this always falls
-      // through to the "unknown/not connected" rendering below.
       setGithubStatus(null)
     }
   }, [])
@@ -220,7 +306,14 @@ export default function SettingsPage() {
     async function load() {
       const [h, c] = await Promise.allSettled([getHealth(), getMemoriesHealth()])
       if (cancelled) return
-      if (h.status === "fulfilled") setHealth(h.value)
+      if (h.status === "fulfilled") {
+        setHealth(h.value)
+        setHealthError(null)
+      } else {
+        // Never the raw fetch/network error text — that's implementation
+        // detail, not something a user can act on.
+        setHealthError("Couldn't check system health. Try refreshing.")
+      }
       if (c.status === "fulfilled") setCorpus(c.value)
     }
     void load()
@@ -232,12 +325,11 @@ export default function SettingsPage() {
     }
   }, [refreshSlackStatus, refreshGithubStatus, refreshSharingStatus])
 
-  // The backend redirects here with ?slack=connected|error after the OAuth
-  // callback completes (see SLACK_INSTALL_SUCCESS_REDIRECT /
-  // SLACK_INSTALL_ERROR_REDIRECT in backend/app/config.py). Read it once,
-  // then strip it from the URL so a page refresh doesn't re-show the banner.
-  // TODO(backend): the GitHub side of this (?github=connected|error) needs
-  // the same redirect-back convention once /api/github/install exists.
+  // The backend redirects here with ?slack=connected|error (or
+  // ?github=connected|error) after the OAuth callback completes (see
+  // SLACK_INSTALL_SUCCESS_REDIRECT / GITHUB_OAUTH_INSTALL_SUCCESS_REDIRECT
+  // in backend/app/config.py). Read it once, then strip it from the URL so
+  // a page refresh doesn't re-show the banner.
   React.useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const slackParam = params.get("slack")
@@ -252,16 +344,18 @@ export default function SettingsPage() {
     }
   }, [router])
 
+  // Connect/disconnect failures never surface the raw backend message here —
+  // it can be server config detail (missing env vars) or a plain "Not Found"
+  // for a route that isn't built yet, neither of which means anything to an
+  // end user. A fixed, friendly message covers every failure mode.
   async function handleSlackConnect() {
     setSlackBusy(true)
     setSlackActionError(null)
     try {
       const { authorize_url } = await getSlackInstallUrl()
       window.location.href = authorize_url
-    } catch (err) {
-      setSlackActionError(
-        err instanceof ApiError ? err.message : "Could not start Slack install."
-      )
+    } catch {
+      setSlackActionError("Couldn't connect to Slack. Try again in a moment.")
       setSlackBusy(false)
     }
   }
@@ -272,10 +366,8 @@ export default function SettingsPage() {
     try {
       await disconnectSlack()
       await refreshSlackStatus()
-    } catch (err) {
-      setSlackActionError(
-        err instanceof ApiError ? err.message : "Could not disconnect Slack."
-      )
+    } catch {
+      setSlackActionError("Couldn't disconnect Slack. Try again in a moment.")
     } finally {
       setSlackBusy(false)
     }
@@ -287,10 +379,8 @@ export default function SettingsPage() {
     try {
       const { authorize_url } = await getGithubInstallUrl()
       window.location.href = authorize_url
-    } catch (err) {
-      setGithubActionError(
-        err instanceof ApiError ? err.message : "Could not start GitHub connect."
-      )
+    } catch {
+      setGithubActionError("Couldn't connect to GitHub. Try again in a moment.")
       setGithubBusy(false)
     }
   }
@@ -301,10 +391,8 @@ export default function SettingsPage() {
     try {
       await disconnectGithub()
       await refreshGithubStatus()
-    } catch (err) {
-      setGithubActionError(
-        err instanceof ApiError ? err.message : "Could not disconnect GitHub."
-      )
+    } catch {
+      setGithubActionError("Couldn't disconnect GitHub. Try again in a moment.")
     } finally {
       setGithubBusy(false)
     }
@@ -382,18 +470,40 @@ export default function SettingsPage() {
     typeof integrations?.bedrock_configured === "boolean"
       ? integrations.bedrock_configured
       : null
+  const apiOk = health ? health.status === "healthy" : null
+  const memoryOk = corpus ? corpus.healthy !== false : null
+  const predictionModelLabel = formatModelId(
+    integrations?.bedrock_prediction_model_id
+  )
 
   return (
     <div className="mx-auto w-full max-w-[1500px] px-6 pb-10 lg:px-10">
       <PageHeader
         title="Settings"
-        subtitle="Workspace identity, appearance, and the execution policy this environment is running under."
+        subtitle="Account, execution policy, integrations, and workspaces."
       />
+
+      {/* System Health — kept full-width and first so it's visible without
+          scrolling, regardless of column. */}
+      <Panel className="mb-5 px-6 py-5">
+        <Label className="mb-3">System Health</Label>
+        {healthError ? (
+          <ErrorNote>{healthError}</ErrorNote>
+        ) : (
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+            <Health name="API" ok={apiOk} />
+            <Health name="Shadow" ok={sfnReady} />
+            <Health name="Predictions" ok={bedrockReady} />
+            <Health name="Memory" ok={memoryOk} />
+          </div>
+        )}
+      </Panel>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
         <div className="space-y-5">
-          <Panel className="px-6 py-5">
-            <Label className="mb-4">Workspace</Label>
+          {/* General — identity + appearance */}
+          <Panel className="px-6 py-5" delay={0.02}>
+            <Label className="mb-4">General</Label>
             <div className="space-y-4">
               <div>
                 <Label className="mb-2">Signed in as</Label>
@@ -408,11 +518,11 @@ export default function SettingsPage() {
                   }
                   className="h-11"
                 />
-                <p className="text-muted-foreground mt-1.5 text-[12px] leading-snug">
-                  Managed by your Clerk account, not editable here.
-                </p>
               </div>
               <OwnerIdentityField id="owner-identity-settings" />
+            </div>
+            <div className="border-border mt-4 border-t pt-4">
+              <ThemeModeField />
             </div>
             {hasSession ? (
               <div className="border-border mt-4 border-t pt-4">
@@ -421,23 +531,18 @@ export default function SettingsPage() {
             ) : null}
           </Panel>
 
-          <Panel className="px-6 py-5" delay={0.05}>
-            <Label>Appearance</Label>
-            <div className="mt-4">
-              <ThemeModeField />
-            </div>
-          </Panel>
-
-          <Panel className="px-6 py-5" delay={0.1}>
-            <Label>Execution policy</Label>
-            <p className="text-muted-foreground mt-2 mb-1 text-[13px] leading-relaxed">
-              These reflect how this environment is configured on the server.
-              They are reported, not set from here.
+          {/* Execution — the live policy this environment runs under.
+              Merges the old "Execution policy" + "Current policy" panels,
+              which duplicated the same three facts in two formats. */}
+          <Panel className="px-6 py-5" delay={0.06}>
+            <Label>Execution</Label>
+            <p className="text-muted-foreground mt-1 mb-2 text-[12px] leading-snug">
+              Reported by the server — not editable here.
             </p>
             <div className="mt-2">
               <Row
                 title="Shadow execution"
-                detail="Every approved migration runs against a disposable shadow cluster before anything real happens."
+                detail="Approved migrations run against a disposable shadow cluster first."
               >
                 <StatePill
                   on={sfnReady}
@@ -448,8 +553,8 @@ export default function SettingsPage() {
               <Row
                 title="AI prediction"
                 detail={
-                  integrations?.bedrock_prediction_model_id
-                    ? `Model: ${integrations.bedrock_prediction_model_id}`
+                  predictionModelLabel
+                    ? `Model: ${predictionModelLabel}`
                     : "No prediction model configured."
                 }
               >
@@ -461,47 +566,50 @@ export default function SettingsPage() {
               </Row>
               <Row
                 title="Manual approval"
-                detail="Always required. A migration cannot reach a shadow cluster without a recorded human decision."
+                detail="Always required before a shadow run starts."
               >
                 <StatePill on={true} onLabel="ALWAYS ON" offLabel="" />
               </Row>
-              <Row
-                title="Shadow provider"
-                detail="Where disposable verification clusters are provisioned."
-              >
-                <span className="text-foreground shrink-0 font-mono text-[13px]">
-                  {integrations?.shadow_provider ?? "—"}
+              <Row title="Shadow provider" detail="Verification cluster provisioner.">
+                <span className="text-foreground shrink-0 text-[13px] font-semibold">
+                  {formatShadowProvider(integrations?.shadow_provider)}
+                </span>
+              </Row>
+              <Row title="Environment" detail="Server deployment environment.">
+                <span className="text-foreground shrink-0 text-[13px] font-semibold">
+                  {formatEnvironment(integrations?.environment)}
                 </span>
               </Row>
             </div>
           </Panel>
 
-          <Panel className="px-6 py-5" delay={0.12}>
-            <Label className="mb-4">Slack notifications</Label>
+          {/* Integrations — Slack (real) + GitHub (not built yet, marked
+              rather than offered as a dead Connect button). */}
+          <Panel className="px-6 py-5" delay={0.1}>
+            <Label className="mb-2">Integrations</Label>
             {slackBanner === "connected" ? (
-              <div className="mb-4 rounded-lg border border-[var(--tone-pass-border)] bg-[var(--tone-pass-bg)] px-3 py-2 text-[13px] text-[var(--tone-pass-fg)]">
-                Slack connected. Lifecycle notifications will be sent to you
-                directly in Slack.
+              <div className="mb-3 rounded-lg border border-[var(--tone-pass-border)] bg-[var(--tone-pass-bg)] px-3 py-2 text-[13px] text-[var(--tone-pass-fg)]">
+                Slack connected.
               </div>
             ) : null}
             {slackBanner === "error" ? (
-              <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
-                Slack connection failed. Please try connecting again.
+              <div className="mb-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
+                Slack connection failed. Try again.
               </div>
             ) : null}
 
             <Row
               title={
                 slackStatus?.connected
-                  ? `Connected — ${slackStatus.team_name ?? slackStatus.team_id ?? "workspace"}`
-                  : "Not connected"
+                  ? `Slack — ${slackStatus.team_name ?? slackStatus.team_id ?? "connected"}`
+                  : "Slack"
               }
               detail={
                 slackStatus?.connected
-                  ? "Prediction-ready, shadow-started, and shadow-completed/failed events are sent to you as a Slack DM."
+                  ? "Lifecycle events sent to you as a DM."
                   : slackStatus?.configured === false
-                    ? "Slack OAuth is not configured on this server (SLACK_CLIENT_ID / SLACK_CLIENT_SECRET / SLACK_REDIRECT_URI)."
-                    : "Connect Slack to receive migration lifecycle notifications as a direct message."
+                    ? "Not configured on this server."
+                    : "Get migration lifecycle notifications."
               }
             >
               {slackStatus?.connected ? (
@@ -520,43 +628,39 @@ export default function SettingsPage() {
                   disabled={slackBusy || slackStatus?.configured === false}
                   onClick={() => void handleSlackConnect()}
                 >
-                  {slackBusy ? "Redirecting…" : "Connect Slack"}
+                  {slackBusy ? "Redirecting…" : "Connect"}
                 </Button>
               )}
             </Row>
             {slackActionError ? (
-              <p className="mt-2 text-[12px] leading-snug text-destructive">
+              <p className="mt-1 mb-2 text-[12px] leading-snug text-destructive">
                 {slackActionError}
               </p>
             ) : null}
-          </Panel>
 
-          <Panel className="px-6 py-5" delay={0.125}>
-            <Label className="mb-4">GitHub account</Label>
             {githubBanner === "connected" ? (
-              <div className="mb-4 rounded-lg border border-[var(--tone-pass-border)] bg-[var(--tone-pass-bg)] px-3 py-2 text-[13px] text-[var(--tone-pass-fg)]">
-                GitHub connected. Teammates you invite by GitHub handle can be
-                matched to a verified account.
+              <div className="mb-3 rounded-lg border border-[var(--tone-pass-border)] bg-[var(--tone-pass-bg)] px-3 py-2 text-[13px] text-[var(--tone-pass-fg)]">
+                GitHub connected.
               </div>
             ) : null}
             {githubBanner === "error" ? (
-              <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
-                GitHub connection failed. Please try connecting again.
+              <div className="mb-3 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-[13px] text-destructive">
+                GitHub connection failed. Try again.
               </div>
             ) : null}
 
             <Row
               title={
                 githubStatus?.connected
-                  ? `Connected — @${githubStatus.username ?? "unknown"}`
-                  : "Not connected"
+                  ? `GitHub — @${githubStatus.username ?? "connected"}`
+                  : "GitHub"
               }
               detail={
                 githubStatus?.connected
-                  ? "Your GitHub identity is linked to this account."
+                  ? "Your identity is verified for workspace invites."
                   : githubStatus?.configured === false
-                    ? "GitHub OAuth is not configured on this server yet."
-                    : "Connect GitHub to verify your identity for workspace invites and (later) repository integration."
+                    ? "Not configured on this server."
+                    : "Verify your identity for workspace invites."
               }
             >
               {githubStatus?.connected ? (
@@ -575,248 +679,193 @@ export default function SettingsPage() {
                   disabled={githubBusy || githubStatus?.configured === false}
                   onClick={() => void handleGithubConnect()}
                 >
-                  {githubBusy ? "Redirecting…" : "Connect GitHub"}
+                  {githubBusy ? "Redirecting…" : "Connect"}
                 </Button>
               )}
             </Row>
             {githubActionError ? (
-              <p className="mt-2 text-[12px] leading-snug text-destructive">
+              <p className="mt-1 mb-2 text-[12px] leading-snug text-destructive">
                 {githubActionError}
               </p>
             ) : null}
-            <p className="text-muted-foreground mt-3 text-[11.5px] leading-snug">
-              Not built on the server yet — TODO(backend): a GitHub OAuth app
-              + `/api/github/install`, `/api/github/status`,
-              `/api/github/disconnect` routes, mirroring
-              `backend/app/api/routes/slack.py`.
-            </p>
-          </Panel>
-
-          <Panel className="px-6 py-5" delay={0.13}>
-            <Label className="mb-4">Cross-customer memory sharing</Label>
-            <p className="text-muted-foreground mb-1 text-[13px] leading-relaxed">
-              When enabled, your graded migrations contribute anonymized
-              patterns to a shared pool other accounts&apos; predictions can
-              draw on — no table names, column names, or other identifiers
-              ever leave your account; every field goes through an
-              anonymization + defense-in-depth leak check first. Off by
-              default.
-            </p>
-
-            <Row
-              title={
-                sharingStatus?.enabled
-                  ? "Sharing enabled"
-                  : "Not sharing"
-              }
-              detail={
-                sharingStatus?.enabled
-                  ? "Your graded runs are anonymized and contributed to the shared pool automatically."
-                  : "Your graded runs stay private to your account."
-              }
-            >
-              {sharingStatus?.enabled ? (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={sharingBusy}
-                  onClick={() => void handleSharingDisable()}
-                >
-                  {sharingBusy ? "Disabling…" : "Disable"}
-                </Button>
-              ) : (
-                <Button
-                  variant="default"
-                  size="sm"
-                  disabled={sharingBusy || sharingConfirming}
-                  onClick={() => void handleSharingEnableClick()}
-                >
-                  Enable…
-                </Button>
-              )}
-            </Row>
-
-            {sharingConfirming ? (
-              <div className="border-border bg-muted/30 mt-3 space-y-3 rounded-lg border p-4">
-                <div className="text-foreground text-[13px] font-semibold">
-                  Here&apos;s a real example of what would be shared
-                </div>
-                {sharingPreviewLoading ? (
-                  <p className="text-muted-foreground text-[13px]">
-                    Building a live example from your most recent graded
-                    run…
-                  </p>
-                ) : sharingPreview?.available ? (
-                  <div className="space-y-2">
-                    <div className="rounded-md border border-border bg-background p-3 font-mono text-[12px] leading-relaxed break-words">
-                      {sharingPreview.sql_shape_template}
-                    </div>
-                    {sharingPreview.generalized_summary ? (
-                      <p className="text-[12.5px] text-foreground leading-relaxed">
-                        {sharingPreview.generalized_summary}
-                      </p>
-                    ) : null}
-                    {sharingPreview.generalized_risk_narrative ? (
-                      <p className="text-muted-foreground text-[12.5px] leading-relaxed">
-                        {sharingPreview.generalized_risk_narrative}
-                      </p>
-                    ) : null}
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground text-[13px] leading-relaxed">
-                    {sharingPreview?.reason ??
-                      "No preview available yet — you can still enable sharing; it will apply starting with your next graded run."}
-                  </p>
-                )}
-                <p className="text-muted-foreground text-[12px] leading-relaxed">
-                  Once a pattern is contributed, it stays in the shared pool
-                  even if you turn sharing off later — disabling only stops
-                  future contributions, since nothing here is linked back to
-                  your account to remove it.
-                </p>
-                <div className="flex items-center gap-2 pt-1">
-                  <Button
-                    variant="default"
-                    size="sm"
-                    disabled={sharingBusy || sharingPreviewLoading}
-                    onClick={() => void handleSharingConfirm()}
-                  >
-                    {sharingBusy ? "Enabling…" : "Confirm & enable"}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={sharingBusy}
-                    onClick={handleSharingCancel}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-
-            {sharingActionError ? (
-              <p className="mt-2 text-[12px] leading-snug text-destructive">
-                {sharingActionError}
-              </p>
-            ) : null}
-          </Panel>
-
-          <Panel className="px-6 py-5" delay={0.13}>
-            <WorkspaceSettingsPanel />
-          </Panel>
-
-          <Panel className="px-6 py-5" delay={0.14}>
-            <Label className="mb-4">Shadow connection secret</Label>
-            <div className="max-w-lg space-y-1.5">
-              <Input
-                id="connection-secret-arn"
-                disabled={!mounted}
-                value={secretArn}
-                onChange={(e) => {
-                  setSecretArn(e.target.value)
-                  setConnectionSecretArn(e.target.value)
-                }}
-                placeholder="arn:aws:secretsmanager:…"
-                className="h-11 font-mono text-xs"
-                autoComplete="off"
-              />
-              <p className="text-muted-foreground text-[12px] leading-snug">
-                Optional override used when starting a shadow test. Normally set
-                for you when you connect a database.
-              </p>
-            </div>
           </Panel>
         </div>
 
         <div className="space-y-5">
+          {/* Workspaces */}
           <Panel className="px-6 py-5" delay={0.08}>
-            <Label className="mb-4">Current policy</Label>
-            <div className="space-y-3 text-[13.5px]">
-              {[
-                [
-                  "Shadow execution",
-                  sfnReady == null
-                    ? "unknown"
-                    : sfnReady
-                      ? "Enabled"
-                      : "Not configured",
-                ],
-                ["Approval", "Manual review, always"],
-                [
-                  "Predictions",
-                  bedrockReady == null
-                    ? "unknown"
-                    : bedrockReady
-                      ? "Enabled"
-                      : "Not configured",
-                ],
-                ["Environment", integrations?.environment ?? "—"],
-                ["Database", health?.database ?? "—"],
-              ].map(([k, v]) => (
-                <div key={k} className="flex items-center justify-between gap-3">
-                  <span className="text-muted-foreground">{k}</span>
-                  <span className="text-foreground font-semibold">{v}</span>
-                </div>
-              ))}
-            </div>
+            <WorkspaceSettingsPanel />
           </Panel>
 
+          {/* Advanced — connection status, connection secret, memory
+              sharing, agent memory. Raw technical detail (URLs, version
+              strings, secret values) stays out of the UI — status pills and
+              "managed automatically" cover what a user actually needs. */}
           <Panel className="px-6 py-5" delay={0.12}>
-            <Label className="mb-4">API connection</Label>
-            <div className="space-y-1.5">
-              <Input readOnly value={apiBaseUrl()} className="h-9 font-mono text-xs" />
-              <p className="text-muted-foreground text-[12px] leading-snug">
-                Set via NEXT_PUBLIC_API_BASE_URL at build time.
-              </p>
-            </div>
-            <div className="border-border mt-4 border-t pt-4">
-              <div className="section-label mb-2">CockroachDB</div>
-              <p className="text-muted-foreground font-mono text-[11px] leading-relaxed break-words">
-                {health?.cockroachdb_version ?? "—"}
-              </p>
-            </div>
-          </Panel>
+            <Label className="mb-4">Advanced</Label>
 
-          <Panel className="px-6 py-5" delay={0.16}>
-            <Label className="mb-3">Agent memory</Label>
-            {corpus ? (
-              <div className="space-y-2 text-[13px]">
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Total memories</span>
-                  <span className="text-foreground font-semibold tabular-nums">
-                    {corpus.total_memories ?? 0}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">Corpus ready</span>
-                  <span className="text-foreground font-semibold tabular-nums">
-                    {corpus.corpus_ready_count ?? 0}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-muted-foreground">
-                    Missing embeddings
-                  </span>
-                  <span className="text-foreground font-semibold tabular-nums">
-                    {corpus.missing_embeddings ?? 0}
-                  </span>
-                </div>
-              </div>
-            ) : (
-              <EmptyNote>Corpus health unavailable.</EmptyNote>
-            )}
-            <p className="text-muted-foreground mt-4 text-[12px] leading-relaxed">
-              Memories are written automatically after a run is graded. There is
-              no delete operation — the corpus is an append-only audit record of
-              what actually happened.
-            </p>
-            <Link
-              href="/dashboard/memory"
-              className="text-primary mt-3 inline-block text-[13px] font-semibold hover:underline"
-            >
-              Browse the corpus →
-            </Link>
+            <div>
+              <Row title="API connection" detail="Reachability of the backend API.">
+                <StatePill on={apiOk} onLabel="CONNECTED" offLabel="UNAVAILABLE" />
+              </Row>
+              <Row title="Database" detail="Primary data store.">
+                <StatePill
+                  on={health ? health.database === "healthy" : null}
+                  onLabel="CONNECTED"
+                  offLabel="UNAVAILABLE"
+                />
+              </Row>
+
+              <Row
+                title="Shadow connection secret"
+                detail={
+                  secretArn.trim()
+                    ? "Custom override configured."
+                    : "Managed automatically."
+                }
+                footer={
+                  editingSecret ? (
+                    <>
+                      <Input
+                        id="connection-secret-arn"
+                        disabled={!mounted}
+                        value={secretArn}
+                        onChange={(e) => {
+                          setSecretArn(e.target.value)
+                          setConnectionSecretArn(e.target.value)
+                        }}
+                        placeholder="arn:aws:secretsmanager:…"
+                        className="h-9 font-mono text-xs"
+                        autoComplete="off"
+                      />
+                      <p className="text-muted-foreground mt-1.5 text-[11.5px] leading-snug">
+                        Optional override for starting a shadow test — usually
+                        set automatically.
+                      </p>
+                    </>
+                  ) : null
+                }
+              >
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setEditingSecret((v) => !v)}
+                >
+                  {editingSecret ? "Done" : "Edit"}
+                </Button>
+              </Row>
+
+              <Row
+                title="Cross-customer memory sharing"
+                detail={
+                  sharingStatus?.enabled
+                    ? "Your graded runs are anonymized and contributed automatically."
+                    : "Shares anonymized migration patterns with other accounts. No identifiers leave yours."
+                }
+                footer={
+                  <>
+                    {sharingConfirming ? (
+                      <div className="border-border bg-muted/30 space-y-3 rounded-lg border p-4">
+                        <div className="text-foreground text-[13px] font-semibold">
+                          Example of what would be shared
+                        </div>
+                        {sharingPreviewLoading ? (
+                          <p className="text-muted-foreground text-[13px]">
+                            Building a live example from your most recent
+                            graded run…
+                          </p>
+                        ) : sharingPreview?.available ? (
+                          <div className="space-y-2">
+                            <div className="rounded-md border border-border bg-background p-3 font-mono text-[12px] leading-relaxed break-words">
+                              {sharingPreview.sql_shape_template}
+                            </div>
+                            {sharingPreview.generalized_summary ? (
+                              <p className="text-[12.5px] text-foreground leading-relaxed">
+                                {sharingPreview.generalized_summary}
+                              </p>
+                            ) : null}
+                            {sharingPreview.generalized_risk_narrative ? (
+                              <p className="text-muted-foreground text-[12.5px] leading-relaxed">
+                                {sharingPreview.generalized_risk_narrative}
+                              </p>
+                            ) : null}
+                          </div>
+                        ) : (
+                          <p className="text-muted-foreground text-[13px] leading-relaxed">
+                            {sharingPreview?.reason ??
+                              "No preview yet — you can still enable sharing."}
+                          </p>
+                        )}
+                        <p className="text-muted-foreground text-[12px] leading-relaxed">
+                          Shared patterns stay shared even after you disable
+                          this.
+                        </p>
+                        <div className="flex items-center gap-2 pt-1">
+                          <Button
+                            variant="default"
+                            size="sm"
+                            disabled={sharingBusy || sharingPreviewLoading}
+                            onClick={() => void handleSharingConfirm()}
+                          >
+                            {sharingBusy ? "Enabling…" : "Confirm & enable"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={sharingBusy}
+                            onClick={handleSharingCancel}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : null}
+                    {sharingActionError ? (
+                      <p className="mt-2 text-[12px] leading-snug text-destructive">
+                        {sharingActionError}
+                      </p>
+                    ) : null}
+                  </>
+                }
+              >
+                {sharingStatus?.enabled ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={sharingBusy}
+                    onClick={() => void handleSharingDisable()}
+                  >
+                    {sharingBusy ? "Disabling…" : "Disable"}
+                  </Button>
+                ) : (
+                  <Button
+                    variant="default"
+                    size="sm"
+                    disabled={sharingBusy || sharingConfirming}
+                    onClick={() => void handleSharingEnableClick()}
+                  >
+                    Enable…
+                  </Button>
+                )}
+              </Row>
+
+              <Row
+                title="Agent memory"
+                detail={
+                  corpus
+                    ? `${corpus.corpus_ready_count ?? 0} memories indexed`
+                    : "Not available"
+                }
+              >
+                <Link
+                  href="/dashboard/memory"
+                  className="text-primary shrink-0 text-[13px] font-semibold hover:underline"
+                >
+                  Browse corpus →
+                </Link>
+              </Row>
+            </div>
           </Panel>
         </div>
       </div>

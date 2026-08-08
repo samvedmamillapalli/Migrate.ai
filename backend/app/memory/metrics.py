@@ -268,6 +268,92 @@ async def fetch_accuracy_metrics(
         )
     ).mappings().one()
 
+    # Predicted-vs-actual runtime, one point per graded run — powers the
+    # Overview scatter plot. Same population as scalar_trend above (joins
+    # through grades, so it's already deduplicated 1:1 per run and excludes
+    # open-source/seed rows); additionally requires a prediction + execution
+    # row, which every graded run has by construction (grading only runs
+    # after both exist), so this INNER JOIN never silently drops a real run.
+    runtime_scatter = (
+        await session.execute(
+            text(
+                f"""
+                SELECT
+                    g.migration_run_id,
+                    p.estimated_duration_seconds,
+                    er.actual_duration_seconds,
+                    g.scale_tier,
+                    g.outcome_class,
+                    mr.parsed_statement_types,
+                    g.created_at
+                FROM grades g
+                JOIN migration_runs mr ON mr.id = g.migration_run_id
+                JOIN predictions p ON p.migration_run_id = g.migration_run_id
+                JOIN execution_results er ON er.migration_run_id = g.migration_run_id
+                WHERE {_GRADE_OK}
+                ORDER BY g.created_at ASC
+                """
+            ),
+            params,
+        )
+    ).mappings().all()
+
+    # Distribution of DDL statement types across real runs (not just graded
+    # ones) — powers the Overview donut. `parsed_statement_types` is a JSONB
+    # array of strings written by the deterministic policy layer at submit
+    # time (app.policy.models.PolicyAnalysisResult), so this needs no new
+    # column, just unnesting. Scoped the same way as approval_breakdown:
+    # excludes the reserved corpus identity and chaos/debug test runs.
+    migration_type_rows = (
+        await session.execute(
+            text(
+                """
+                SELECT stmt_type AS migration_type, COUNT(*) AS n
+                FROM migration_runs mr,
+                     LATERAL jsonb_array_elements_text(
+                        COALESCE(mr.parsed_statement_types, '[]'::jsonb)
+                     ) AS stmt_type
+                WHERE mr.owner_identity != :corpus_owner
+                  AND mr.run_kind NOT IN ('chaos', 'debug')
+                  AND (CAST(:owner_identity AS STRING) IS NULL OR mr.owner_identity = CAST(:owner_identity AS STRING))
+                  AND (CAST(:workspace_id AS UUID) IS NULL OR mr.workspace_id = CAST(:workspace_id AS UUID))
+                GROUP BY 1
+                ORDER BY n DESC
+                """
+            ),
+            {**params, "corpus_owner": CORPUS_OWNER_IDENTITY},
+        )
+    ).mappings().all()
+
+    # Risk-level distribution across real runs — powers the Overview
+    # horizontal bar. `compatibility_risk` only spans low/medium/high
+    # (app.policy.models.CompatibilityRiskValue); "critical" is not a stored
+    # value, it's the deterministic policy layer's own strongest signal
+    # surfacing through the existing columns: a high-compatibility-risk run
+    # that the policy engine additionally decided to BLOCK. No schema change.
+    risk_level_rows = (
+        await session.execute(
+            text(
+                """
+                SELECT
+                    CASE
+                        WHEN mr.compatibility_risk = 'high' AND mr.policy_decision = 'block' THEN 'critical'
+                        WHEN mr.compatibility_risk IS NULL THEN 'unknown'
+                        ELSE mr.compatibility_risk::STRING
+                    END AS risk_level,
+                    COUNT(*) AS n
+                FROM migration_runs mr
+                WHERE mr.owner_identity != :corpus_owner
+                  AND mr.run_kind NOT IN ('chaos', 'debug')
+                  AND (CAST(:owner_identity AS STRING) IS NULL OR mr.owner_identity = CAST(:owner_identity AS STRING))
+                  AND (CAST(:workspace_id AS UUID) IS NULL OR mr.workspace_id = CAST(:workspace_id AS UUID))
+                GROUP BY 1
+                """
+            ),
+            {**params, "corpus_owner": CORPUS_OWNER_IDENTITY},
+        )
+    ).mappings().all()
+
     graded_n = int(migration_success["graded"] or 0)
     passed_n = int(migration_success["passed"] or 0)
 
@@ -318,6 +404,11 @@ async def fetch_accuracy_metrics(
             "recall": recall,
         },
         "retrieval_usefulness_vs_accuracy": dict(retrieval_usefulness),
+        "runtime_scatter": [dict(row) for row in runtime_scatter],
+        "migration_type_distribution": [
+            dict(row) for row in migration_type_rows
+        ],
+        "risk_level_distribution": [dict(row) for row in risk_level_rows],
         "integrity_note": (
             "Accuracy aggregates exclude open_source_documented_incident and "
             "synthetic_seed memories; those are not predicted-then-measured grades."

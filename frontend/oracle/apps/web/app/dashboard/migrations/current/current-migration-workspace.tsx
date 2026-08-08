@@ -1548,7 +1548,7 @@ export function CurrentMigrationWorkspace() {
         }
       }
       await tick()
-      timer = setInterval(() => void tick(), 400)
+      timer = setInterval(() => void tick(), 1000)
       const updated = await discoverSchema(activeRun.id, {
         connection_secret_arn: arn || null,
         database_url: url || null,
@@ -1597,7 +1597,7 @@ export function CurrentMigrationWorkspace() {
         }
       }
       await tick()
-      timer = setInterval(() => void tick(), 400)
+      timer = setInterval(() => void tick(), 1000)
       const updated = await predictRun(run.id, { signal: controller.signal })
       await tick()
       setRun(updated)
@@ -1734,11 +1734,20 @@ export function CurrentMigrationWorkspace() {
     }
   }
 
-  const assessment = run ? mapAssessment(run) : null
-  const schema = run ? mapSchema(run) : null
-  const comparisons = run ? mapComparisons(run, extras) : []
-  const shadowChecks = mapShadowChecks(extras)
-  const lifecycleStages = run ? mapLifecycle(run, extras) : []
+  // These re-run the full map-run.ts mapping layer over `run`/`extras`, which
+  // otherwise happened on every render — including every 1.5-2.5s poll tick
+  // while a shadow run is live, even when the polled data was unchanged.
+  const assessment = React.useMemo(() => (run ? mapAssessment(run) : null), [run])
+  const schema = React.useMemo(() => (run ? mapSchema(run) : null), [run])
+  const comparisons = React.useMemo(
+    () => (run ? mapComparisons(run, extras) : []),
+    [run, extras]
+  )
+  const shadowChecks = React.useMemo(() => mapShadowChecks(extras), [extras])
+  const lifecycleStages = React.useMemo(
+    () => (run ? mapLifecycle(run, extras) : []),
+    [run, extras]
+  )
   const hasPrediction = Boolean(
     assessment && (assessment.policyDecision != null || assessment.prediction)
   )

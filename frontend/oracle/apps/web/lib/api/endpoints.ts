@@ -485,43 +485,27 @@ export function disconnectSlack() {
 }
 
 /**
- * GitHub account connection — same shape as the Slack OAuth panel above
- * (install-url redirect, status poll, disconnect), but there is no
- * `/api/github/*` router in the backend yet (see
- * docs/FUTURE_GITHUB_INTEGRATION_PLAN.md — that doc covers PR/webhook
- * automation, a separate and larger feature; this is just "who is this
- * GitHub identity" for collaboration, e.g. matching invited teammates to a
- * verified account instead of a typed handle). Hand-written placeholder
- * types, same convention as the workspace invite/member types below; swap
- * for `components["schemas"][...]` once the backend route exists.
+ * GitHub account connection — "who is this GitHub identity" for
+ * collaboration (e.g. matching invited teammates to a verified account
+ * instead of a typed handle). Distinct from the GitHub App used for
+ * PR/webhook automation (docs/FUTURE_GITHUB_INTEGRATION_PLAN.md) — that's a
+ * separate credential and a separate feature. Real backend, same
+ * install-url-redirect / status-poll / disconnect shape as the Slack panel.
  */
-export type GithubStatusResponse = {
-  connected: boolean
-  /** False when the server has no GitHub OAuth app configured at all. */
-  configured?: boolean
-  username?: string | null
-  avatar_url?: string | null
-}
+export type GithubStatusResponse = components["schemas"]["GithubIdentityStatusResponse"]
+export type GithubInstallAuthorizeResponse =
+  components["schemas"]["GithubIdentityInstallAuthorizeResponse"]
+export type GithubDisconnectResponse =
+  components["schemas"]["GithubIdentityDisconnectResponse"]
 
-export type GithubInstallAuthorizeResponse = {
-  authorize_url: string
-}
-
-export type GithubDisconnectResponse = {
-  connected: false
-}
-
-/** TODO(backend): GET /api/github/status — no route exists yet. */
 export function getGithubStatus() {
   return api<GithubStatusResponse>("/api/github/status")
 }
 
-/** TODO(backend): GET /api/github/install — no route exists yet. */
 export function getGithubInstallUrl() {
   return api<GithubInstallAuthorizeResponse>("/api/github/install")
 }
 
-/** TODO(backend): POST /api/github/disconnect — no route exists yet. */
 export function disconnectGithub() {
   return api<GithubDisconnectResponse>("/api/github/disconnect", {
     method: "POST",
@@ -657,74 +641,22 @@ export function getGithubIntegrationStatus() {
 }
 
 /**
- * Workspace invites + members.
- *
- * Designed against an API contract that does not exist yet (no membership
- * table, no invite/token model, no email sending) — this is the UI shape to
- * build toward. The types below are hand-written placeholders (same pattern
- * as ActivityEvent / HealthResponse); swap them for
- * `components["schemas"][...]` from schema.ts once `npm run gen:api` picks
- * up the backend routes.
+ * Workspace invites + members — real backend, docs/backendfix.md 2026-08-07.
+ * Roster-only: membership grants visibility of the workspace, not access to
+ * its migration runs (unchanged, still strictly owner_identity-scoped).
  */
 export type WorkspaceInviteMethod = "email" | "github" | "link"
 
-export type WorkspaceInvite = {
-  id: string
-  workspace_id: string
-  workspace_name?: string | null
-  inviter_identity: string
-  method: WorkspaceInviteMethod
-  /** Email address when method is "email". */
-  email?: string | null
-  /** GitHub username when method is "github". */
-  github_username?: string | null
-  /** Short-lived token — present on link invites (and the create response). */
-  token?: string | null
-  /** pending | accepted | revoked | expired */
-  status: string
-  created_at: string | null
-  expires_at?: string | null
-  accepted_at?: string | null
-  accepted_by?: string | null
-}
-
-export type WorkspaceInviteList = {
-  items: WorkspaceInvite[]
-  total: number
-}
-
-export type WorkspaceMember = {
-  id: string
-  workspace_id: string
-  user_identity: string
-  display_name?: string | null
-  email?: string | null
-  avatar_url?: string | null
-  /** owner | member */
-  role: string
-  joined_at: string | null
-}
-
-export type WorkspaceMemberList = {
-  items: WorkspaceMember[]
-  total: number
-}
-
+export type WorkspaceInvite = components["schemas"]["WorkspaceInviteResponse"]
+export type WorkspaceInviteList =
+  components["schemas"]["WorkspaceInviteListResponse"]
+export type WorkspaceMember = components["schemas"]["WorkspaceMemberResponse"]
+export type WorkspaceMemberList =
+  components["schemas"]["WorkspaceMemberListResponse"]
 /** Public, token-keyed invite preview — the token is the credential. */
-export type InvitePreview = {
-  workspace_name: string
-  inviter_identity: string
-  inviter_display_name?: string | null
-  method: WorkspaceInviteMethod
-  /** pending | accepted | revoked | expired */
-  status: string
-  expires_at?: string | null
-}
-
-export type InviteAcceptResponse = {
-  workspace_id: string
-  workspace_name: string
-}
+export type InvitePreview = components["schemas"]["InvitePreviewResponse"]
+export type InviteAcceptResponse =
+  components["schemas"]["InviteAcceptResponse"]
 
 export function createWorkspaceInvite(
   workspaceId: string,
@@ -736,7 +668,7 @@ export function createWorkspaceInvite(
 ) {
   return api<WorkspaceInvite>(`/workspaces/${workspaceId}/invites`, {
     method: "POST",
-    body,
+    body: body satisfies components["schemas"]["WorkspaceInviteCreateRequest"],
   })
 }
 

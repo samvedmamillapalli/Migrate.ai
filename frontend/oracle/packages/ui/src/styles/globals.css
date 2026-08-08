@@ -84,7 +84,13 @@
     --secondary: oklch(0.9668 0.0054 95.1);
     --secondary-foreground: oklch(0.3741 0.0087 67.56);
     --muted: oklch(0.9512 0.008 98.88);
-    --muted-foreground: oklch(0.5534 0.0116 58.07);
+    /* Secondary/helper text. Nudged darker than the design source's
+     * 0.5534 (~4.8:1 on card, borderline for comfortable reading at
+     * caption sizes) to ~6:1 — a real but deliberately modest bump so
+     * descriptions and hints stay clearly secondary to --foreground
+     * (~17.5:1) rather than reading as primary text. Same hue/chroma —
+     * lightness only, so it's still the same color, just legible. */
+    --muted-foreground: oklch(0.50 0.0116 58.07);
     --accent: #811d1d;
     --accent-foreground: oklch(1 0 0);
     --ink: oklch(0.2161 0.0061 56.04);
@@ -138,6 +144,15 @@
 
     --tone-neutral-dot: oklch(0.7 0.008 60);
 
+    /* Fourth severity step, past --tone-fail — used only where a scale
+     * genuinely needs Low/Medium/High/Critical (e.g. the risk-level chart).
+     * Same red hue family as --tone-fail, pushed darker and more saturated
+     * so it reads as "worse than fail", not a different color entirely. */
+    --tone-critical-fg: oklch(0.4 0.18 19);
+    --tone-critical-bg: oklch(0.9482 0.0355 19);
+    --tone-critical-border: oklch(0.8228 0.0868 19);
+    --tone-critical-dot: oklch(0.47 0.19 19);
+
     /* Migration Oracle semantic tokens (aliases over the tones above) */
     --oracle-structure: oklch(0.9218 0.0083 91.49);
     --oracle-content: oklch(0.2161 0.0061 56.04);
@@ -160,7 +175,10 @@
     --secondary: oklch(0.2620 0.0052 96);
     --secondary-foreground: oklch(0.8300 0.0060 96);
     --muted: oklch(0.2500 0.0050 96);
-    --muted-foreground: oklch(0.6800 0.0090 96);
+    /* Same rationale as the light-mode value above (~6.4:1 on card, up from
+     * ~6:1) — dark mode started closer to comfortable already, so this is a
+     * smaller nudge. Lightness only, same hue/chroma. */
+    --muted-foreground: oklch(0.70 0.0090 96);
     --accent: #811d1d;
     --accent-foreground: oklch(1 0 0);
     --ink: oklch(0.9500 0.0030 106.45);
@@ -214,6 +232,12 @@
 
     --tone-neutral-dot: oklch(0.48 0.006 96);
 
+    /* Same fourth severity step as light mode, lifted for a dark surface. */
+    --tone-critical-fg: oklch(0.7455 0.1735 19);
+    --tone-critical-bg: oklch(0.2870 0.0570 19);
+    --tone-critical-border: oklch(0.3930 0.0930 19);
+    --tone-critical-dot: oklch(0.5837 0.2189 19);
+
     /* Migration Oracle semantic tokens (aliases over the tones above) */
     --oracle-structure: oklch(0.3080 0.0058 96);
     --oracle-content: oklch(0.9500 0.0030 106.45);
@@ -231,6 +255,21 @@
   body {
     @apply bg-background text-foreground;
     }
+}
+
+/*
+ * Placeholder text, lightened. Deliberately unlayered (outside @layer) so it
+ * wins over both the `placeholder:text-muted-foreground` utility used across
+ * the app's inputs/textareas and any unstyled native placeholder — Tailwind's
+ * own layers always lose to unlayered CSS regardless of source order, so this
+ * is the one place that needs to change instead of every input's className.
+ * `--muted-foreground` alone reads too dark for a placeholder (it's tuned for
+ * real secondary text); the added opacity backs it off further.
+ */
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted-foreground);
+  opacity: 0.55;
 }
 
 @utility font-display {

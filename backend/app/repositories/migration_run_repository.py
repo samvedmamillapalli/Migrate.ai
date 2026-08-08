@@ -65,7 +65,18 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         load_children: bool = False,
     ) -> MigrationRun | None:
         if not load_children:
-            return await super().get_by_id(entity_id)
+            # This is the shared ownership/status-check path for ~15
+            # run-scoped routes, including a 400ms-interval progress poll
+            # during connect/discover/predict — none of them read
+            # run.schema_snapshot off the returned object, so a plain
+            # session.get() (no column deferral) pulls that potentially
+            # large JSONB blob on every call for nothing. Same single-row
+            # lookup by primary key, just without that column.
+            query = self._base_query(include_schema_snapshot=False).where(
+                MigrationRun.id == entity_id
+            )
+            result = await self._session.execute(query)
+            return result.scalar_one_or_none()
 
         # If the run is already in the identity map with children loaded as
         # None (common after grade/memory writes in the same session), expire
@@ -97,6 +108,29 @@ class MigrationRunRepository(BaseRepository[MigrationRun]):
         load_children: bool = False,
     ) -> MigrationRun:
         entity = await self.get_by_id(entity_id, load_children=load_children)
+        if entity is None:
+            raise NotFoundError(f"MigrationRun not found: {entity_id}")
+        return entity
+
+    async def get_shadow_cluster_only(
+        self, entity_id: uuid.UUID
+    ) -> MigrationRun | None:
+        """Lightest read for the shadow-cluster SSE stream: only the
+        shadow_cluster relation, schema_snapshot deferred. Ticks every 1-3s
+        per open stream, so skipping the other 8 selectinload joins and the
+        large JSONB column that ``get_by_id(load_children=True)`` pulls
+        matters — the stream only ever reads ``run.shadow_cluster``.
+        """
+        query = (
+            self._base_query(include_schema_snapshot=False)
+            .options(selectinload(MigrationRun.shadow_cluster))
+            .where(MigrationRun.id == entity_id)
+        )
+        result = await self._session.execute(query)
+        return result.scalar_one_or_none()
+
+    async def get_shadow_cluster_only_or_raise(self, entity_id: uuid.UUID) -> MigrationRun:
+        entity = await self.get_shadow_cluster_only(entity_id)
         if entity is None:
             raise NotFoundError(f"MigrationRun not found: {entity_id}")
         return entity

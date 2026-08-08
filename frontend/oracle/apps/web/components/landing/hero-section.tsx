@@ -17,8 +17,7 @@ export function HeroSection() {
         </span>
       </h1>
       <p className="animate-text-reveal text-muted-foreground mx-auto mt-6 max-w-xl text-[15px] leading-relaxed [animation-delay:250ms]">
-        Migration Oracle predicts, verifies, grades, and continuously improves
-        database migrations using shadow execution and agentic memory.
+      Migration Oracle predicts, verifies, grades, and learns from every database migration using shadow execution and agentic memory.
       </p>
       <div className="animate-rise mt-8 flex flex-wrap items-center justify-center gap-3 [animation-delay:220ms]">
         <Link

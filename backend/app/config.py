@@ -234,6 +234,58 @@ class Settings(BaseSettings):
         validation_alias="GITHUB_API_BASE_URL",
     )
 
+    # --- GitHub OAuth Identity ("who is this GitHub identity") ---
+    # A *different* credential pair from the App above: this is a standard
+    # OAuth 2.0 web-application flow (client_id/client_secret), used only to
+    # verify which GitHub account a user is, for workspace-invite matching
+    # (e.g. "invite by GitHub handle" showing a confirmed identity instead of
+    # a typed string). Never used to act on any repo. Every GitHub App also
+    # has its own Client ID/Client Secret pair (shown on the same App
+    # settings page as the private key) — reuse the same App's credentials
+    # here rather than registering a second one.
+    github_oauth_client_id: str | None = Field(
+        default=None,
+        validation_alias="GITHUB_OAUTH_CLIENT_ID",
+    )
+    github_oauth_client_secret: SecretStr | None = Field(
+        default=None,
+        validation_alias="GITHUB_OAUTH_CLIENT_SECRET",
+    )
+    # Must match the callback URL registered on the App's OAuth settings,
+    # exactly — GitHub rejects on any mismatch. Points at the BACKEND, not
+    # the frontend (this app's own callback route lives on the FastAPI server).
+    github_oauth_redirect_uri: str | None = Field(
+        default=None,
+        validation_alias="GITHUB_OAUTH_REDIRECT_URI",
+    )
+    # Signs/verifies the OAuth `state` param (HMAC-SHA256). Required — a
+    # blank value makes /api/github/install fail outright.
+    github_oauth_state_secret: str | None = Field(
+        default=None,
+        validation_alias="GITHUB_OAUTH_STATE_SECRET",
+    )
+    github_oauth_state_ttl_seconds: int = Field(
+        default=600,
+        ge=60,
+        le=3600,
+        validation_alias="GITHUB_OAUTH_STATE_TTL_SECONDS",
+    )
+    # Fernet key encrypting the access token at rest, same convention as
+    # SLACK_TOKEN_ENCRYPTION_KEY — unset falls back to a dev-only derived
+    # key outside production.
+    github_oauth_token_encryption_key: SecretStr | None = Field(
+        default=None,
+        validation_alias="GITHUB_OAUTH_TOKEN_ENCRYPTION_KEY",
+    )
+    github_oauth_install_success_redirect: str = Field(
+        default="/dashboard/settings?github=connected",
+        validation_alias="GITHUB_OAUTH_INSTALL_SUCCESS_REDIRECT",
+    )
+    github_oauth_install_error_redirect: str = Field(
+        default="/dashboard/settings?github=error",
+        validation_alias="GITHUB_OAUTH_INSTALL_ERROR_REDIRECT",
+    )
+
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, value: str) -> str:

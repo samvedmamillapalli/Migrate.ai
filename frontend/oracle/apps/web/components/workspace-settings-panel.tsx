@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Trash2, UserPlus } from "lucide-react"
+import { Plus, Trash2, UserPlus, X } from "lucide-react"
 
 import { InviteMembersDialog } from "@/components/invite-members-dialog"
 import { WorkspaceMembersPanel } from "@/components/workspace-members-panel"
@@ -32,6 +32,7 @@ export function WorkspaceSettingsPanel() {
   const [workspaces, setWorkspaces] = React.useState<Workspace[] | null>(null)
   const [loadError, setLoadError] = React.useState<string | null>(null)
 
+  const [showCreateForm, setShowCreateForm] = React.useState(false)
   const [name, setName] = React.useState("")
   const [databaseUrl, setDatabaseUrl] = React.useState("")
   const [creating, setCreating] = React.useState(false)
@@ -92,6 +93,7 @@ export function WorkspaceSettingsPanel() {
       })
       setName("")
       setDatabaseUrl("")
+      setShowCreateForm(false)
       await refresh()
       // A first workspace becomes the obvious default to switch to; the
       // sidebar switcher itself already falls back to is_default/first on
@@ -183,12 +185,28 @@ export function WorkspaceSettingsPanel() {
 
   return (
     <div id="workspaces" className="scroll-mt-24">
-      <Label className="mb-4">Workspaces</Label>
+      <div className="mb-1 flex items-center justify-between gap-3">
+        <Label>Workspaces</Label>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setShowCreateForm((v) => !v)}
+        >
+          {showCreateForm ? (
+            <>
+              <X className="size-3.5" /> Cancel
+            </>
+          ) : (
+            <>
+              <Plus className="size-3.5" /> New workspace
+            </>
+          )}
+        </Button>
+      </div>
       <p className="text-muted-foreground mb-4 text-[13px] leading-relaxed">
-        Each workspace stores one target database connection, so migrations
-        against different databases don&apos;t require re-entering a
-        connection URL every time. Runs created without a workspace still
-        work exactly as before.
+        Each workspace remembers one target database connection, so you
+        don&apos;t re-enter it per migration.
       </p>
 
       {loadError ? (
@@ -197,9 +215,9 @@ export function WorkspaceSettingsPanel() {
 
       {workspaces === null ? (
         <p className="text-muted-foreground text-[13px]">Loading…</p>
-      ) : workspaces.length === 0 ? (
-        <EmptyNote>No workspaces yet — create one below.</EmptyNote>
-      ) : (
+      ) : workspaces.length === 0 && !showCreateForm ? (
+        <EmptyNote>No workspaces yet — create one to get started.</EmptyNote>
+      ) : workspaces.length > 0 ? (
         <div className="mb-4 space-y-2">
           {workspaces.map((workspace) => (
             <div
@@ -356,39 +374,48 @@ export function WorkspaceSettingsPanel() {
             </div>
           ))}
         </div>
-      )}
+      ) : null}
 
-      <form onSubmit={(e) => void handleCreate(e)} className="space-y-3 border-t border-border pt-4">
-        <div>
-          <Label className="mb-1.5">New workspace</Label>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="e.g. Production, Client A"
-            className="h-10"
-            maxLength={256}
-          />
-        </div>
-        <div>
-          <Input
-            value={databaseUrl}
-            onChange={(e) => setDatabaseUrl(e.target.value)}
-            placeholder="postgresql://user:pass@host:26257/db (optional — can add later)"
-            className="h-10 font-mono text-xs"
-            autoComplete="off"
-          />
-          <p className="text-muted-foreground mt-1 text-[11.5px] leading-snug">
-            Verified with a real connectivity check before saving. Leave blank
-            to create the workspace without a connection yet.
-          </p>
-        </div>
-        {createError ? (
-          <p className="text-[12px] leading-snug text-destructive">{createError}</p>
-        ) : null}
-        <Button type="submit" variant="default" size="sm" disabled={creating}>
-          {creating ? "Creating…" : "Create workspace"}
-        </Button>
-      </form>
+      {showCreateForm ? (
+        <form
+          onSubmit={(e) => void handleCreate(e)}
+          className={cn(
+            "space-y-3",
+            workspaces && workspaces.length > 0 && "border-border border-t pt-4"
+          )}
+        >
+          <div>
+            <Label className="mb-1.5">Name</Label>
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Production, Client A"
+              className="h-10"
+              maxLength={256}
+              autoFocus
+            />
+          </div>
+          <div>
+            <Input
+              value={databaseUrl}
+              onChange={(e) => setDatabaseUrl(e.target.value)}
+              placeholder="postgresql://user:pass@host:26257/db (optional — can add later)"
+              className="h-10 font-mono text-xs"
+              autoComplete="off"
+            />
+            <p className="text-muted-foreground mt-1 text-[11.5px] leading-snug">
+              Verified with a real connectivity check before saving. Leave blank
+              to create the workspace without a connection yet.
+            </p>
+          </div>
+          {createError ? (
+            <p className="text-[12px] leading-snug text-destructive">{createError}</p>
+          ) : null}
+          <Button type="submit" variant="default" size="sm" disabled={creating}>
+            {creating ? "Creating…" : "Create workspace"}
+          </Button>
+        </form>
+      ) : null}
 
       <div className="border-border mt-6 border-t pt-5">
         <WorkspaceMembersPanel

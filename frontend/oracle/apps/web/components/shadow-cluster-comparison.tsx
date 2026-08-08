@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronDown } from "lucide-react"
+import { ChevronDown, ChevronLeft, ChevronRight } from "lucide-react"
 
 import { ComparisonsBlock, EventLog } from "@/components/shadow-live-view"
 import {
@@ -37,6 +37,11 @@ import { cn } from "@workspace/ui/lib/utils"
  * to put in a SIZE column. Row counts are real. Total storage delta is
  * measured separately and already shown in the cost strip.
  */
+
+/** Wide tables (real customer schemas can run to hundreds of columns) show
+ * 10 column rows at a time per table instead of dumping the whole list
+ * inline under the table's summary row. */
+const COLUMNS_PAGE_SIZE = 10
 
 const DIFF_TONE: Record<ClusterTableView["diffKind"], Tone | null> = {
   added: "pass",
@@ -91,6 +96,9 @@ function ClusterCard({
 }) {
   const tableDelta = compareTo ? formatDelta(card.tableCount - compareTo.tableCount) : null
   const indexDelta = compareTo ? formatDelta(card.indexCount - compareTo.indexCount) : null
+
+  // Keyed by table key so each table's column list pages independently.
+  const [columnsPageByTable, setColumnsPageByTable] = React.useState<Record<string, number>>({})
 
   return (
     <Panel
@@ -166,30 +174,97 @@ function ClusterCard({
                       {formatCount(table.rowCount)}
                     </td>
                   </tr>
-                  {columns?.map((column) => (
-                    <tr
-                      key={`${table.key}.${column.name}`}
-                      className={cn(
-                        "border-border/40 border-b last:border-b-0",
-                        diffRowClass(column.kind)
-                      )}
-                    >
-                      <td
-                        className={cn(
-                          "py-1 pr-2 pl-5 font-mono whitespace-nowrap",
-                          column.kind === "removed" && "line-through"
-                        )}
-                      >
-                        {column.name}
-                      </td>
-                      <td
-                        colSpan={3}
-                        className="text-muted-foreground py-1 pr-2 text-right font-mono whitespace-nowrap"
-                      >
-                        {column.type ?? "—"}
-                      </td>
-                    </tr>
-                  ))}
+                  {columns && columns.length > 0
+                    ? (() => {
+                        const page = columnsPageByTable[table.key] ?? 0
+                        const pageCount = Math.max(
+                          1,
+                          Math.ceil(columns.length / COLUMNS_PAGE_SIZE)
+                        )
+                        const clamped = Math.min(page, pageCount - 1)
+                        const paged = columns.slice(
+                          clamped * COLUMNS_PAGE_SIZE,
+                          clamped * COLUMNS_PAGE_SIZE + COLUMNS_PAGE_SIZE
+                        )
+                        return (
+                          <>
+                            {paged.map((column) => (
+                              <tr
+                                key={`${table.key}.${column.name}`}
+                                className={cn(
+                                  "border-border/40 border-b last:border-b-0",
+                                  diffRowClass(column.kind)
+                                )}
+                              >
+                                <td
+                                  className={cn(
+                                    "py-1 pr-2 pl-5 font-mono whitespace-nowrap",
+                                    column.kind === "removed" && "line-through"
+                                  )}
+                                >
+                                  {column.name}
+                                </td>
+                                <td
+                                  colSpan={3}
+                                  className="text-muted-foreground py-1 pr-2 text-right font-mono whitespace-nowrap"
+                                >
+                                  {column.type ?? "—"}
+                                </td>
+                              </tr>
+                            ))}
+                            {columns.length > COLUMNS_PAGE_SIZE ? (
+                              <tr className="border-border/40 border-b last:border-b-0">
+                                <td colSpan={4} className="py-1 pr-2 pl-5">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-muted-foreground text-[11px]">
+                                      {clamped * COLUMNS_PAGE_SIZE + 1}–
+                                      {Math.min(
+                                        clamped * COLUMNS_PAGE_SIZE + COLUMNS_PAGE_SIZE,
+                                        columns.length
+                                      )}{" "}
+                                      of {columns.length} columns
+                                    </span>
+                                    <div className="flex items-center gap-1.5">
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setColumnsPageByTable((s) => ({
+                                            ...s,
+                                            [table.key]: Math.max(0, clamped - 1),
+                                          }))
+                                        }
+                                        disabled={clamped === 0}
+                                        className="border-border text-foreground grid size-6 place-items-center rounded border disabled:cursor-not-allowed disabled:opacity-40"
+                                        aria-label="Previous columns"
+                                      >
+                                        <ChevronLeft className="size-3.5" />
+                                      </button>
+                                      <span className="text-muted-foreground min-w-[48px] text-center text-[11px]">
+                                        Page {clamped + 1} of {pageCount}
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setColumnsPageByTable((s) => ({
+                                            ...s,
+                                            [table.key]: Math.min(pageCount - 1, clamped + 1),
+                                          }))
+                                        }
+                                        disabled={clamped >= pageCount - 1}
+                                        className="border-border text-foreground grid size-6 place-items-center rounded border disabled:cursor-not-allowed disabled:opacity-40"
+                                        aria-label="Next columns"
+                                      >
+                                        <ChevronRight className="size-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            ) : null}
+                          </>
+                        )
+                      })()
+                    : null}
                 </React.Fragment>
               )
             })}

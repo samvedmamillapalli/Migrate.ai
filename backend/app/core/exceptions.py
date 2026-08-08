@@ -71,3 +71,11 @@ class GithubWebhookError(AppError):
 
 class GithubApiError(AppError):
     """Raised when a call to the GitHub REST API (App JWT, installation token, PR files/comments/check runs) fails."""
+
+
+class GithubOAuthError(AppError):
+    """Raised when the GitHub OAuth identity exchange or install fails."""
+
+
+class GithubStateError(AppError):
+    """Raised when the GitHub OAuth identity `state` parameter is invalid or expired."""

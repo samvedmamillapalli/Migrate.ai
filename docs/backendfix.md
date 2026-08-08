@@ -256,6 +256,189 @@ matches on vocabulary instead of meaning and this beat falls flat.
 
 ## Change Log
 
+### 2026-08-08 — GitHub OAuth identity built, closing the last frontend/backend gap
+
+Systematic audit of every function in `lib/api/endpoints.ts` against the
+live `/openapi.json` found exactly one real gap:
+`/api/github/{status,install,disconnect}` — "who is this GitHub identity,"
+for workspace-invite matching (e.g. showing a confirmed account instead of
+a typed handle). **Distinct from the GitHub App used for PR-integration
+webhooks** — a different credential entirely (OAuth client_id/secret vs.
+an App's JWT-signing private key), never used to act on any repo, scoped
+`read:user` only.
+
+Also found: the same samrita commit that pulled in the new analytics
+charts (2026-08-07f) had **also** stripped the working Connect/Disconnect
+UI out of `dashboard/settings/page.tsx` and replaced it with a static
+"COMING SOON" badge, for the same reason as the workspace-invites
+regression caught in that entry — their branch predates this feature
+existing on either side. This one wasn't caught during that merge because
+the file wasn't in conflict (settings/page.tsx wasn't independently
+modified on this branch at the time), so it slipped through as a clean
+merge. Rebuilt from scratch using the working Slack panel directly above
+it in the same file as the template — same state shape, same banner/error
+conventions, same handler structure.
+
+**What changed** (backend): `GithubIdentity` table + migration
+`x7s5p2k6m042`. `GithubIdentityOAuthService` mirrors `SlackOAuthService`
+structurally exactly (HMAC-signed TTL-bounded state, Fernet token
+encryption with the same dev-fallback-derives-from-DATABASE_URL posture,
+upsert-by-owner) — the only real differences are GitHub's OAuth endpoints
+(`github.com/login/oauth/{authorize,access_token}` +
+`api.github.com/user` for the identity lookup) and field names. New
+routes `GET/POST /api/github/{status,install,oauth/callback,disconnect}`;
+the callback added to `SessionAuthMiddleware._PUBLIC_PREFIXES` (public,
+same posture as `/api/slack/oauth/callback` — GitHub's redirect carries no
+Bearer token, and the signed `state` param is the actual verification).
+32 new unit tests (16 in `test_github_identity_oauth_service.py`, mirroring
+`test_slack_oauth_service.py`'s exact structure). Full suite 219 → 235.
+
+**What changed** (frontend): rebuilt the GitHub Integrations row in
+`dashboard/settings/page.tsx` for real — connect/disconnect buttons, a
+banner reflecting `?github=connected|error`, action-error text, all
+wired to real endpoints. Swapped `endpoints.ts`'s hand-written GitHub
+identity types for `components["schemas"][...]` generated from the live
+spec, same as the workspace invite/member types in 2026-08-07e.
+`npx tsc --noEmit` clean.
+
+**Not live-verified end to end** — same honest gap as the PR-integration
+App before real credentials arrived: no `GITHUB_OAUTH_CLIENT_ID`/
+`_CLIENT_SECRET` configured in this environment, so the real
+`github.com` token exchange has never actually run. What *is* verified
+live: `GET /api/github/status` correctly reports `configured: false`
+before any credentials exist; `GET /api/github/install` fails clean
+(`400`, not `500`) with an actionable message; unauthenticated requests
+get `401`. The exchange/upsert/encryption logic itself is covered by 16
+unit tests with the network layer mocked, mirroring the Slack OAuth test
+suite's coverage exactly. To finish verifying for real: add the same
+GitHub App's Client ID + Client Secret (from the App's settings page,
+same place as the private key) as `GITHUB_OAUTH_CLIENT_ID` /
+`GITHUB_OAUTH_CLIENT_SECRET`, plus `GITHUB_OAUTH_STATE_SECRET` (any
+random string), then click Connect on the real settings page.
+
+### 2026-08-07f — Pulled samrita's second frontend round; hand-merged the two real conflicts
+
+`origin/samrita` gained one new commit (`ec0b4a6`) since the last merge.
+Mostly pure-additive and taken wholesale: `analytics-charts.tsx` (new —
+scatter/donut/bar charts) backed by real new fields in
+`fetch_accuracy_metrics` (`runtime_scatter`, `migration_type_distribution`,
+`risk_level_distribution` — purely additive, no existing keys changed),
+plus dashboard/settings page rewrites, landing copy, and `ui-kit.tsx`/
+`globals.css` styling. Deliberately **not** pulled: `backend/uv.lock`
+(1504 lines) — no accompanying `pyproject.toml` change, this project is
+pip + `requirements.txt` by convention, looks like a stray local artifact
+from running `uv` once, not a real package-manager migration.
+
+**Two real conflicts, both from the same root cause:** samrita's branch
+diverged from a point before this session's GitHub PR integration and
+workspace-invites backend existed, so their new commit rebuilt
+`workspace-settings-panel.tsx` and `workspace-members-panel.tsx` from a
+version of the world where those backends were still fiction — disabling
+the invite button ("coming soon") and adding a "COMING SOON" badge to the
+members panel. Blindly taking their files would have **regressed both
+features back to fake placeholders** minutes after live-verifying them for
+real. Hand-merged instead:
+- `workspace-settings-panel.tsx`: kept the GitHub repo-linking block (not
+  present in samrita's version at all — it predates that feature on their
+  side) and the working, enabled invite button; took their real UX
+  improvement (collapsible "New workspace" form behind a toggle button,
+  which was a genuine simplification).
+- `workspace-members-panel.tsx`: took their real improvement (a load
+  failure silently falls back to empty state instead of surfacing raw
+  backend text; only *remove* actions surface an error) but kept the
+  copy accurate to reality instead of "not available yet."
+
+Verified after merging: backend imports clean, 219/219 unit tests,
+`GET /runs/metrics/accuracy` live-returns the three new fields (6 real
+graded runs in the scatter), `npx tsc --noEmit` clean, landing page
+renders correctly in a real browser with the new styling.
+
+### 2026-08-07e — Workspace invites + members built, live-verified against the real database
+
+Closes the last loose end from the 2026-08-07d merge: samrita's invite
+dialog, members panel, and `/invite/[token]` page had zero backend behind
+them. Built to that exact contract (endpoints.ts's hand-written types were
+the spec) rather than redesigning the UI.
+
+**Scope decision, made explicit before writing code, not assumed:** roster
+only. A `workspace_members` row grants visibility of the workspace
+(`GET /workspaces`, `GET /workspaces/{id}` now check owner-OR-member, not
+owner-only) so accepting an invite isn't a dead end — but it grants
+**nothing** at the run level. `MigrationRun` tenancy is completely
+untouched; the existing `owner_identity`-only filter in
+`MigrationRunService.list_migration_runs` does that enforcement for free,
+verified live: created a run under the shared workspace as the owner,
+confirmed a newly-accepted member querying by their own identity sees
+**zero** runs. Widening that is a separate, larger decision, not a side
+effect of shipping invites.
+
+**What changed** (backend):
+- `workspace_members` (workspace_id, user_identity, role) and
+  `workspace_invites` (method email/github/link, token, status, expiry)
+  tables. Migration `w6r4o1j5l931` backfills every existing workspace's
+  owner as an implicit 'owner' member — 22/22 backfilled clean on this DB.
+- Invite tokens are stored as plain text by design, not hashed — the
+  "link" tab needs to read an existing pending invite's token back to
+  reuse it, which a one-way hash can't support. Same shape as any
+  capability-URL share link (Slack/Notion/Linear); protected by TLS,
+  DB access controls, 14-day expiry, and revocability, not secrecy of a
+  hash. "Expired" is never a stored status — computed at read time from
+  `expires_at` (`_effective_status`), so no cron job is needed to flip it.
+- `WorkspaceService` gained `list_accessible_workspaces` /
+  `get_accessible_workspace` (owner-or-member) alongside the existing
+  owner-only `get_owned_workspace` (still used for PATCH/DELETE — settings
+  mutation stays owner-only), plus `add_member` (idempotent — accepting a
+  token twice must not duplicate a row or raise) and `remove_member`
+  (owner-only; the 'owner' role row can never be removed this way — the
+  only way to lose it is deleting the whole workspace, which cascades).
+- New `WorkspaceInviteService`: create/list/revoke (owner-only, same
+  access check as workspace settings), public `get_preview` (token is the
+  credential, no ownership check — 404 only for a genuinely unknown
+  token, never for revoked/expired/accepted, which return 200 with that
+  status so the UI can explain it), and `accept_invite` (rejects non-
+  pending with `ConflictError`, otherwise idempotently adds the member and
+  marks the invite accepted).
+- Email sending is real (SES via `AwsClientFactory.ses()`), best-effort —
+  mirrors `SlackNotificationService`/`GithubNotificationService`'s posture
+  exactly: a delivery failure (SES sandbox mode requires the *recipient*
+  verified too, a real and common dev-environment failure mode) never
+  undoes or blocks the invite record that already exists. Verified live
+  with `SES_SENDER_EMAIL` unset: `method=email` invite creation still
+  returns 201, logs `"Skipping invite email — SES_SENDER_EMAIL not
+  configured"` rather than failing.
+- New public routes `GET /invites/{token}` / `POST /invites/{token}/accept`
+  — `/invites` added to `SessionAuthMiddleware._PUBLIC_PREFIXES` for the
+  GET; the POST still requires a real session (the middleware validates
+  any Bearer token present regardless of the public allowlist, and
+  `resolve_owner_identity` enforces `auth_enforced()` the same as every
+  other authenticated route — confirmed live: `GET /invites/{token}` with
+  no header → 200; `GET /workspaces/{id}/invites` with no header → 401).
+- 34 new unit tests (`test_workspace_membership.py`,
+  `test_workspace_invite_service.py`). Full suite 185 → 219.
+
+**What changed** (frontend): swapped samrita's hand-written placeholder
+types (`WorkspaceInvite`, `WorkspaceMember`, `InvitePreview`, ...) for
+`components["schemas"][...]` generated from the live OpenAPI spec, per
+their own comment's stated intent. Tightened the backend's `method`/
+`status`/`role` fields to `Literal` types (were plain `str`) specifically
+so `openapi-typescript` generates real unions instead of `string` —
+`WorkspaceInviteMethod` failed to typecheck against a bare `string` field
+before this. No component logic changed; the UI was already built to this
+exact contract. `npx tsc --noEmit` clean.
+
+**Live-verified end to end against the real database** (14 real-HTTP +
+10 real-DB-direct checks, one throwaway workspace, cleaned up after):
+create workspace → owner auto-added as `role=owner` member → create a
+`link` invite → public preview with no auth header → preview 404s
+correctly for a garbage token → a **distinct** identity accepts the real
+token → that identity's `list_accessible_workspaces` now includes it →
+roster shows both members → re-accepting the same (now-accepted) token is
+rejected with no duplicate member row → removing the owner's member row
+is rejected (401) → removing the regular member succeeds (204) → revoke
+sets status to `revoked` → an unauthenticated caller cannot list invites
+(401) → **the run-access boundary itself**, confirmed by direct query,
+not inferred.
+
 ### 2026-08-07d — Merged `samrita`'s frontend into `Samved` (frontend-only, selective)
 
 `samrita` was confirmed **frontend-only** (16 files, zero backend changes).

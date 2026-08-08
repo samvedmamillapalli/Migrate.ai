@@ -29,6 +29,7 @@ _KNOWN_SERVICES = frozenset(
         "secretsmanager",
         "logs",
         "cloudwatch",
+        "ses",
     }
 )
 
@@ -116,6 +117,9 @@ class AwsClientFactory:
 
     def cloudwatch(self) -> BaseClient:
         return self.client("cloudwatch")
+
+    def ses(self) -> BaseClient:
+        return self.client("ses")
 
     def close(self) -> None:
         """Drop cached clients. boto3 does not require explicit network teardown."""

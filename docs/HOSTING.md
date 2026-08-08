@@ -80,3 +80,47 @@ GITHUB_WEBHOOK_SECRET=...
 Webhook URL to register on the App: `https://<your-api-domain>/webhooks/github`.
 The route is public (no Bearer token — GitHub authenticates itself via
 `X-Hub-Signature-256`, allowlisted in `app/api/middleware_auth.py`).
+
+## GitHub identity OAuth (optional) — ⚠️ finish this at deploy time
+
+**Status as of 2026-08-08: built and code-complete, deliberately NOT
+live-tested end to end.** The one step that needs a human clicking
+"Authorize" on a real GitHub page was deferred until this app has a
+stable public URL — doing it against the ngrok tunnel used for local dev
+would mean redoing it anyway once the real domain exists, since GitHub
+OAuth Apps validate the callback URL exactly. Full detail:
+`docs/backendfix.md`'s 2026-08-08 entry.
+
+Distinct from the PR-integration App above — this is "who is this GitHub
+identity" for workspace-invite matching only (`read:user` scope, never
+touches repos). Reuses the **same** GitHub App's OAuth Client ID/Secret
+(visible on the App's settings page, same place as the private key used
+for PR integration) — no second App to register.
+
+Set once the real domain is live:
+
+```env
+GITHUB_OAUTH_CLIENT_ID=Iv23liQqujW04eOgDO6u
+GITHUB_OAUTH_CLIENT_SECRET=...
+GITHUB_OAUTH_REDIRECT_URI=https://<your-api-domain>/api/github/oauth/callback
+GITHUB_OAUTH_STATE_SECRET=<any random string>
+GITHUB_OAUTH_TOKEN_ENCRYPTION_KEY=<Fernet key — see .env.example for the generate command>
+GITHUB_OAUTH_INSTALL_SUCCESS_REDIRECT=https://<your-frontend-domain>/dashboard/settings?github=connected
+GITHUB_OAUTH_INSTALL_ERROR_REDIRECT=https://<your-frontend-domain>/dashboard/settings?github=error
+```
+
+**Then, before calling this done:**
+
+1. On the App's settings page (**github.com/settings/apps/migration-oracle**),
+   update **Callback URL** under "Identifying and authorizing users" to
+   `https://<your-api-domain>/api/github/oauth/callback` — the value used
+   during local dev (the ngrok tunnel) will be stale once redeployed.
+2. Restart the API so it picks up the new env vars.
+3. `GET /api/github/status` (authenticated) should report `configured: true`.
+4. Click **Connect** in the real Settings page, approve on GitHub's real
+   page, confirm it redirects back with `?github=connected` and shows your
+   GitHub username. This is the one step that has never actually run
+   end-to-end — everything up to the real `github.com` redirect has been
+   verified (16 unit tests + a live check that the generated authorize URL
+   gets a real `302` from GitHub, not an error), but the actual
+   authorize→callback→token-exchange round trip has not.

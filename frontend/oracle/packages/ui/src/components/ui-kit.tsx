@@ -78,12 +78,20 @@ export function Label({
 }
 
 /** Semantic tone names shared by pills, dots and callouts. */
-export type Tone = "pass" | "warn" | "fail" | "info" | "model" | "neutral"
+export type Tone =
+  | "pass"
+  | "warn"
+  | "fail"
+  | "critical"
+  | "info"
+  | "model"
+  | "neutral"
 
 const TONE_FG: Record<Tone, string> = {
   pass: "text-[var(--tone-pass-fg)]",
   warn: "text-[var(--tone-warn-fg)]",
   fail: "text-[var(--tone-fail-fg)]",
+  critical: "text-[var(--tone-critical-fg)]",
   info: "text-[var(--tone-info-fg)]",
   model: "text-[var(--tone-model-fg)]",
   neutral: "text-muted-foreground",
@@ -93,6 +101,7 @@ const TONE_SURFACE: Record<Tone, string> = {
   pass: "bg-[var(--tone-pass-bg)] border-[var(--tone-pass-border)]",
   warn: "bg-[var(--tone-warn-bg)] border-[var(--tone-warn-border)]",
   fail: "bg-[var(--tone-fail-bg)] border-[var(--tone-fail-border)]",
+  critical: "bg-[var(--tone-critical-bg)] border-[var(--tone-critical-border)]",
   info: "bg-[var(--tone-info-bg)] border-[var(--tone-info-border)]",
   model: "bg-[var(--tone-model-bg)] border-[var(--tone-model-border)]",
   neutral: "bg-muted border-border",
@@ -102,6 +111,7 @@ const TONE_DOT: Record<Tone, string> = {
   pass: "bg-[var(--tone-pass-dot)]",
   warn: "bg-[var(--tone-warn-dot)]",
   fail: "bg-[var(--tone-fail-dot)]",
+  critical: "bg-[var(--tone-critical-dot)]",
   info: "bg-[var(--tone-info-dot)]",
   model: "bg-[var(--tone-model-dot)]",
   neutral: "bg-[var(--tone-neutral-dot)]",

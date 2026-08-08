@@ -686,7 +686,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Workspaces */
+        /**
+         * List Workspaces
+         * @description Owned + member workspaces (docs/backendfix.md 2026-08-07 — invites).
+         *     Membership grants visibility here and on the single-workspace GET below;
+         *     it does not grant access to that workspace's runs.
+         */
         get: operations["list_workspaces_workspaces_get"];
         put?: never;
         /** Create Workspace */
@@ -714,6 +719,75 @@ export interface paths {
         head?: never;
         /** Update Workspace */
         patch: operations["update_workspace_workspaces__workspace_id__patch"];
+        trace?: never;
+    };
+    "/workspaces/{workspace_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Workspace Members */
+        get: operations["list_workspace_members_workspaces__workspace_id__members_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspace_id}/members/{member_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove Workspace Member */
+        delete: operations["remove_workspace_member_workspaces__workspace_id__members__member_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspace_id}/invites": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Workspace Invites */
+        get: operations["list_workspace_invites_workspaces__workspace_id__invites_get"];
+        put?: never;
+        /** Create Workspace Invite */
+        post: operations["create_workspace_invite_workspaces__workspace_id__invites_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/workspaces/{workspace_id}/invites/{invite_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Revoke Workspace Invite */
+        delete: operations["revoke_workspace_invite_workspaces__workspace_id__invites__invite_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/memories/health": {
@@ -1011,6 +1085,129 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/invites/{token}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Invite Preview */
+        get: operations["get_invite_preview_invites__token__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/invites/{token}/accept": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Accept Invite */
+        post: operations["accept_invite_invites__token__accept_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/github/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Start GitHub OAuth identity install
+         * @description Generate the GitHub OAuth authorize URL for the authenticated user.
+         *
+         *     Requires a valid Clerk bearer token. The returned ``authorize_url``
+         *     embeds a signed, TTL-bounded state; the browser must be redirected
+         *     there to begin the OAuth flow.
+         */
+        get: operations["github_install_api_github_install_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/github/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GitHub OAuth identity callback
+         * @description Handle GitHub's OAuth redirect back to the application.
+         *
+         *     Public (the browser follows GitHub's redirect with no Authorization
+         *     header) — the signed ``state`` is verified first, and the embedded
+         *     owner identity is used to associate the identity with the correct
+         *     Clerk user. On failure, redirects with ``?github=error``.
+         */
+        get: operations["github_oauth_callback_api_github_oauth_callback_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/github/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Github Status
+         * @description Return whether GitHub identity is configured and connected for this user.
+         */
+        get: operations["github_status_api_github_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/github/disconnect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Github Disconnect
+         * @description Remove the GitHub identity for the current user.
+         */
+        post: operations["github_disconnect_api_github_disconnect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1207,6 +1404,36 @@ export interface components {
              */
             updated_at: string;
         };
+        /** GithubIdentityDisconnectResponse */
+        GithubIdentityDisconnectResponse: {
+            /**
+             * Connected
+             * @default false
+             */
+            connected: boolean;
+        };
+        /**
+         * GithubIdentityInstallAuthorizeResponse
+         * @description Redirect target for GitHub's OAuth authorization page.
+         */
+        GithubIdentityInstallAuthorizeResponse: {
+            /** Authorize Url */
+            authorize_url: string;
+        };
+        /**
+         * GithubIdentityStatusResponse
+         * @description Liveness/diagnostic endpoint for the GitHub identity integration.
+         */
+        GithubIdentityStatusResponse: {
+            /** Connected */
+            connected: boolean;
+            /** Configured */
+            configured: boolean;
+            /** Username */
+            username?: string | null;
+            /** Avatar Url */
+            avatar_url?: string | null;
+        };
         /**
          * GithubIntegrationStatus
          * @description Drives the workspace-settings panel's GitHub section, so the UI can
@@ -1301,6 +1528,37 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** InviteAcceptResponse */
+        InviteAcceptResponse: {
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Workspace Name */
+            workspace_name: string;
+        };
+        /** InvitePreviewResponse */
+        InvitePreviewResponse: {
+            /** Workspace Name */
+            workspace_name: string;
+            /** Inviter Identity */
+            inviter_identity: string;
+            /** Inviter Display Name */
+            inviter_display_name?: string | null;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "email" | "github" | "link";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "accepted" | "revoked" | "expired";
+            /** Expires At */
+            expires_at?: string | null;
         };
         /** MemoryListItem */
         MemoryListItem: {
@@ -2031,12 +2289,107 @@ export interface components {
              */
             github_migration_glob?: string | null;
         };
+        /** WorkspaceInviteCreateRequest */
+        WorkspaceInviteCreateRequest: {
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "email" | "github" | "link";
+            /** Email */
+            email?: string | null;
+            /** Github Username */
+            github_username?: string | null;
+        };
+        /** WorkspaceInviteListResponse */
+        WorkspaceInviteListResponse: {
+            /** Items */
+            items: components["schemas"]["WorkspaceInviteResponse"][];
+            /** Total */
+            total: number;
+        };
+        /** WorkspaceInviteResponse */
+        WorkspaceInviteResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** Workspace Name */
+            workspace_name?: string | null;
+            /** Inviter Identity */
+            inviter_identity: string;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "email" | "github" | "link";
+            /** Email */
+            email?: string | null;
+            /** Github Username */
+            github_username?: string | null;
+            /** Token */
+            token?: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "accepted" | "revoked" | "expired";
+            /** Created At */
+            created_at?: string | null;
+            /** Expires At */
+            expires_at?: string | null;
+            /** Accepted At */
+            accepted_at?: string | null;
+            /** Accepted By */
+            accepted_by?: string | null;
+        };
         /** WorkspaceListResponse */
         WorkspaceListResponse: {
             /** Items */
             items: components["schemas"]["WorkspaceResponse"][];
             /** Total */
             total: number;
+        };
+        /** WorkspaceMemberListResponse */
+        WorkspaceMemberListResponse: {
+            /** Items */
+            items: components["schemas"]["WorkspaceMemberResponse"][];
+            /** Total */
+            total: number;
+        };
+        /** WorkspaceMemberResponse */
+        WorkspaceMemberResponse: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+            /** User Identity */
+            user_identity: string;
+            /** Display Name */
+            display_name?: string | null;
+            /** Email */
+            email?: string | null;
+            /** Avatar Url */
+            avatar_url?: string | null;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "owner" | "member";
+            /** Joined At */
+            joined_at?: string | null;
         };
         /** WorkspaceResponse */
         WorkspaceResponse: {
@@ -3417,6 +3770,165 @@ export interface operations {
             };
         };
     };
+    list_workspace_members_workspaces__workspace_id__members_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceMemberListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_workspace_member_workspaces__workspace_id__members__member_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                member_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_workspace_invites_workspaces__workspace_id__invites_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceInviteListResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_workspace_invite_workspaces__workspace_id__invites_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WorkspaceInviteCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceInviteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_workspace_invite_workspaces__workspace_id__invites__invite_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                workspace_id: string;
+                invite_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceInviteResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_corpus_health_memories_health_get: {
         parameters: {
             query?: never;
@@ -3756,6 +4268,161 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_invite_preview_invites__token__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitePreviewResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    accept_invite_invites__token__accept_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteAcceptResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    github_install_api_github_install_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GithubIdentityInstallAuthorizeResponse"];
+                };
+            };
+        };
+    };
+    github_oauth_callback_api_github_oauth_callback_get: {
+        parameters: {
+            query?: {
+                code?: string | null;
+                state?: string | null;
+                error?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    github_status_api_github_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GithubIdentityStatusResponse"];
+                };
+            };
+        };
+    };
+    github_disconnect_api_github_disconnect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GithubIdentityDisconnectResponse"];
                 };
             };
         };

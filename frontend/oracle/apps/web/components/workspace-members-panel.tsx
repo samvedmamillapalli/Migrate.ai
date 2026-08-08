@@ -20,8 +20,9 @@ import { EmptyNote, Label } from "@workspace/ui/components/ui-kit"
  * currently active workspace; the parent passes `key={workspace?.id}` so it
  * reloads when the active workspace changes.
  *
- * Backed by endpoints that don't exist in the backend yet — this is the UI
- * shape to build toward (see lib/api/endpoints.ts).
+ * Backed by real workspace_members rows (docs/backendfix.md 2026-08-07).
+ * The owner's row can't be removed (server rejects it); the frontend
+ * mirrors that by disabling the button for role === "owner".
  */
 export function WorkspaceMembersPanel({
   workspace,
@@ -29,7 +30,10 @@ export function WorkspaceMembersPanel({
   workspace: Workspace | null
 }) {
   const [members, setMembers] = React.useState<WorkspaceMember[] | null>(null)
-  const [error, setError] = React.useState<string | null>(null)
+  // Only ever set from a *remove* action, never from the initial load — a
+  // transient load failure just falls back to the empty state below rather
+  // than surfacing raw backend text to the user.
+  const [actionError, setActionError] = React.useState<string | null>(null)
   const [removingId, setRemovingId] = React.useState<string | null>(null)
 
   const refresh = React.useCallback(async () => {
@@ -40,11 +44,7 @@ export function WorkspaceMembersPanel({
     try {
       const result = await listWorkspaceMembers(workspace.id)
       setMembers(result.items)
-      setError(null)
-    } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Could not load members."
-      )
+    } catch {
       setMembers([])
     }
   }, [workspace])
@@ -56,12 +56,12 @@ export function WorkspaceMembersPanel({
   async function handleRemove(member: WorkspaceMember) {
     if (!workspace) return
     setRemovingId(member.id)
-    setError(null)
+    setActionError(null)
     try {
       await removeWorkspaceMember(workspace.id, member.id)
       setMembers((prev) => (prev ?? []).filter((item) => item.id !== member.id))
     } catch (err) {
-      setError(
+      setActionError(
         err instanceof ApiError ? err.message : "Could not remove that member."
       )
     } finally {
@@ -80,9 +80,9 @@ export function WorkspaceMembersPanel({
           : "Create or select a workspace to see who has access to it."}
       </p>
 
-      {error ? (
+      {actionError ? (
         <p className="mb-3 text-[12px] leading-snug text-destructive">
-          {error}
+          {actionError}
         </p>
       ) : null}
 

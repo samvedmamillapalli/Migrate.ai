@@ -12,12 +12,19 @@ import uuid
 from fastapi import APIRouter, Query, Request, status
 
 from app.auth.tenancy import auth_enforced, resolve_owner_identity, session_owner
-from app.dependencies import WorkspaceSvc
+from app.dependencies import WorkspaceInviteSvc, WorkspaceSvc
 from app.schemas.workspace import (
     WorkspaceCreateRequest,
     WorkspaceListResponse,
     WorkspaceResponse,
     WorkspaceUpdateRequest,
+)
+from app.schemas.workspace_invite import (
+    WorkspaceInviteCreateRequest,
+    WorkspaceInviteListResponse,
+    WorkspaceInviteResponse,
+    WorkspaceMemberListResponse,
+    WorkspaceMemberResponse,
 )
 from app.services.connection_secrets import (
     load_connection,
@@ -25,6 +32,7 @@ from app.services.connection_secrets import (
     verify_connection_ping,
 )
 from app.services.github_setup import assert_repo_installed
+from app.services.workspace_invite_service import _effective_status
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
 
@@ -97,10 +105,13 @@ async def list_workspaces(
     request: Request,
     owner_identity: str | None = Query(default=None, max_length=256),
 ) -> WorkspaceListResponse:
+    """Owned + member workspaces (docs/backendfix.md 2026-08-07 — invites).
+    Membership grants visibility here and on the single-workspace GET below;
+    it does not grant access to that workspace's runs."""
     owner = session_owner(request) if auth_enforced() else (owner_identity or "").strip()
     if not owner:
         return WorkspaceListResponse(items=[], total=0)
-    workspaces = await service.list_workspaces(owner)
+    workspaces = await service.list_accessible_workspaces(owner)
     items = [WorkspaceResponse.from_workspace(w) for w in workspaces]
     return WorkspaceListResponse(items=items, total=len(items))
 
@@ -113,7 +124,7 @@ async def get_workspace(
     owner_identity: str | None = Query(default=None, max_length=256),
 ) -> WorkspaceResponse:
     owner = resolve_owner_identity(request, owner_identity)
-    workspace = await service.get_owned_workspace(workspace_id, owner)
+    workspace = await service.get_accessible_workspace(workspace_id, owner)
     return WorkspaceResponse.from_workspace(workspace)
 
 
@@ -160,3 +171,94 @@ async def delete_workspace(
 ) -> None:
     owner = resolve_owner_identity(request, None)
     await service.delete_workspace(workspace_id, owner)
+
+
+# --- Members ------------------------------------------------------------
+# Roster only — see app/database/models/workspace_member.py. Any accessible
+# (owner or member) identity can view; only the owner can remove.
+
+
+@router.get("/{workspace_id}/members", response_model=WorkspaceMemberListResponse)
+async def list_workspace_members(
+    workspace_id: uuid.UUID,
+    service: WorkspaceSvc,
+    request: Request,
+) -> WorkspaceMemberListResponse:
+    owner = resolve_owner_identity(request, None)
+    members = await service.list_members(workspace_id, owner)
+    items = [WorkspaceMemberResponse.from_member(m) for m in members]
+    return WorkspaceMemberListResponse(items=items, total=len(items))
+
+
+@router.delete(
+    "/{workspace_id}/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT
+)
+async def remove_workspace_member(
+    workspace_id: uuid.UUID,
+    member_id: uuid.UUID,
+    service: WorkspaceSvc,
+    request: Request,
+) -> None:
+    owner = resolve_owner_identity(request, None)
+    await service.remove_member(workspace_id, member_id, owner)
+
+
+# --- Invites --------------------------------------------------------------
+# Owner-only to create/list/revoke, matching workspace-settings access.
+
+
+@router.post(
+    "/{workspace_id}/invites",
+    response_model=WorkspaceInviteResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def create_workspace_invite(
+    workspace_id: uuid.UUID,
+    payload: WorkspaceInviteCreateRequest,
+    service: WorkspaceInviteSvc,
+    request: Request,
+) -> WorkspaceInviteResponse:
+    from app.database.models import WorkspaceInviteMethod
+
+    owner = resolve_owner_identity(request, None)
+    invite = await service.create_invite(
+        workspace_id,
+        owner,
+        method=WorkspaceInviteMethod(payload.method),
+        email=payload.email,
+        github_username=payload.github_username,
+    )
+    return WorkspaceInviteResponse.from_invite(
+        invite, effective_status=_effective_status(invite)
+    )
+
+
+@router.get("/{workspace_id}/invites", response_model=WorkspaceInviteListResponse)
+async def list_workspace_invites(
+    workspace_id: uuid.UUID,
+    service: WorkspaceInviteSvc,
+    request: Request,
+) -> WorkspaceInviteListResponse:
+    owner = resolve_owner_identity(request, None)
+    invites = await service.list_invites(workspace_id, owner)
+    items = [
+        WorkspaceInviteResponse.from_invite(i, effective_status=_effective_status(i))
+        for i in invites
+    ]
+    return WorkspaceInviteListResponse(items=items, total=len(items))
+
+
+@router.delete(
+    "/{workspace_id}/invites/{invite_id}", response_model=WorkspaceInviteResponse
+)
+async def revoke_workspace_invite(
+    workspace_id: uuid.UUID,
+    invite_id: uuid.UUID,
+    service: WorkspaceInviteSvc,
+    request: Request,
+) -> WorkspaceInviteResponse:
+    owner = resolve_owner_identity(request, None)
+    invite = await service.revoke_invite(workspace_id, invite_id, owner)
+    return WorkspaceInviteResponse.from_invite(
+        invite, effective_status=_effective_status(invite)
+    )

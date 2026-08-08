@@ -14,10 +14,11 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.core.exceptions import ConflictError, NotFoundError, UnauthorizedError, ValidationError
 from app.core.logging import get_logger
-from app.database.models import Workspace
+from app.database.models import Workspace, WorkspaceMember, WorkspaceMemberRole
 from app.database.retry import with_txn_retry
+from app.repositories.workspace_member_repository import WorkspaceMemberRepository
 from app.repositories.workspace_repository import WorkspaceRepository
 
 logger = get_logger(__name__)
@@ -45,9 +46,18 @@ _DEFAULT_GITHUB_MIGRATION_GLOB = "backend/alembic/versions/*.py"
 
 
 class WorkspaceService:
-    def __init__(self, repository: WorkspaceRepository, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        repository: WorkspaceRepository,
+        session: AsyncSession,
+        member_repository: WorkspaceMemberRepository | None = None,
+    ) -> None:
         self._repository = repository
         self._session = session
+        # Optional for backward compatibility with existing call sites/tests
+        # that construct this service without membership concerns; lazily
+        # built from the same session if not supplied.
+        self._members = member_repository or WorkspaceMemberRepository(session)
 
     async def create_workspace(
         self,
@@ -88,6 +98,16 @@ class WorkspaceService:
                 ),
             )
             created = await self._repository.create(entity)
+            # The creator is implicitly the 'owner' member — every existing
+            # workspace was backfilled the same way (see the workspace
+            # invites migration), so the member list is never empty.
+            await self._members.create(
+                WorkspaceMember(
+                    workspace_id=created.id,
+                    user_identity=identity,
+                    role=WorkspaceMemberRole.OWNER,
+                )
+            )
             await self._session.commit()
             await self._session.refresh(created)
             return created
@@ -107,6 +127,12 @@ class WorkspaceService:
         identity = _clean_owner(owner_identity)
         return await self._repository.list_for_owner(identity)
 
+    async def list_accessible_workspaces(self, user_identity: str) -> list[Workspace]:
+        """Owned + member workspaces — visibility only, see
+        app/database/models/workspace_member.py for the scope boundary."""
+        identity = _clean_owner(user_identity)
+        return await self._repository.list_accessible(identity)
+
     async def get_owned_workspace(
         self, workspace_id: uuid.UUID, owner_identity: str
     ) -> Workspace:
@@ -115,6 +141,88 @@ class WorkspaceService:
         if workspace is None:
             raise NotFoundError(f"Workspace not found: {workspace_id}")
         return workspace
+
+    async def get_accessible_workspace(
+        self, workspace_id: uuid.UUID, user_identity: str
+    ) -> Workspace:
+        """Owner OR member — read visibility. Settings mutations
+        (update/delete) stay on ``get_owned_workspace``, owner-only."""
+        identity = _clean_owner(user_identity)
+        workspace = await self._repository.get_accessible(workspace_id, identity)
+        if workspace is None:
+            raise NotFoundError(f"Workspace not found: {workspace_id}")
+        return workspace
+
+    async def get_workspace_by_id(self, workspace_id: uuid.UUID) -> Workspace:
+        """No ownership check at all — for the invite preview/accept path,
+        where a valid token (not owner_identity) is the credential. Never
+        call this from a route without a token or equivalent capability
+        check already having happened."""
+        workspace = await self._repository.get_by_id(workspace_id)
+        if workspace is None:
+            raise NotFoundError(f"Workspace not found: {workspace_id}")
+        return workspace
+
+    async def list_members(
+        self, workspace_id: uuid.UUID, user_identity: str
+    ) -> list[WorkspaceMember]:
+        # Any accessible (owner or member) identity can see the roster.
+        await self.get_accessible_workspace(workspace_id, user_identity)
+        return await self._members.list_for_workspace(workspace_id)
+
+    async def add_member(
+        self,
+        workspace_id: uuid.UUID,
+        user_identity: str,
+        *,
+        role: WorkspaceMemberRole = WorkspaceMemberRole.MEMBER,
+    ) -> WorkspaceMember:
+        """Idempotent — accepting an invite twice (e.g. a double-click, or
+        a token reused after already joining) must not create a duplicate
+        row or raise; it just confirms membership."""
+        existing = await self._members.get_by_workspace_and_user(
+            workspace_id, user_identity
+        )
+        if existing is not None:
+            return existing
+
+        async def _commit() -> WorkspaceMember:
+            created = await self._members.create(
+                WorkspaceMember(
+                    workspace_id=workspace_id,
+                    user_identity=user_identity,
+                    role=role,
+                )
+            )
+            await self._session.commit()
+            await self._session.refresh(created)
+            return created
+
+        return await with_txn_retry(_commit, on_retry=self._session.rollback)
+
+    async def remove_member(
+        self, workspace_id: uuid.UUID, member_id: uuid.UUID, owner_identity: str
+    ) -> None:
+        """Owner-only (matches invite management), and the workspace's
+        'owner' member row can never be removed through this path — that
+        would leave a workspace with no owner. Deleting the workspace
+        itself is the only way to remove that row (cascades)."""
+        await self.get_owned_workspace(workspace_id, owner_identity)
+        member = await self._members.get_owned_by_id(workspace_id, member_id)
+        if member is None:
+            raise NotFoundError(f"Member not found: {member_id}")
+        if member.role == WorkspaceMemberRole.OWNER:
+            raise UnauthorizedError("Cannot remove the workspace owner")
+
+        async def _commit() -> None:
+            await self._members.delete(member)
+            await self._session.commit()
+
+        await with_txn_retry(_commit, on_retry=self._session.rollback)
+        logger.info(
+            "Removed workspace member",
+            extra={"workspace_id": str(workspace_id), "member_id": str(member_id)},
+        )
 
     async def _assert_repo_available(
         self, repo_full_name: str, *, workspace_id: uuid.UUID | None

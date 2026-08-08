@@ -18,6 +18,7 @@ from app.auth.tenancy import (
 )
 from app.core.exceptions import NotFoundError, ValidationError
 from app.core.logging import get_logger
+from app.core.ttl_cache import cached
 from app.database.models import MigrationRun, MigrationRunStatus
 from app.dependencies import (
     ApprovalSvc,
@@ -242,10 +243,18 @@ async def get_accuracy_metrics(
     scoped = session_owner(request) if request else None
     if auth_enforced():
         owner_identity = scoped
-    return await fetch_accuracy_metrics(
-        session,
-        owner_identity=owner_identity,
-        workspace_id=str(workspace_id) if workspace_id else None,
+    workspace_key = str(workspace_id) if workspace_id else None
+    # 10 sequential SQL round-trips (see fetch_accuracy_metrics) recomputed
+    # from scratch on every Overview visit — a short TTL absorbs repeat
+    # loads/navigation without the numbers going noticeably stale.
+    return await cached(
+        f"accuracy_metrics:{owner_identity}:{workspace_key}",
+        ttl_seconds=30,
+        factory=lambda: fetch_accuracy_metrics(
+            session,
+            owner_identity=owner_identity,
+            workspace_id=workspace_key,
+        ),
     )
 
 
@@ -314,11 +323,19 @@ async def get_activity_feed(
     scoped = session_owner(request) if request else None
     if auth_enforced():
         owner_identity = scoped
-    return await fetch_activity_feed(
-        session,
-        owner_identity=owner_identity,
-        workspace_id=str(workspace_id) if workspace_id else None,
-        limit=limit,
+    workspace_key = str(workspace_id) if workspace_id else None
+    # 7-way UNION ALL over the owner's entire run history, uncached — same
+    # short-TTL treatment as accuracy metrics, for the same Overview-page
+    # repeat-load reason.
+    return await cached(
+        f"activity_feed:{owner_identity}:{workspace_key}:{limit}",
+        ttl_seconds=30,
+        factory=lambda: fetch_activity_feed(
+            session,
+            owner_identity=owner_identity,
+            workspace_id=workspace_key,
+            limit=limit,
+        ),
     )
 
 
@@ -812,9 +829,7 @@ async def stream_shadow_cluster(
                 async with contextlib.aclosing(database.session()) as gen:
                     session = await gen.__anext__()
                     run_repo = MigrationRunRepository(session)
-                    run = await run_repo.get_by_id_or_raise(
-                        run_id, load_children=True
-                    )
+                    run = await run_repo.get_shadow_cluster_only_or_raise(run_id)
                     if run.shadow_cluster is None:
                         payload = {"waiting": True}
                     else:

@@ -8,6 +8,8 @@ import {
   ArrowLeft,
   ArrowRight,
   Check,
+  ChevronLeft,
+  ChevronRight,
   Database,
   FileCode2,
   Loader2,
@@ -64,6 +66,8 @@ import { cn } from "@workspace/ui/lib/utils"
  * That step is replaced by a Review step over what discovery actually returned.
  */
 
+const COLUMNS_PAGE_SIZE = 10
+
 const STEPS = [
   ["SQL", "Write migration"],
   ["Connect", "Database or demo"],
@@ -72,30 +76,31 @@ const STEPS = [
   ["Review", "Submit for analysis"],
 ] as const
 
-const GRANT_HELP_SQL = `-- 1. Create a dedicated read-only user
-CREATE USER migration_oracle_ro WITH PASSWORD '<choose-a-password>';
+const GRANT_HELP_SQL = `-- Create a dedicated read-only user
+CREATE USER migration_oracle_ro WITH PASSWORD '<password>';
 
--- 2. Grant SELECT only, on the schema your migration references
-GRANT SELECT ON TABLE <schema>.<table> TO migration_oracle_ro;
--- or, for every table in a schema:
--- GRANT SELECT ON ALL TABLES IN SCHEMA <schema> TO migration_oracle_ro;
+-- Allow access to your schema
+GRANT USAGE ON SCHEMA public TO migration_oracle_ro;
 
--- 3. Explicitly deny writes and DDL (defense in depth)
-REVOKE INSERT, UPDATE, DELETE ON TABLE <schema>.<table> FROM migration_oracle_ro;
-REVOKE CREATE ON DATABASE <database> FROM migration_oracle_ro;`
+-- Allow read-only access to all tables
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO migration_oracle_ro;
+
+-- Optional: automatically grant SELECT on future tables
+ALTER DEFAULT PRIVILEGES IN SCHEMA public
+GRANT SELECT ON TABLES TO migration_oracle_ro;`
 
 const fieldCls =
   "h-11 w-full rounded-lg border border-border bg-card px-3.5 text-sm text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-primary"
 
 /**
  * Supported engines. CockroachDB and PostgreSQL share the postgres wire
- * protocol, which is what schema discovery speaks. MySQL is not supported —
- * it is listed as unavailable rather than offered and then failing.
+ * protocol, which is what schema discovery speaks. Engines that aren't
+ * supported yet (e.g. MySQL) are left off entirely rather than shown
+ * disabled — there's nothing useful for a user to do with that option.
  */
 const ENGINES = [
   { name: "CockroachDB", port: "26257", supported: true },
   { name: "PostgreSQL", port: "5432", supported: true },
-  { name: "MySQL", port: "3306", supported: false },
 ] as const
 
 function Field({
@@ -335,7 +340,7 @@ export default function NewMigrationPage() {
         }
       }
       await tick()
-      timer = setInterval(() => void tick(), 400)
+      timer = setInterval(() => void tick(), 1000)
 
       const updated = await discoverSchema(created.id, {
         connection_secret_arn: arn || null,
@@ -383,7 +388,7 @@ export default function NewMigrationPage() {
         }
       }
       await tick()
-      timer = setInterval(() => void tick(), 400)
+      timer = setInterval(() => void tick(), 1000)
       await predictRun(run.id)
       setCurrentRunId(run.id)
       router.push("/dashboard/migrations/current")
@@ -402,6 +407,32 @@ export default function NewMigrationPage() {
   )
   const selectedTable = schema?.tables.find((t) => t.name === table)
 
+  // Wide tables (real customer schemas can run to hundreds of columns) render
+  // 10 at a time instead of one long scroll — resets to page 1 whenever the
+  // selected table changes so switching tables never leaves you stranded on
+  // a page past the new table's column count.
+  const [columnsPage, setColumnsPage] = React.useState(0)
+  React.useEffect(() => {
+    setColumnsPage(0)
+  }, [table])
+  const columnsPageCount = Math.max(1, Math.ceil(columns.length / COLUMNS_PAGE_SIZE))
+  const clampedColumnsPage = Math.min(columnsPage, columnsPageCount - 1)
+  const pagedColumns = columns.slice(
+    clampedColumnsPage * COLUMNS_PAGE_SIZE,
+    clampedColumnsPage * COLUMNS_PAGE_SIZE + COLUMNS_PAGE_SIZE
+  )
+
+  // Whether enough connection info exists to even attempt step 2 — gates the
+  // "Connect & discover schema" button itself, not just the ability to move
+  // past it once connected. Demo needs nothing; the other two tabs need
+  // either full field details or a URL/secret, mirroring the check inside
+  // connectAndDiscover so the button's disabled state never lies about
+  // whether clicking it can succeed.
+  const canConnect =
+    tab === "demo" ||
+    (tab === "fields" ? Boolean(host.trim() && dbName.trim() && user.trim()) : false) ||
+    (tab === "url" ? Boolean(rawUrl.trim() || secretArn.trim()) : false)
+
   const nextDisabled =
     (step === 0 && !sql.trim()) ||
     (step === 1 && !connected) ||
@@ -410,8 +441,8 @@ export default function NewMigrationPage() {
   return (
     <div className="mx-auto w-full max-w-[1500px] px-6 pb-10 lg:px-10">
       <PageHeader
-        title="New Migration"
-        subtitle="Write your migration, connect a read-only database, and submit it for AI analysis."
+        title="Analyze Migration"
+        subtitle="Predict risk before executing your migration against production."
       />
 
       {resumable && !run ? (
@@ -539,9 +570,7 @@ export default function NewMigrationPage() {
                       </div>
                     ) : null}
                     <p className="text-muted-foreground mt-3 text-[12px] leading-relaxed">
-                      One statement per run. CockroachDB commits DDL per
-                      statement, so a multi-statement migration cannot be rolled
-                      back as a unit — the API rejects it for that reason.
+                      Analyze one SQL statement at a time for the most accurate predictions.
                     </p>
                   </>
                 ) : null}
@@ -720,7 +749,7 @@ export default function NewMigrationPage() {
                     <Button
                       type="button"
                       onClick={() => void connectAndDiscover()}
-                      disabled={busy != null}
+                      disabled={busy != null || !canConnect}
                       className="mt-5 h-11 w-full"
                     >
                       {busy === "connect" ? (
@@ -748,6 +777,12 @@ export default function NewMigrationPage() {
                           {progress?.message ?? "Connecting…"}
                         </p>
                       </div>
+                    ) : !canConnect ? (
+                      <p className="text-muted-foreground mt-2 text-[12px]">
+                        {tab === "fields"
+                          ? "Fill in host, database, and username to continue."
+                          : "Provide a database URL or a Secrets Manager ARN to continue."}
+                      </p>
                     ) : null}
                   </>
                 ) : null}
@@ -820,7 +855,7 @@ export default function NewMigrationPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {columns.map((c) => (
+                            {pagedColumns.map((c) => (
                               <tr
                                 key={c.name}
                                 className="border-border border-t"
@@ -860,6 +895,43 @@ export default function NewMigrationPage() {
                             ))}
                           </tbody>
                         </table>
+                        {columns.length > COLUMNS_PAGE_SIZE ? (
+                          <div className="border-border bg-muted/60 flex items-center justify-between border-t px-4 py-2">
+                            <span className="text-muted-foreground text-[12px]">
+                              {clampedColumnsPage * COLUMNS_PAGE_SIZE + 1}–
+                              {Math.min(
+                                clampedColumnsPage * COLUMNS_PAGE_SIZE + COLUMNS_PAGE_SIZE,
+                                columns.length
+                              )}{" "}
+                              of {columns.length} columns
+                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setColumnsPage((p) => Math.max(0, p - 1))}
+                                disabled={clampedColumnsPage === 0}
+                                className="border-border text-foreground grid size-7 place-items-center rounded-md border disabled:cursor-not-allowed disabled:opacity-40"
+                                aria-label="Previous columns"
+                              >
+                                <ChevronLeft className="size-4" />
+                              </button>
+                              <span className="text-muted-foreground min-w-[64px] text-center text-[12px]">
+                                Page {clampedColumnsPage + 1} of {columnsPageCount}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setColumnsPage((p) => Math.min(columnsPageCount - 1, p + 1))
+                                }
+                                disabled={clampedColumnsPage >= columnsPageCount - 1}
+                                className="border-border text-foreground grid size-7 place-items-center rounded-md border disabled:cursor-not-allowed disabled:opacity-40"
+                                aria-label="Next columns"
+                              >
+                                <ChevronRight className="size-4" />
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
                       </div>
                     )}
                     {selectedTable && selectedTable.indexes.length > 0 ? (
@@ -868,9 +940,7 @@ export default function NewMigrationPage() {
                       </p>
                     ) : null}
                     <p className="text-muted-foreground mt-4 text-[12px] leading-relaxed">
-                      Only structure is read. Discovery never selects row data
-                      from your database — the shadow cluster is seeded with
-                      synthetic rows instead.
+                    Only your database schema is inspected. Your table data is never read or stored.
                     </p>
                   </>
                 ) : null}
@@ -1020,9 +1090,7 @@ export default function NewMigrationPage() {
               </span>
             </div>
             <p className="text-muted-foreground mt-3 text-[13.5px] leading-relaxed">
-              Credentials are stored in AWS Secrets Manager and used only for
-              read-only schema introspection. Structure is read; your rows never
-              are.
+            Your credentials are encrypted with AWS Secrets Manager and used only to inspect your database schema. Migration Oracle never reads or stores your table data.
             </p>
             {connected ? (
               <div className="mt-4 flex items-center gap-2 rounded-lg border border-[var(--tone-pass-border)] bg-[var(--tone-pass-bg)] px-3 py-2 text-[13px] font-semibold text-[var(--tone-pass-fg)]">
@@ -1054,30 +1122,6 @@ export default function NewMigrationPage() {
                   </Button>
                 </div>
               ) : null}
-            </div>
-          </Panel>
-
-          <Panel className="px-6 py-5" delay={0.1}>
-            <Label className="mb-4">Supported Databases</Label>
-            <div className="space-y-3">
-              {ENGINES.map((d) => (
-                <div key={d.name} className="flex items-center justify-between">
-                  <span className="text-foreground flex items-center gap-2 text-[13.5px] font-semibold">
-                    <span
-                      className={cn(
-                        "size-1.5 rounded-full",
-                        d.supported
-                          ? "bg-[var(--tone-pass-dot)]"
-                          : "bg-[var(--tone-neutral-dot)]"
-                      )}
-                    />
-                    {d.name}
-                  </span>
-                  <span className="text-muted-foreground font-mono text-[12.5px]">
-                    {d.supported ? `:${d.port}` : "unsupported"}
-                  </span>
-                </div>
-              ))}
             </div>
           </Panel>
 
