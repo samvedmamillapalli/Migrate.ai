@@ -7,7 +7,12 @@ import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog"
 import { EditWorkspaceDialog } from "@/components/edit-workspace-dialog"
 import { InviteMembersDialog } from "@/components/invite-members-dialog"
 import { listWorkspaces, type Workspace } from "@/lib/api/endpoints"
-import { getActiveWorkspaceId, getOwnerIdentity, setActiveWorkspaceId } from "@/lib/api/owner"
+import {
+  getActiveWorkspaceId,
+  getOwnerIdentity,
+  setActiveWorkspaceId,
+  WORKSPACES_CHANGED_EVENT,
+} from "@/lib/api/owner"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -76,6 +81,17 @@ export function WorkspaceSwitcher() {
 
   React.useEffect(() => {
     void load()
+  }, [load])
+
+  // The migration wizard persists a workspace's connection to the backend
+  // once a database connect succeeds (new/page.tsx). This switcher already
+  // fetched its workspace list once on mount, so without this it wouldn't
+  // pick up that change until a full reload — this re-fetch is what keeps
+  // the sidebar's connection label live across the wizard's own steps.
+  React.useEffect(() => {
+    const handler = () => void load()
+    window.addEventListener(WORKSPACES_CHANGED_EVENT, handler)
+    return () => window.removeEventListener(WORKSPACES_CHANGED_EVENT, handler)
   }, [load])
 
   function selectWorkspace(id: string) {

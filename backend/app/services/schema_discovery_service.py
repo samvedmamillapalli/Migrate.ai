@@ -16,6 +16,7 @@ from app.schema_analysis.database_connection import DatabaseConnection
 from app.schema_analysis.discovery import discover_database_metadata
 from app.schema_analysis.errors import safe_log_target
 from app.schema_analysis.models import DatabaseMetadata
+from app.services.connection_secrets import infer_engine
 from app.services.pipeline_progress import clear_progress, set_progress
 
 logger = get_logger(__name__)
@@ -159,7 +160,7 @@ class SchemaDiscoveryService:
             entity.schema_snapshot = metadata.model_dump(mode="json", by_alias=True)
             entity.schema_discovered_at = datetime.now(UTC)
             entity.schema_discovery_duration_ms = duration_ms
-            entity.schema_database_engine = _infer_engine(metadata.server_version)
+            entity.schema_database_engine = infer_engine(metadata.server_version)
             entity.schema_database_version = metadata.server_version
             entity.schema_discovery_status = SchemaDiscoveryStatus.SUCCEEDED
             if connection_secret_arn:
@@ -202,14 +203,3 @@ class SchemaDiscoveryService:
             _commit,
             on_retry=self._session.rollback,
         )
-
-
-def _infer_engine(server_version: str | None) -> str | None:
-    if not server_version:
-        return None
-    lowered = server_version.lower()
-    if "cockroachdb" in lowered:
-        return "cockroachdb"
-    if "postgresql" in lowered or "postgres" in lowered:
-        return "postgresql"
-    return "unknown"

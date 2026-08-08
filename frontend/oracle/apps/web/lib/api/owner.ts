@@ -74,3 +74,14 @@ export function setActiveWorkspaceId(id: string | null): void {
   }
   window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, id)
 }
+
+/** Fired whenever a workspace's persisted state (e.g. its stored connection)
+ * changes somewhere other than the sidebar switcher itself — the switcher
+ * listens and re-fetches, so it reflects the change without a full page
+ * reload (unlike selectWorkspace, which does reload). */
+export const WORKSPACES_CHANGED_EVENT = "oracle:workspaces-changed"
+
+export function notifyWorkspacesChanged(): void {
+  if (typeof window === "undefined") return
+  window.dispatchEvent(new Event(WORKSPACES_CHANGED_EVENT))
+}

@@ -27,6 +27,7 @@ from app.schemas.workspace_invite import (
     WorkspaceMemberResponse,
 )
 from app.services.connection_secrets import (
+    infer_engine,
     load_connection,
     store_connection_url,
     verify_connection_ping,
@@ -35,6 +36,15 @@ from app.services.github_setup import assert_repo_installed
 from app.services.workspace_invite_service import _effective_status
 
 router = APIRouter(prefix="/workspaces", tags=["workspaces"])
+
+# Display names for the same engine keys schema_discovery_service.py persists
+# on MigrationRun.schema_database_engine — keeps the sidebar's connection
+# label ("CockroachDB · host/db") speaking the same vocabulary as the rest of
+# the app instead of inventing a second one.
+_ENGINE_DISPLAY_NAMES = {
+    "cockroachdb": "CockroachDB",
+    "postgresql": "PostgreSQL",
+}
 
 
 def _workspace_secret_name(workspace_id: uuid.UUID) -> str:
@@ -63,8 +73,10 @@ async def _resolve_connection(
         return None, None
 
     connection = await load_connection(request, secret_arn)
-    await verify_connection_ping(connection)
-    label = f"{connection.host}/{connection.database}"
+    server_version = await verify_connection_ping(connection)
+    engine_display = _ENGINE_DISPLAY_NAMES.get(infer_engine(server_version) or "")
+    host_and_db = f"{connection.host}/{connection.database}"
+    label = f"{engine_display} · {host_and_db}" if engine_display else host_and_db
     return secret_arn, label
 
 

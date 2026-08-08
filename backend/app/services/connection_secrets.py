@@ -116,7 +116,7 @@ async def load_connection(request: Request, secret_arn: str) -> DatabaseConnecti
         raise ValidationError(f"Unable to load connection secret: {exc}") from exc
 
 
-async def verify_connection_ping(connection: DatabaseConnection) -> None:
+async def verify_connection_ping(connection: DatabaseConnection) -> str | None:
     """Lightweight "can we connect" check — a bare ``SELECT version()``, not
     a full schema discovery. Used at workspace-creation time
     (docs/FUTURE_WORKSPACES_PLAN.md, Open Question: validate at creation vs.
@@ -124,7 +124,9 @@ async def verify_connection_ping(connection: DatabaseConnection) -> None:
     on a broken connection" rather than silently storing a bad pointer that
     only surfaces as an error days later on first real discover).
 
-    Raises ``ValidationError`` on any failure; never returns a value.
+    Returns the raw ``server_version`` string the probe read (feed it to
+    ``infer_engine`` for a display-friendly engine name), or ``None`` if the
+    probe didn't get one back. Raises ``ValidationError`` on any failure.
     """
     from app.schema_analysis.connection import SchemaAnalysisConnection
 
@@ -135,8 +137,26 @@ async def verify_connection_ping(connection: DatabaseConnection) -> None:
 
     probe = SchemaAnalysisConnection(database_url)
     try:
-        await probe.ping()
+        return await probe.ping()
     except Exception as exc:  # noqa: BLE001 - any failure means "can't connect"
         raise ValidationError(f"Could not connect to database: {exc}") from exc
     finally:
         await probe.close()
+
+
+def infer_engine(server_version: str | None) -> str | None:
+    """Classify a raw ``SELECT version()`` string into a stable engine key.
+
+    Shared by workspace connection labeling (``app/api/routes/workspaces.py``)
+    and schema discovery persistence (``app/services/schema_discovery_service.py``)
+    so both derive the same "cockroachdb"/"postgresql"/"unknown" value from
+    the same string instead of drifting.
+    """
+    if not server_version:
+        return None
+    lowered = server_version.lower()
+    if "cockroachdb" in lowered:
+        return "cockroachdb"
+    if "postgresql" in lowered or "postgres" in lowered:
+        return "postgresql"
+    return "unknown"

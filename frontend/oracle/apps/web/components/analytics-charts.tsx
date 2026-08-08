@@ -46,9 +46,6 @@ function ChartTheme() {
   )
 }
 
-const CAT_COLORS = ["var(--viz-cat-1)", "var(--viz-cat-2)", "var(--viz-cat-3)"]
-const CAT_OTHER = "var(--viz-cat-other)"
-
 const STATUS_DOT: Record<string, Tone> = {
   clean_ok: "pass",
   warned_ok: "warn",
@@ -78,19 +75,6 @@ const TONE_TEXT_VAR: Record<Tone, string> = {
   info: "var(--tone-info-fg)",
   model: "var(--tone-model-fg)",
   neutral: "var(--muted-foreground)",
-}
-
-function formatMigrationType(raw: string): string {
-  const spaced = raw
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/_/g, " ")
-    .trim()
-  if (!spaced) return "Unknown"
-  return spaced
-    .split(" ")
-    .filter(Boolean)
-    .map((w) => w[0]!.toUpperCase() + w.slice(1).toLowerCase())
-    .join(" ")
 }
 
 function clockDate(iso: string): string {
@@ -159,7 +143,7 @@ function ChartEmpty({
 }) {
   return (
     <div
-      className="border-border/70 flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed"
+     className="border-border/70 flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed" 
       style={{ height }}
     >
       <div className="text-muted-foreground/50">{icon}</div>
@@ -207,7 +191,7 @@ export function AccuracyTrendChart({
   loading: boolean
 }) {
   const W = 560
-  const H = 160
+  const H = 220
   const PAD = { top: 12, right: 8, bottom: 22, left: 30 }
   const [hover, setHover] = React.useState<number | null>(null)
 
@@ -218,7 +202,7 @@ export function AccuracyTrendChart({
     return (
       <ChartEmpty
         height={H}
-        message="No graded runs yet. Accuracy plots here once a shadow run is graded."
+        message="No graded runs yet. Accuracy will appear after your first migration is graded."
         icon={
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
             <path
@@ -379,7 +363,7 @@ export function RuntimeScatterChart({
     return (
       <ChartEmpty
         height={H}
-        message="No shadow-tested migrations yet. Predicted vs. actual runtime appears here after the first one completes."
+        message="No shadow-tested migrations yet. Runtime accuracy will appear after your first shadow run completes."
         icon={
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
             <circle cx="6" cy="17" r="1.6" fill="currentColor" />
@@ -502,142 +486,7 @@ export function RuntimeScatterLegend() {
   )
 }
 
-// --- 3. Donut: migration type distribution ----------------------------------
-
-export type MigrationTypeSlice = { type: string; count: number }
-
-export function MigrationTypeDonut({
-  slices,
-  loading,
-}: {
-  slices: MigrationTypeSlice[]
-  loading: boolean
-}) {
-  const size = 176
-  const cx = size / 2
-  const cy = size / 2
-  const rOuter = size / 2 - 6
-  const rInner = rOuter * 0.62
-  const [hover, setHover] = React.useState<number | null>(null)
-
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center" style={{ height: size }}>
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
-          <circle
-            cx={cx}
-            cy={cy}
-            r={(rOuter + rInner) / 2}
-            fill="none"
-            stroke="var(--muted)"
-            strokeWidth={rOuter - rInner}
-            className="animate-pulse"
-          />
-        </svg>
-      </div>
-    )
-  }
-  if (slices.length === 0) {
-    return (
-      <ChartEmpty
-        height={size}
-        message="No migrations recorded yet. Statement types (ALTER TABLE, CREATE INDEX, …) will appear here."
-        icon={
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-            <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth={1.6} strokeDasharray="3 3" />
-          </svg>
-        }
-      />
-    )
-  }
-
-  const sorted = [...slices].sort((a, b) => b.count - a.count)
-  const top = sorted.slice(0, 3)
-  const rest = sorted.slice(3)
-  const otherCount = rest.reduce((sum, s) => sum + s.count, 0)
-  const entries: { label: string; count: number; color: string }[] = top.map((s, i) => ({
-    label: formatMigrationType(s.type),
-    count: s.count,
-    color: CAT_COLORS[i]!,
-  }))
-  if (otherCount > 0) {
-    entries.push({ label: "Other", count: otherCount, color: CAT_OTHER })
-  }
-  const total = entries.reduce((sum, e) => sum + e.count, 0) || 1
-
-  const arcs = entries.reduce<
-    { label: string; count: number; color: string; start: number; end: number; frac: number }[]
-  >((acc, e) => {
-    const prevEnd = acc.length > 0 ? acc[acc.length - 1]!.end : -Math.PI / 2
-    const frac = e.count / total
-    acc.push({ ...e, start: prevEnd, end: prevEnd + frac * Math.PI * 2, frac })
-    return acc
-  }, [])
-
-  function arcPath(r0: number, r1: number, start: number, end: number) {
-    const large = end - start > Math.PI ? 1 : 0
-    const p = (r: number, a: number) => [cx + r * Math.cos(a), cy + r * Math.sin(a)]
-    const [x0, y0] = p(r1, start)
-    const [x1, y1] = p(r1, end)
-    const [x2, y2] = p(r0, end)
-    const [x3, y3] = p(r0, start)
-    return `M${x0} ${y0} A${r1} ${r1} 0 ${large} 1 ${x1} ${y1} L${x2} ${y2} A${r0} ${r0} 0 ${large} 0 ${x3} ${y3} Z`
-  }
-
-  const active = hover != null ? arcs[hover] : null
-
-  return (
-    <div className="flex items-center gap-5">
-      <div className="relative shrink-0" style={{ width: size, height: size }}>
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-          {arcs.map((a, i) => (
-            <path
-              key={a.label}
-              d={arcPath(rInner, hover === i ? rOuter + 3 : rOuter, a.start, a.end)}
-              fill={a.color}
-              stroke="var(--card)"
-              strokeWidth={2}
-              className="cursor-pointer transition-[d]"
-              onMouseEnter={() => setHover(i)}
-              onMouseLeave={() => setHover((h) => (h === i ? null : h))}
-            />
-          ))}
-        </svg>
-        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="text-foreground text-[22px] leading-none font-bold tabular-nums">
-            {active ? active.count : total}
-          </span>
-          <span className="text-muted-foreground mt-1 text-[10px] leading-none">
-            {active ? formatPercent(active.frac) : "total"}
-          </span>
-        </div>
-      </div>
-      <div className="min-w-0 flex-1 space-y-1.5">
-        {arcs.map((a, i) => (
-          <div
-            key={a.label}
-            className={cn(
-              "flex cursor-pointer items-center gap-2 rounded px-1 py-0.5 text-[12px] transition-colors",
-              hover === i ? "bg-muted" : ""
-            )}
-            onMouseEnter={() => setHover(i)}
-            onMouseLeave={() => setHover((h) => (h === i ? null : h))}
-          >
-            <span
-              className="size-2 shrink-0 rounded-full"
-              style={{ backgroundColor: a.color }}
-              aria-hidden
-            />
-            <span className="text-foreground min-w-0 flex-1 truncate font-medium">{a.label}</span>
-            <span className="text-muted-foreground shrink-0 tabular-nums">{a.count}</span>
-          </div>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// --- 4. Horizontal bar: risk level distribution ------------------------------
+// --- 3. Horizontal bar: risk level distribution ------------------------------
 
 export type RiskLevelBucket = { level: "low" | "medium" | "high" | "critical"; count: number }
 
@@ -738,6 +587,142 @@ export function RiskLevelBarChart({
                 </span>
               ) : null}
             </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+// --- 4. Horizontal bar: approval decisions -----------------------------------
+
+export type ApprovalDecisionBucket = {
+  decision: "proceed" | "accept_recommended" | "cancel" | "awaiting_decision"
+  count: number
+}
+
+const APPROVAL_ORDER: ApprovalDecisionBucket["decision"][] = [
+  "proceed",
+  "accept_recommended",
+  "cancel",
+  "awaiting_decision",
+]
+const APPROVAL_TONE: Record<ApprovalDecisionBucket["decision"], Tone> = {
+  proceed: "pass",
+  accept_recommended: "info",
+  cancel: "fail",
+  awaiting_decision: "warn",
+}
+const APPROVAL_LABEL: Record<ApprovalDecisionBucket["decision"], string> = {
+  proceed: "Proceeded",
+  accept_recommended: "Accepted Plan",
+  cancel: "Cancelled",
+  awaiting_decision: "No Decision Yet",
+}
+// Same wording as the counter card this chart replaces — "No Decision Yet"
+// is deliberately not called "Awaiting Decision": it counts every run
+// without an approval row, including ones still being set up or predicted.
+const APPROVAL_HELP: Record<ApprovalDecisionBucket["decision"], string> = {
+  proceed: "Approved and sent to a shadow test.",
+  accept_recommended: "Plan accepted without running a shadow test.",
+  cancel: "Rejected by a reviewer.",
+  awaiting_decision:
+    "Every run with no decision recorded, including ones still being set up or predicted.",
+}
+
+export function ApprovalDecisionChart({
+  buckets,
+  loading,
+}: {
+  buckets: ApprovalDecisionBucket[]
+  loading: boolean
+}) {
+  const rowH = 30
+  const H = rowH * 4 + 8
+  const labelW = 140
+  const [hover, setHover] = React.useState<number | null>(null)
+
+  if (loading) {
+    return (
+      <div className="space-y-2.5" style={{ minHeight: H }}>
+        {[0, 1, 2, 3].map((i) => (
+          <div key={i} className="bg-muted h-6 animate-pulse rounded" style={{ width: `${70 - i * 12}%` }} />
+        ))}
+      </div>
+    )
+  }
+
+  const byDecision = new Map(buckets.map((b) => [b.decision, b.count]))
+  const total = buckets.reduce((sum, b) => sum + b.count, 0)
+  if (total === 0) {
+    return (
+      <ChartEmpty
+        height={H}
+        message="No approval decisions recorded yet. Proceed, accept-plan, and cancel outcomes will appear here."
+        icon={
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+            <rect x="3.5" y="3.5" width="17" height="17" rx="3" stroke="currentColor" strokeWidth={1.4} />
+            <path d="M8 12l2.5 2.5L16 9" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        }
+      />
+    )
+  }
+  const max = Math.max(...APPROVAL_ORDER.map((d) => byDecision.get(d) ?? 0), 1)
+
+  return (
+    <div className="space-y-2.5">
+      {APPROVAL_ORDER.map((decision, i) => {
+        const count = byDecision.get(decision) ?? 0
+        const pct = count / max
+        const share = total > 0 ? count / total : 0
+        const tone = APPROVAL_TONE[decision]
+        return (
+          <div
+            key={decision}
+            className="group relative flex items-center gap-3"
+            onMouseEnter={() => setHover(i)}
+            onMouseLeave={() => setHover((h) => (h === i ? null : h))}
+          >
+            <div
+              className="flex shrink-0 items-center gap-1.5"
+              style={{ width: labelW }}
+            >
+              <span
+                className="size-1.5 shrink-0 rounded-full"
+                style={{ backgroundColor: TONE_VAR[tone] }}
+                aria-hidden
+              />
+              <span className="text-foreground text-[12px] font-semibold whitespace-nowrap">
+                {APPROVAL_LABEL[decision]}
+              </span>
+            </div>
+            <div className="bg-muted relative h-6 min-w-0 flex-1 overflow-hidden rounded-md">
+              <div
+                className={cn(
+                  "h-full rounded-md transition-[width] duration-300",
+                  hover === i ? "opacity-100" : "opacity-90"
+                )}
+                style={{
+                  width: `${Math.max(pct * 100, count > 0 ? 3 : 0)}%`,
+                  backgroundColor: TONE_VAR[tone],
+                }}
+              />
+            </div>
+            <div className="w-8 shrink-0 text-right">
+              <span className="text-foreground text-[12.5px] font-bold tabular-nums">{count}</span>
+            </div>
+            {hover === i ? (
+              <div
+                className="border-border bg-popover text-popover-foreground pointer-events-none absolute top-0 z-10 max-w-[240px] -translate-y-[calc(100%+8px)] rounded-lg border px-2.5 py-1.5 text-[11.5px] leading-snug shadow-md"
+                style={{ left: labelW }}
+              >
+                <div className="font-semibold" style={{ color: TONE_TEXT_VAR[tone] }}>
+                  {count} · {formatPercent(share)}
+                </div>
+                <div className="text-muted-foreground mt-0.5">{APPROVAL_HELP[decision]}</div>
+              </div>
+            ) : null}
           </div>
         )
       })}

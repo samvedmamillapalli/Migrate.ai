@@ -31,10 +31,12 @@ import {
   getPipelineProgress,
   getRun,
   mapSchema,
+  notifyWorkspacesChanged,
   predictRun,
   requireOwnerIdentity,
   setConnectionSecretArn,
   setCurrentRunId,
+  updateWorkspace,
   type MigrationRun,
   type PipelineProgress,
   type SchemaView,
@@ -72,8 +74,8 @@ const STEPS = [
   ["SQL", "Write migration"],
   ["Connect", "Database or demo"],
   ["Schema", "Browse tables"],
-  ["Columns", "Inspect structure"],
-  ["Review", "Submit for analysis"],
+  ["Structure", "Inspect columns & indexes"],
+  ["Analyze", "Review & submit"],
 ] as const
 
 const GRANT_HELP_SQL = `-- Create a dedicated read-only user
@@ -355,6 +357,7 @@ export default function NewMigrationPage() {
       setSchema(mapSchema(updated))
       if (updated.schema_discovery_status === "succeeded") {
         setStep(2)
+        void syncWorkspaceConnection(updated)
       } else {
         setError(
           `Discovery status: ${updated.schema_discovery_status ?? "unknown"}`
@@ -370,6 +373,28 @@ export default function NewMigrationPage() {
       if (timer) clearInterval(timer)
       setBusy(null)
       setProgress(null)
+    }
+  }
+
+  /**
+   * Persist a just-verified connection onto the run's workspace so the
+   * sidebar's connection state is real backend/workspace state, not
+   * something inferred from this wizard's own local state. Reuses the
+   * secret ARN the run already stored — no credentials re-enter the
+   * request, and the backend re-verifies + relabels (host, engine) from
+   * that same pointer. Best-effort: a failure here doesn't affect the run,
+   * which already connected successfully.
+   */
+  async function syncWorkspaceConnection(updatedRun: MigrationRun) {
+    const workspaceId = updatedRun.workspace_id ?? getActiveWorkspaceId()
+    if (!workspaceId || !updatedRun.connection_secret_arn) return
+    try {
+      await updateWorkspace(workspaceId, {
+        connection_secret_arn: updatedRun.connection_secret_arn,
+      })
+      notifyWorkspacesChanged()
+    } catch {
+      /* best-effort — the sidebar just won't reflect this connection yet */
     }
   }
 
@@ -442,7 +467,7 @@ export default function NewMigrationPage() {
     <div className="mx-auto w-full max-w-[1500px] px-6 pb-10 lg:px-10">
       <PageHeader
         title="Analyze Migration"
-        subtitle="Predict risk before executing your migration against production."
+        subtitle="Predict migration impact before executing against production."
       />
 
       {resumable && !run ? (
@@ -1134,29 +1159,41 @@ export default function NewMigrationPage() {
                 "You pick the table the migration targets",
                 "Columns and indexes are shown for review",
                 "AI predicts duration, storage and risk",
-              ].map((t, i) => (
-                <div key={t} className="flex gap-3 text-[13.5px]">
-                  <span
-                    className={cn(
-                      "font-mono text-[12px] font-bold",
-                      i < step
-                        ? "text-[var(--tone-pass-fg)]"
-                        : "text-muted-foreground"
-                    )}
-                  >
-                    {String(i + 1).padStart(2, "0")}
-                  </span>
-                  <span
-                    className={
-                      i < step
-                        ? "text-muted-foreground line-through"
-                        : "text-foreground"
-                    }
-                  >
-                    {t}
-                  </span>
-                </div>
-              ))}
+              ].map((t, i) => {
+                const done = i < step
+                const active = i === step
+                return (
+                  <div key={t} className="flex gap-3 text-[13.5px]">
+                    <span
+                      className={cn(
+                        "flex size-[18px] shrink-0 items-center justify-center font-mono text-[12px] font-bold",
+                        done
+                          ? "text-[var(--tone-pass-fg)]"
+                          : active
+                            ? "text-primary"
+                            : "text-muted-foreground"
+                      )}
+                    >
+                      {done ? (
+                        <Check className="size-3.5" />
+                      ) : (
+                        String(i + 1).padStart(2, "0")
+                      )}
+                    </span>
+                    <span
+                      className={cn(
+                        done
+                          ? "text-muted-foreground"
+                          : active
+                            ? "text-foreground font-semibold"
+                            : "text-foreground"
+                      )}
+                    >
+                      {t}
+                    </span>
+                  </div>
+                )
+              })}
             </div>
             {run ? (
               <Link

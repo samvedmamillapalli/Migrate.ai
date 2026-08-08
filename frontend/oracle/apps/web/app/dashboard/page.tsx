@@ -22,9 +22,9 @@ import {
   type AccuracyTrendPoint,
   AnalyticsChartHeader,
   AccuracyTrendChart,
+  ApprovalDecisionChart,
+  type ApprovalDecisionBucket,
   ChartTheme,
-  MigrationTypeDonut,
-  type MigrationTypeSlice,
   RiskLevelBarChart,
   type RiskLevelBucket,
   RuntimeScatterChart,
@@ -41,10 +41,8 @@ import {
   SqlBlock,
   StatusPill,
   ToneDot,
-  toneText,
   type Tone,
 } from "@workspace/ui/components/ui-kit"
-import { cn } from "@workspace/ui/lib/utils"
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value && typeof value === "object" && !Array.isArray(value)) {
@@ -147,7 +145,6 @@ export default function DashboardPage() {
   const rest = runs && runs.length > 1 ? runs.slice(1).map(mapRunListItem) : []
 
   const approvals = asRecord(metrics?.approval_breakdown)
-  const memoryCorpus = asRecord(metrics?.memory_corpus)
 
   const trendPoints: AccuracyTrendPoint[] = asRecordArray(
     metrics?.scalar_accuracy_trend
@@ -174,14 +171,17 @@ export default function DashboardPage() {
         p.runId && !Number.isNaN(p.predictedSeconds) && !Number.isNaN(p.actualSeconds)
     )
 
-  const typeSlices: MigrationTypeSlice[] = asRecordArray(
-    metrics?.migration_type_distribution
-  )
-    .map((row) => ({
-      type: String(row.migration_type ?? "unknown"),
-      count: Number(row.n ?? 0),
-    }))
-    .filter((s) => s.count > 0)
+  const approvalBuckets: ApprovalDecisionBucket[] = (
+    [
+      "proceed",
+      "accept_recommended",
+      "cancel",
+      "awaiting_decision",
+    ] as const
+  ).map((decision) => ({
+    decision,
+    count: Number(approvals?.[decision] ?? 0),
+  }))
 
   const riskBuckets: RiskLevelBucket[] = asRecordArray(
     metrics?.risk_level_distribution
@@ -213,8 +213,8 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         {/* Latest Migration + Recent */}
         <Panel delay={0.04}>
-          <div className="px-6 py-5">
-            <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="px-6 py-3">
+            <div className="mb-2 flex items-center justify-between gap-3">
               <Label>Latest Migration</Label>
               {latest ? <StatusPill status={latest.status} /> : null}
             </div>
@@ -228,13 +228,13 @@ export default function DashboardPage() {
               </EmptyNote>
             ) : (
               <>
-                <div className="bg-muted/70 rounded-lg px-4 py-3">
+                <div className="bg-muted/70 rounded-lg px-4 py-2">
                   <SqlBlock>{latest.sqlSnippet}</SqlBlock>
                 </div>
-                <div className="text-muted-foreground mt-3 text-[13px]">
+                <div className="text-muted-foreground mt-2 text-[13px]">
                   {latest.createdAgo}
                 </div>
-                <div className="mt-4 flex flex-wrap items-center gap-4">
+                <div className="mt-3 flex flex-wrap items-center gap-4">
                   <Link
                     href="/dashboard/migrations/current"
                     onClick={() => setCurrentRunId(latest.id)}
@@ -253,9 +253,9 @@ export default function DashboardPage() {
             )}
           </div>
           {rest.length > 0 ? (
-            <div className="border-border border-t px-6 py-5">
-              <Label className="mb-3">Recent</Label>
-              <div className="space-y-2.5">
+            <div className="border-border border-t px-6 py-4">
+              <Label className="mb-2.5">Recent</Label>
+              <div className="max-h-[104px] space-y-2 overflow-y-auto pr-1">
                 {rest.map((m) => (
                   <Link
                     key={m.id}
@@ -274,8 +274,8 @@ export default function DashboardPage() {
         </Panel>
 
         {/* Recent Activity */}
-        <Panel className="px-6 py-5" delay={0.06}>
-          <Label className="mb-4">Recent Activity</Label>
+        <Panel className="px-6 py-3" delay={0.06}>
+          <Label className="mb-3">Recent Activity</Label>
           {activityError ? (
             <ErrorNote>{activityError}</ErrorNote>
           ) : loading ? (
@@ -283,7 +283,7 @@ export default function DashboardPage() {
           ) : !activity || activity.length === 0 ? (
             <EmptyNote>No activity recorded yet.</EmptyNote>
           ) : (
-            <div className="space-y-4">
+            <div className="max-h-[168px] space-y-2.5 overflow-y-auto pr-1">
               {activity.map((a, i) => (
                 <div
                   key={`${a.migration_run_id}-${a.kind}-${a.at}-${i}`}
@@ -310,80 +310,9 @@ export default function DashboardPage() {
         </Panel>
       </div>
 
-      {/* Approval decisions */}
-      <Panel className="mt-5 px-6 py-5" delay={0.1}>
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <Label>Approval Decisions</Label>
-          <Link
-            href="/dashboard/memory"
-            className="text-primary inline-flex items-center gap-1 text-[11px] font-bold tracking-[0.08em] uppercase hover:underline"
-          >
-            Memory <ArrowRight className="size-3" />
-          </Link>
-        </div>
-        {metricsError ? (
-          <ErrorNote>{metricsError}</ErrorNote>
-        ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            {(
-              [
-                ["proceed", "Proceeded", "", "Approved and sent to a shadow test."],
-                [
-                  "accept_recommended",
-                  "Accepted Plan",
-                  "",
-                  "Plan accepted without running a shadow test.",
-                ],
-                ["cancel", "Cancelled", "", "Rejected by a reviewer."],
-                [
-                  "awaiting_decision",
-                  "No Decision Yet",
-                  "warn",
-                  // Deliberately not called "Awaiting Decision": this counts
-                  // every run without an approval row, which includes runs
-                  // still being set up or predicted.
-                  "Every run with no decision recorded, including ones still being set up or predicted.",
-                ],
-              ] as const
-            ).map(([key, label, tone, help]) => (
-              <div key={key} title={help}>
-                <div className="section-label">{label}</div>
-                <div
-                  className={cn(
-                    "mt-1.5 text-[26px] font-bold tabular-nums",
-                    tone === "warn" ? toneText("warn") : "text-foreground"
-                  )}
-                >
-                  {Number(approvals?.[key] ?? 0)}
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-        {memoryCorpus ? (
-          <div className="border-border mt-5 flex items-center gap-3 border-t pt-4 text-[12px]">
-            <span className="section-label">Memory</span>
-            <span className="text-primary font-semibold">
-              {String(memoryCorpus.memories_ready ?? 0)} ready
-            </span>
-            <span className="text-muted-foreground">
-              {String(memoryCorpus.pending ?? 0)} pending
-            </span>
-          </div>
-        ) : null}
-      </Panel>
-
-      {/* Migration intelligence — accuracy trend, predicted vs. actual
-          runtime, migration-type mix, and risk-level distribution. */}
       <Panel className="analytics-charts mt-5 px-6 py-5" delay={0.16}>
         <ChartTheme />
         <div className="mb-5 flex items-center justify-between gap-3">
-          <div>
-            <Label>Migration Intelligence</Label>
-            <p className="text-muted-foreground mt-1 text-[12.5px] leading-relaxed">
-              How well predictions track reality across every graded run.
-            </p>
-          </div>
           {metricsError ? <ErrorNote>{metricsError}</ErrorNote> : null}
         </div>
         <div className="grid grid-cols-1 gap-x-8 gap-y-7 xl:grid-cols-2">
@@ -397,8 +326,8 @@ export default function DashboardPage() {
             {!loading && scatterPoints.length > 0 ? <RuntimeScatterLegend /> : null}
           </div>
           <div>
-            <AnalyticsChartHeader>Migration Type Distribution</AnalyticsChartHeader>
-            <MigrationTypeDonut slices={typeSlices} loading={loading} />
+            <AnalyticsChartHeader>Approval Decisions</AnalyticsChartHeader>
+            <ApprovalDecisionChart buckets={approvalBuckets} loading={loading} />
           </div>
           <div>
             <AnalyticsChartHeader>Risk Level Distribution</AnalyticsChartHeader>
