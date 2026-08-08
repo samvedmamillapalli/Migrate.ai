@@ -4,6 +4,8 @@ import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useUser } from "@clerk/nextjs"
+import Image from "next/image"
+import migrationOracleLogo from "@/app/migration-oracle-logo.png"
 import {
   Brain,
   Clock,
@@ -147,11 +149,19 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
   return (
     <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader className="px-4 pt-5 pb-4">
-        <div className="flex items-start gap-2.5">
-          <div className="bg-primary/10 mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-md">
-            <Database className="text-primary size-3.5" strokeWidth={2} />
+      <SidebarHeader className="px-4 pt-5 pb-6">
+        <div className="flex items-center gap-2.5">
+          <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md">
+            <Image
+              src={migrationOracleLogo}
+              alt="Migration Oracle"
+              width={32}
+              height={32}
+              className="size-8 scale-[1.35] object-contain"
+              priority
+            />
           </div>
+
           <div className="flex-1 group-data-[collapsible=icon]:hidden">
             <div className="text-foreground text-[15px] leading-tight font-bold tracking-tight">
               Migration Oracle

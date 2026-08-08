@@ -1,7 +1,10 @@
 "use client"
 
 import * as React from "react"
+import Image from "next/image"
 import { ChevronsUpDown, Database, Pencil, Plus, Users } from "lucide-react"
+
+import migrationOracleLogo from "@/app/migration-oracle-logo.png"
 
 import { CreateWorkspaceDialog } from "@/components/create-workspace-dialog"
 import { EditWorkspaceDialog } from "@/components/edit-workspace-dialog"
@@ -152,9 +155,15 @@ export function WorkspaceSwitcher() {
                 />
               }
             >
-              <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-                <Database className="size-4" />
-              </div>
+              {/* <div className="flex aspect-square size-8 items-center justify-center overflow-hidden rounded-lg">
+                <Image
+                  src={migrationOracleLogo}
+                  alt="Migration Oracle"
+                  width={32}
+                  height={32}
+                  className="size-8 object-contain"
+                />
+              </div> */}
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-medium">
                   {active?.name ?? "No workspace"}
