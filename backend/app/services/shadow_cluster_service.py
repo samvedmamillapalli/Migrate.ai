@@ -265,6 +265,65 @@ class ShadowClusterService:
 
         return await with_txn_retry(_commit, on_retry=self._session.rollback)
 
+    async def merge_timings_and_snapshot(
+        self,
+        shadow_id: uuid.UUID,
+        *,
+        timings: dict[str, Any] | None = None,
+        before: dict[str, Any] | None = None,
+        after: dict[str, Any] | None = None,
+        row_sample_before: dict[str, Any] | None = None,
+        row_sample_after: dict[str, Any] | None = None,
+    ) -> ShadowCluster:
+        """Merge stage timings AND structural/row snapshots in ONE transaction.
+
+        This is a performance-only optimization for the ExecuteMigration
+        handler, which previously issued ``merge_timings`` (get+update+
+        commit+refresh) and then ``set_schema_snapshot`` (another get+update+
+        commit+refresh) — two transactions, 8 DB round-trips for the same
+        shadow row. Combining them into a single transaction halves the write
+        cost while preserving the exact same semantics:
+
+        * ``timings`` keys are merged into existing ``stage_timings`` (same as
+          ``merge_timings``) — a None value is not written.
+        * Each snapshot field is only written when provided (same as
+          ``set_schema_snapshot``) — a caller that only has the schema doesn't
+          clobber values it doesn't have.
+        * The event log gains a single entry with the merged timings (same as
+          ``record_timings`` would have appended).
+
+        Both public methods (``merge_timings``, ``set_schema_snapshot``)
+        remain unchanged for other callers.
+        """
+
+        async def _commit() -> ShadowCluster:
+            entity = await self._repository.get_by_id_or_raise(shadow_id)
+            if timings:
+                merged = dict(entity.stage_timings or {})
+                for key, value in timings.items():
+                    if value is not None:
+                        merged[key] = value
+                entity.stage_timings = merged
+            if before is not None:
+                entity.schema_snapshot_before = before
+            if after is not None:
+                entity.schema_snapshot_after = after
+            if row_sample_before is not None:
+                entity.row_sample_before = row_sample_before
+            if row_sample_after is not None:
+                entity.row_sample_after = row_sample_after
+            entity.event_log = _append_event(
+                entity.event_log,
+                status=entity.status.value,
+                stage_timings=entity.stage_timings,
+            )
+            updated = await self._repository.update(entity)
+            await self._session.commit()
+            await self._session.refresh(updated)
+            return updated
+
+        return await with_txn_retry(_commit, on_retry=self._session.rollback)
+
     async def set_error(
         self,
         shadow_id: uuid.UUID,

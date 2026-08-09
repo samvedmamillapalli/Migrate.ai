@@ -178,7 +178,9 @@ class GradingPipelineService:
 
         grade = await with_txn_retry(_commit_grade, on_retry=self._session.rollback)
 
-        # Reload for memory write with relationships.
+        # Reload for memory write with relationships (session.commit() expires
+        # ORM objects; accessing lazy relationships on the stale `run` would
+        # raise MissingGreenlet in async context).
         run = await self._runs.get_by_id_or_raise(run_id, load_children=True)
         assert run.prediction is not None
         assert run.execution_result is not None

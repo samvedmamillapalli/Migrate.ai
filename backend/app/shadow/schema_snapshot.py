@@ -26,7 +26,7 @@ import sqlglot
 from sqlglot import exp
 from sqlglot.errors import ParseError
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
 from app.core.logging import get_logger
 from app.schema_analysis.analyzer import SchemaAnalyzer
@@ -109,6 +109,7 @@ async def capture_shadow_schema_snapshot(
 async def capture_shadow_snapshot(
     connection_url: str,
     *,
+    engine: AsyncEngine | None = None,
     statement_timeout_ms: int = 30_000,
     sample_tables: list[str] | None = None,
     sample_limit: int = _ROW_SAMPLE_LIMIT_DEFAULT,
@@ -120,6 +121,13 @@ async def capture_shadow_snapshot(
     write access — it has to, to seed and migrate — so this intentionally
     skips the read-only assertion `discover_database_metadata` enforces; that
     check protects the customer's database, not this disposable one.
+
+    ``engine``: an optional pre-created async engine to reuse (e.g. one already
+    opened by the caller for the migrate stage). When provided, a connection is
+    taken from its pool and the per-connection ``SET statement_timeout`` is
+    applied the same way ``SchemaAnalysisConnection`` would. This avoids the
+    overhead of constructing a fresh engine (DNS/TLS/connect) per snapshot.
+    When omitted, a short-lived ``SchemaAnalysisConnection`` is used as before.
 
     ``sample_tables``: table names (as referenced in the migration SQL) to
     also pull up to ``sample_limit`` real rows from, in the *same* connection
@@ -141,27 +149,35 @@ async def capture_shadow_snapshot(
     while attempt <= _SNAPSHOT_MAX_RETRIES:
         attempt += 1
         try:
+            if engine is not None:
+                async with engine.connect() as conn:
+                    try:
+                        await conn.execute(
+                            text(f"SET statement_timeout = {int(statement_timeout_ms)}")
+                        )
+                        await conn.commit()
+                    except Exception:  # noqa: BLE001 - best-effort timeout
+                        await conn.rollback()
+                    return await _capture_snapshot_on_conn(
+                        conn,
+                        sample_tables=sample_tables,
+                        sample_limit=sample_limit,
+                        match_row_ids=match_row_ids,
+                        engine=engine,
+                    )
             async with SchemaAnalysisConnection(
                 connection_url,
                 statement_timeout_ms=statement_timeout_ms,
                 force_cockroach=True,
             ) as target:
                 async with target.connection() as conn:
-                    metadata: DatabaseMetadata = await SchemaAnalyzer().analyze_open_connection(
-                        conn, enforce_read_only=False
+                    return await _capture_snapshot_on_conn(
+                        conn,
+                        sample_tables=sample_tables,
+                        sample_limit=sample_limit,
+                        match_row_ids=match_row_ids,
+                        engine=None,
                     )
-                    row_samples: dict[str, Any] | None = None
-                    if sample_tables:
-                        row_samples = await _capture_row_samples(
-                            conn,
-                            metadata,
-                            sample_tables,
-                            limit=sample_limit,
-                            match_row_ids=match_row_ids,
-                        )
-                    dumped = metadata.model_dump(mode="json")
-                    await _fill_exact_row_counts(conn, dumped)
-            return ShadowSnapshot(schema=dumped, row_samples=row_samples)
         except Exception as exc:  # noqa: BLE001 - best-effort, never blocks migration
             last_exc = exc
             if attempt <= _SNAPSHOT_MAX_RETRIES:
@@ -185,11 +201,57 @@ async def capture_shadow_snapshot(
     return None
 
 
+_CONCURRENT_COUNT_LIMIT = 4
+
+
+async def _capture_snapshot_on_conn(
+    conn: AsyncConnection,
+    *,
+    sample_tables: list[str] | None,
+    sample_limit: int,
+    match_row_ids: dict[str, list[dict[str, Any]]] | None,
+    engine: AsyncEngine | None,
+) -> ShadowSnapshot:
+    """Run the analyzer + row samples + exact counts on an already-open conn."""
+    metadata: DatabaseMetadata = await SchemaAnalyzer().analyze_open_connection(
+        conn, enforce_read_only=False
+    )
+    row_samples: dict[str, Any] | None = None
+    if sample_tables:
+        row_samples = await _capture_row_samples(
+            conn,
+            metadata,
+            sample_tables,
+            limit=sample_limit,
+            match_row_ids=match_row_ids,
+        )
+    dumped = metadata.model_dump(mode="json")
+    await _fill_exact_row_counts(conn, dumped, engine=engine)
+    return ShadowSnapshot(schema=dumped, row_samples=row_samples)
+
+
+async def _bounded_gather(
+    coros: list[Any],
+    limit: int = _CONCURRENT_COUNT_LIMIT,
+) -> list[Any]:
+    """Run ``coros`` concurrently, never more than ``limit`` in flight."""
+    sem = asyncio.Semaphore(limit)
+
+    async def _worker(coro: Any) -> Any:
+        async with sem:
+            return await coro
+
+    return await asyncio.gather(*(_worker(c) for c in coros))
+
+
 # --- exact row counts -------------------------------------------------------
 
 
 async def _fill_exact_row_counts(
-    conn: AsyncConnection, snapshot: dict[str, Any]
+    conn: AsyncConnection,
+    snapshot: dict[str, Any],
+    *,
+    engine: AsyncEngine | None = None,
 ) -> None:
     """Replace each table's ``estimated_row_count`` with a real ``count(*)``.
 
@@ -205,7 +267,13 @@ async def _fill_exact_row_counts(
 
     Best-effort and in-place: a table that fails to count keeps whatever
     estimate it already had rather than failing the snapshot.
+
+    When ``engine`` is provided, the counts are run concurrently on separate
+    pooled connections (bounded by ``_CONCURRENT_COUNT_LIMIT``) to collapse
+    the serial round-trips; otherwise they run serially on the passed
+    ``conn`` (single-connection callers like the row-sample path).
     """
+    targets: list[tuple[dict[str, Any], str]] = []
     for schema in snapshot.get("schemas") or []:
         schema_name = schema.get("name") or ""
         if schema_name in _IGNORED_SCHEMAS:
@@ -214,9 +282,27 @@ async def _fill_exact_row_counts(
             table_name = table.get("name")
             if not table_name:
                 continue
-            exact = await _count_rows(conn, _qualify(schema_name, table_name))
+            targets.append(
+                (table, _qualify(schema_name, table_name))
+            )
+
+    if engine is None:
+        for table, qualified in targets:
+            exact = await _count_rows(conn, qualified)
             if exact is not None:
                 table["estimated_row_count"] = exact
+        return
+
+    async def _count_on_pool(table: dict[str, Any], qualified: str) -> None:
+        async with engine.connect() as pool_conn:
+            exact = await _count_rows(pool_conn, qualified)
+        if exact is not None:
+            table["estimated_row_count"] = exact
+
+    await _bounded_gather(
+        [_count_on_pool(t, q) for t, q in targets],
+        limit=_CONCURRENT_COUNT_LIMIT,
+    )
 
 
 # --- row sampling -----------------------------------------------------------
