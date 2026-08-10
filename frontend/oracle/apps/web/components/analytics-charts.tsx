@@ -186,12 +186,14 @@ export type AccuracyTrendPoint = {
 export function AccuracyTrendChart({
   points,
   loading,
+  height = 220,
 }: {
   points: AccuracyTrendPoint[]
   loading: boolean
+  height?: number
 }) {
   const W = 560
-  const H = 220
+  const H = height
   const PAD = { top: 12, right: 8, bottom: 22, left: 30 }
   const [hover, setHover] = React.useState<number | null>(null)
 
@@ -349,12 +351,14 @@ const DURATION_TICKS = [1, 5, 30, 60, 300, 900, 3600, 14400, 86400]
 export function RuntimeScatterChart({
   points,
   loading,
+  height = 220,
 }: {
   points: RuntimeScatterPoint[]
   loading: boolean
+  height?: number
 }) {
   const W = 320
-  const H = 220
+  const H = height
   const PAD = { top: 10, right: 10, bottom: 24, left: 34 }
   const [hover, setHover] = React.useState<number | null>(null)
 
@@ -471,7 +475,7 @@ const SCATTER_LEGEND: (keyof typeof STATUS_DOT)[] = [
 
 export function RuntimeScatterLegend() {
   return (
-    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
       {SCATTER_LEGEND.map((key) => (
         <span key={key} className="flex items-center gap-1.5 text-[11px]">
           <span
@@ -507,19 +511,22 @@ const RISK_LABEL: Record<RiskLevelBucket["level"], string> = {
 export function RiskLevelBarChart({
   buckets,
   loading,
+  compact = false,
 }: {
   buckets: RiskLevelBucket[]
   loading: boolean
+  compact?: boolean
 }) {
-  const rowH = 30
+  const rowH = compact ? 18 : 30
   const H = rowH * 4 + 8
+  const barH = compact ? "h-3" : "h-6"
   const [hover, setHover] = React.useState<number | null>(null)
 
   if (loading) {
     return (
       <div className="space-y-2.5" style={{ minHeight: H }}>
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="bg-muted h-6 animate-pulse rounded" style={{ width: `${70 - i * 12}%` }} />
+          <div key={i} className={cn("bg-muted animate-pulse rounded", barH)} style={{ width: `${70 - i * 12}%` }} />
         ))}
       </div>
     )
@@ -543,7 +550,7 @@ export function RiskLevelBarChart({
   const max = Math.max(...RISK_ORDER.map((l) => byLevel.get(l) ?? 0), 1)
 
   return (
-    <div className="space-y-2.5">
+    <div className={cn(compact ? "space-y-1" : "space-y-2.5")}>
       {RISK_ORDER.map((level, i) => {
         const count = byLevel.get(level) ?? 0
         const pct = count / max
@@ -564,7 +571,7 @@ export function RiskLevelBarChart({
               />
               <span className="text-foreground text-[12px] font-semibold">{RISK_LABEL[level]}</span>
             </div>
-            <div className="bg-muted relative h-6 min-w-0 flex-1 overflow-hidden rounded-md">
+            <div className={cn("bg-muted relative min-w-0 flex-1 overflow-hidden rounded-md", barH)}>
               <div
                 className={cn(
                   "h-full rounded-md transition-[width] duration-300",
@@ -633,20 +640,23 @@ const APPROVAL_HELP: Record<ApprovalDecisionBucket["decision"], string> = {
 export function ApprovalDecisionChart({
   buckets,
   loading,
+  compact = false,
 }: {
   buckets: ApprovalDecisionBucket[]
   loading: boolean
+  compact?: boolean
 }) {
-  const rowH = 30
+  const rowH = compact ? 18 : 30
   const H = rowH * 4 + 8
-  const labelW = 140
+  const labelW = compact ? 118 : 140
+  const barH = compact ? "h-3" : "h-6"
   const [hover, setHover] = React.useState<number | null>(null)
 
   if (loading) {
     return (
       <div className="space-y-2.5" style={{ minHeight: H }}>
         {[0, 1, 2, 3].map((i) => (
-          <div key={i} className="bg-muted h-6 animate-pulse rounded" style={{ width: `${70 - i * 12}%` }} />
+          <div key={i} className={cn("bg-muted animate-pulse rounded", barH)} style={{ width: `${70 - i * 12}%` }} />
         ))}
       </div>
     )
@@ -671,7 +681,7 @@ export function ApprovalDecisionChart({
   const max = Math.max(...APPROVAL_ORDER.map((d) => byDecision.get(d) ?? 0), 1)
 
   return (
-    <div className="space-y-2.5">
+    <div className={cn(compact ? "space-y-1" : "space-y-2.5")}>
       {APPROVAL_ORDER.map((decision, i) => {
         const count = byDecision.get(decision) ?? 0
         const pct = count / max
@@ -697,7 +707,7 @@ export function ApprovalDecisionChart({
                 {APPROVAL_LABEL[decision]}
               </span>
             </div>
-            <div className="bg-muted relative h-6 min-w-0 flex-1 overflow-hidden rounded-md">
+            <div className={cn("bg-muted relative min-w-0 flex-1 overflow-hidden rounded-md", barH)}>
               <div
                 className={cn(
                   "h-full rounded-md transition-[width] duration-300",
@@ -733,7 +743,7 @@ export function ApprovalDecisionChart({
 // --- panel wrapper -----------------------------------------------------------
 
 export function AnalyticsChartHeader({ children }: { children: React.ReactNode }) {
-  return <PanelLabel className="mb-3">{children}</PanelLabel>
+  return <PanelLabel className="mb-1.5">{children}</PanelLabel>
 }
 
 export { ChartTheme }

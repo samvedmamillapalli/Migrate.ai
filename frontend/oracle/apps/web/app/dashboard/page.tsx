@@ -44,6 +44,8 @@ import {
   type Tone,
 } from "@workspace/ui/components/ui-kit"
 
+const CHART_H = 168
+
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return value as Record<string, unknown>
@@ -168,7 +170,9 @@ export default function DashboardPage() {
     }))
     .filter(
       (p) =>
-        p.runId && !Number.isNaN(p.predictedSeconds) && !Number.isNaN(p.actualSeconds)
+        p.runId &&
+        !Number.isNaN(p.predictedSeconds) &&
+        !Number.isNaN(p.actualSeconds)
     )
 
   const approvalBuckets: ApprovalDecisionBucket[] = (
@@ -195,14 +199,15 @@ export default function DashboardPage() {
     }))
 
   return (
-    <div className="mx-auto w-full max-w-[1500px] px-6 pb-10 lg:px-10">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-[1500px] flex-col overflow-hidden px-6 py-4 lg:px-10 lg:py-5">
       <PageHeader
+        compact
         title="Overview"
-        subtitle="Track your migration analyses and how well predictions hold up."
+        subtitle="Track migration analyses and prediction accuracy."
         action={
           <Link
             href="/dashboard/migrations/new"
-            className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-semibold shadow-sm transition-all duration-150 active:scale-[0.98]"
+            className="bg-primary text-primary-foreground hover:bg-primary/90 inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-semibold shadow-sm transition-all duration-150 active:scale-[0.98]"
           >
             <Plus className="size-4" />
             New Migration
@@ -210,10 +215,9 @@ export default function DashboardPage() {
         }
       />
 
-      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-        {/* Latest Migration + Recent */}
+      <div className="grid shrink-0 grid-cols-1 items-start gap-3 xl:grid-cols-2">
         <Panel delay={0.04}>
-          <div className="px-6 py-3">
+          <div className="px-4 py-3 sm:px-5">
             <div className="mb-2 flex items-center justify-between gap-3">
               <Label>Latest Migration</Label>
               {latest ? <StatusPill status={latest.status} /> : null}
@@ -221,30 +225,30 @@ export default function DashboardPage() {
             {runsError ? (
               <ErrorNote>{runsError}</ErrorNote>
             ) : loading ? (
-              <SkeletonLines lines={3} />
+              <SkeletonLines lines={2} />
             ) : !latest ? (
               <EmptyNote>
                 No migration runs yet. Create one to get started.
               </EmptyNote>
             ) : (
               <>
-                <div className="bg-muted/70 rounded-lg px-4 py-2">
+                <div className="bg-muted/70 rounded-lg px-3 py-2">
                   <SqlBlock>{latest.sqlSnippet}</SqlBlock>
                 </div>
-                <div className="text-muted-foreground mt-2 text-[13px]">
+                <div className="text-muted-foreground mt-1.5 text-[12px]">
                   {latest.createdAgo}
                 </div>
-                <div className="mt-3 flex flex-wrap items-center gap-4">
+                <div className="mt-2.5 flex flex-wrap items-center gap-3">
                   <Link
                     href="/dashboard/migrations/current"
                     onClick={() => setCurrentRunId(latest.id)}
-                    className="border-border bg-secondary text-foreground hover:bg-muted rounded-lg border px-3.5 py-2 text-[13px] font-semibold transition-colors active:scale-[0.98]"
+                    className="border-border bg-secondary text-foreground hover:bg-muted rounded-lg border px-3 py-1.5 text-[12px] font-semibold transition-colors active:scale-[0.98]"
                   >
                     Set as current
                   </Link>
                   <Link
                     href={`/dashboard/migrations/${latest.id}`}
-                    className="text-primary inline-flex items-center gap-1 text-[13px] font-semibold hover:underline"
+                    className="text-primary inline-flex items-center gap-1 text-[12px] font-semibold hover:underline"
                   >
                     View detail <ArrowRight className="size-3.5" />
                   </Link>
@@ -253,10 +257,10 @@ export default function DashboardPage() {
             )}
           </div>
           {rest.length > 0 ? (
-            <div className="border-border border-t px-6 py-4">
-              <Label className="mb-2.5">Recent</Label>
-              <div className="max-h-[104px] space-y-2 overflow-y-auto pr-1">
-                {rest.map((m) => (
+            <div className="border-border border-t px-4 py-3 sm:px-5">
+              <Label className="mb-2">Recent</Label>
+              <div className="space-y-2">
+                {rest.slice(0, 3).map((m) => (
                   <Link
                     key={m.id}
                     href={`/dashboard/migrations/${m.id}`}
@@ -273,21 +277,20 @@ export default function DashboardPage() {
           ) : null}
         </Panel>
 
-        {/* Recent Activity */}
-        <Panel className="px-6 py-3" delay={0.06}>
-          <Label className="mb-3">Recent Activity</Label>
+        <Panel className="px-4 py-3 sm:px-5" delay={0.06}>
+          <Label className="mb-2">Recent Activity</Label>
           {activityError ? (
             <ErrorNote>{activityError}</ErrorNote>
           ) : loading ? (
-            <SkeletonLines lines={5} />
+            <SkeletonLines lines={3} />
           ) : !activity || activity.length === 0 ? (
             <EmptyNote>No activity recorded yet.</EmptyNote>
           ) : (
-            <div className="max-h-[168px] space-y-2.5 overflow-y-auto pr-1">
-              {activity.map((a, i) => (
+            <div className="space-y-2.5">
+              {activity.slice(0, 5).map((a, i) => (
                 <div
                   key={`${a.migration_run_id}-${a.kind}-${a.at}-${i}`}
-                  className="flex gap-3 text-[13px]"
+                  className="flex gap-3 text-[12.5px]"
                 >
                   <span className="text-muted-foreground w-11 shrink-0 tabular-nums">
                     {clockLabel(a.at)}
@@ -310,28 +313,63 @@ export default function DashboardPage() {
         </Panel>
       </div>
 
-      <Panel className="analytics-charts mt-5 px-6 py-5" delay={0.16}>
+      <Panel
+        className="analytics-charts mt-3 flex min-h-0 flex-1 flex-col overflow-hidden px-4 py-3 sm:px-5 sm:py-3.5"
+        delay={0.12}
+      >
         <ChartTheme />
-        <div className="mb-5 flex items-center justify-between gap-3">
-          {metricsError ? <ErrorNote>{metricsError}</ErrorNote> : null}
-        </div>
-        <div className="grid grid-cols-1 gap-x-8 gap-y-7 xl:grid-cols-2">
-          <div>
-            <AnalyticsChartHeader>Prediction Accuracy Over Time</AnalyticsChartHeader>
-            <AccuracyTrendChart points={trendPoints} loading={loading} />
+        {metricsError ? (
+          <div className="mb-2 shrink-0">
+            <ErrorNote>{metricsError}</ErrorNote>
           </div>
-          <div>
-            <AnalyticsChartHeader>Predicted vs. Actual Runtime</AnalyticsChartHeader>
-            <RuntimeScatterChart points={scatterPoints} loading={loading} />
-            {!loading && scatterPoints.length > 0 ? <RuntimeScatterLegend /> : null}
+        ) : null}
+        <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-x-6 xl:grid-cols-2">
+            <div className="flex min-h-0 min-w-0 flex-col">
+              <AnalyticsChartHeader>
+                Prediction Accuracy Over Time
+              </AnalyticsChartHeader>
+              <div className="min-h-0 flex-1">
+                <AccuracyTrendChart
+                  points={trendPoints}
+                  loading={loading}
+                  height={CHART_H}
+                />
+              </div>
+            </div>
+            <div className="flex min-h-0 min-w-0 flex-col">
+              <AnalyticsChartHeader>
+                Predicted vs. Actual Runtime
+              </AnalyticsChartHeader>
+              <div className="min-h-0 flex-1">
+                <RuntimeScatterChart
+                  points={scatterPoints}
+                  loading={loading}
+                  height={CHART_H}
+                />
+                {!loading && scatterPoints.length > 0 ? (
+                  <RuntimeScatterLegend />
+                ) : null}
+              </div>
+            </div>
           </div>
-          <div>
-            <AnalyticsChartHeader>Approval Decisions</AnalyticsChartHeader>
-            <ApprovalDecisionChart buckets={approvalBuckets} loading={loading} />
-          </div>
-          <div>
-            <AnalyticsChartHeader>Risk Level Distribution</AnalyticsChartHeader>
-            <RiskLevelBarChart buckets={riskBuckets} loading={loading} />
+          <div className="grid shrink-0 grid-cols-1 gap-x-6 gap-y-2 xl:grid-cols-2">
+            <div className="min-w-0">
+              <AnalyticsChartHeader>Approval Decisions</AnalyticsChartHeader>
+              <ApprovalDecisionChart
+                buckets={approvalBuckets}
+                loading={loading}
+                compact
+              />
+            </div>
+            <div className="min-w-0">
+              <AnalyticsChartHeader>Risk Level Distribution</AnalyticsChartHeader>
+              <RiskLevelBarChart
+                buckets={riskBuckets}
+                loading={loading}
+                compact
+              />
+            </div>
           </div>
         </div>
       </Panel>

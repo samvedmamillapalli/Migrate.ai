@@ -3,14 +3,22 @@ export function SiteFooter({
   right = "AI-powered database migration",
   bordered = false,
   uppercaseLeft = false,
+  compact = false,
 }: {
   left?: string
   right?: string
   bordered?: boolean
   uppercaseLeft?: boolean
+  compact?: boolean
 }) {
   return (
-    <footer className="mx-auto w-full max-w-[1180px] px-6 pt-10 pb-14">
+    <footer
+      className={
+        compact
+          ? "mx-auto w-full max-w-[1180px] px-6 pt-0 pb-3"
+          : "mx-auto w-full max-w-[1180px] px-6 pt-10 pb-14"
+      }
+    >
       <div
         className={
           bordered

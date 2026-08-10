@@ -25,11 +25,13 @@ export default async function DashboardLayout({
     <DashboardProviders>
       <TooltipProvider>
         <ShadowWatchProvider>
-          <SidebarProvider>
+          <SidebarProvider className="h-svh max-h-svh overflow-hidden">
             <AppSidebar />
-            <SidebarInset className="bg-background">
+            <SidebarInset className="bg-background min-h-0 overflow-hidden">
               <DashboardHeader />
-              <div className="flex flex-1 flex-col py-8">{children}</div>
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+                {children}
+              </div>
             </SidebarInset>
           </SidebarProvider>
           <ShadowExecutionWindow />

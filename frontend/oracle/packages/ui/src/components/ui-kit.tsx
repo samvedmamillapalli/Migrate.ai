@@ -21,19 +21,38 @@ export function PageHeader({
   title,
   subtitle,
   action,
+  compact = false,
 }: {
   title: string
   subtitle?: React.ReactNode
   action?: React.ReactNode
+  compact?: boolean
 }) {
   return (
-    <div className="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row">
+    <div
+      className={cn(
+        "flex flex-col items-start justify-between sm:flex-row",
+        compact ? "mb-3 gap-2" : "mb-6 gap-4"
+      )}
+    >
       <div className="min-w-0">
-        <h1 className="text-foreground text-[28px] leading-tight font-bold tracking-[-0.02em]">
+        <h1
+          className={cn(
+            "text-foreground leading-tight font-bold tracking-[-0.02em]",
+            compact ? "text-[22px]" : "text-[28px]"
+          )}
+        >
           {title}
         </h1>
         {subtitle ? (
-          <p className="text-muted-foreground mt-1 text-sm">{subtitle}</p>
+          <p
+            className={cn(
+              "text-muted-foreground",
+              compact ? "mt-0.5 text-[13px]" : "mt-1 text-sm"
+            )}
+          >
+            {subtitle}
+          </p>
         ) : null}
       </div>
       {action ? <div className="shrink-0">{action}</div> : null}

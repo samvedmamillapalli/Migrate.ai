@@ -13,8 +13,10 @@ const linkClass =
 
 export function SiteHeader({
   wordmarkUppercase = false,
+  compact = false,
 }: {
   wordmarkUppercase?: boolean
+  compact?: boolean
 }) {
   const [open, setOpen] = React.useState(false)
 
@@ -46,8 +48,13 @@ export function SiteHeader({
   )
 
   return (
-    <header className="bg-background/85 sticky top-0 z-50 w-full border-b border-transparent backdrop-blur-md">
-      <div className="mx-auto grid max-w-[1180px] grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-6 py-4 md:grid-cols-[1fr_auto_1fr]">
+    <header className="bg-background/85 sticky top-0 z-50 w-full shrink-0 border-b border-transparent backdrop-blur-md">
+      <div
+        className={cn(
+          "mx-auto grid max-w-[1180px] grid-cols-[minmax(0,1fr)_auto] items-center gap-4 px-6 md:grid-cols-[1fr_auto_1fr]",
+          compact ? "py-2" : "py-4"
+        )}
+      >
         <Link
           href="/"
           className={cn(
