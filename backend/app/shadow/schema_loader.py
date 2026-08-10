@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from app.core.logging import get_logger
 from app.schema_analysis.connection import normalize_target_database_url
@@ -52,9 +52,12 @@ class ShadowSchemaLoader:
         metadata: DatabaseMetadata,
         *,
         statement_timeout_ms: int = 300_000,
+        engine: AsyncEngine | None = None,
     ) -> SchemaLoadReport:
         normalized = normalize_target_database_url(connection_url, force_cockroach=True)
-        engine = create_async_engine(normalized, pool_pre_ping=True)
+        owns_engine = engine is None
+        if engine is None:
+            engine = create_async_engine(normalized, pool_pre_ping=True)
         report = SchemaLoadReport()
         try:
             async with engine.connect() as raw:
@@ -97,7 +100,8 @@ class ShadowSchemaLoader:
                         conn, table, report
                     )
         finally:
-            await engine.dispose()
+            if owns_engine:
+                await engine.dispose()
 
         logger.info(
             "Loaded schema onto shadow",

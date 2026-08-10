@@ -5,7 +5,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncConnection, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
 from app.core.logging import get_logger
 from app.schema_analysis.connection import normalize_target_database_url
@@ -52,9 +52,12 @@ class ShadowSeeder:
         scale_tier: ScaleTier,
         *,
         statement_timeout_ms: int = 300_000,
+        engine: AsyncEngine | None = None,
     ) -> SeedReport:
         normalized = normalize_target_database_url(connection_url, force_cockroach=True)
-        engine = create_async_engine(normalized, pool_pre_ping=True)
+        owns_engine = engine is None
+        if engine is None:
+            engine = create_async_engine(normalized, pool_pre_ping=True)
         report = SeedReport(scale_tier=scale_tier)
         row_cap = TIER_ROW_CAPS[scale_tier]
         try:
@@ -84,7 +87,8 @@ class ShadowSeeder:
                             conn, table
                         )
         finally:
-            await engine.dispose()
+            if owns_engine:
+                await engine.dispose()
 
         logger.info(
             "Seeded shadow database",
@@ -103,6 +107,7 @@ class ShadowSeeder:
         scale_tier: ScaleTier,
         *,
         statement_timeout_ms: int = 300_000,
+        engine: AsyncEngine | None = None,
     ) -> SeedReport:
         """Insert synthetic rows into an already-loaded schema (no DDL).
 
@@ -111,7 +116,9 @@ class ShadowSeeder:
         mismatches) so a partial seed still yields measurable storage.
         """
         normalized = normalize_target_database_url(connection_url, force_cockroach=True)
-        engine = create_async_engine(normalized, pool_pre_ping=True)
+        owns_engine = engine is None
+        if engine is None:
+            engine = create_async_engine(normalized, pool_pre_ping=True)
         report = SeedReport(scale_tier=scale_tier)
         row_cap = TIER_ROW_CAPS[scale_tier]
         warnings: list[str] = []
@@ -137,7 +144,8 @@ class ShadowSeeder:
                                 extra={"table": table.name, "error": str(exc)[:200]},
                             )
         finally:
-            await engine.dispose()
+            if owns_engine:
+                await engine.dispose()
 
         report.warnings = warnings
         logger.info(

@@ -208,28 +208,28 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
                     runtime.aws_clients.s3(), bucket=bucket, run_id=str(run_id)
                 )
 
-        await shadow_service.merge_timings(
+        # Performance optimization: write stage timings + schema/row snapshots
+        # in ONE transaction instead of two (merge_timings then
+        # set_schema_snapshot were 2 transactions / 8 DB round-trips for the
+        # same shadow row). Semantics are identical: timings keys are merged
+        # (None values not written) and each snapshot field is only written
+        # when provided — so passing all-None snapshots is a no-op, exactly
+        # matching the old conditional guard below.
+        await shadow_service.merge_timings_and_snapshot(
             shadow.id,
-            migrate_ms=round(migrate_ms, 1),
-            job_watch=outcome.job_watch or [],
-            job_ids=outcome.job_ids or [],
-            job_progress=outcome.job_progress or [],
-            changefeed_events=changefeed_events,
-            changefeed_tables=outcome.changefeed_tables or [],
+            timings={
+                "migrate_ms": round(migrate_ms, 1),
+                "job_watch": outcome.job_watch or [],
+                "job_ids": outcome.job_ids or [],
+                "job_progress": outcome.job_progress or [],
+                "changefeed_events": changefeed_events,
+                "changefeed_tables": outcome.changefeed_tables or [],
+            },
+            before=outcome.schema_snapshot_before,
+            after=outcome.schema_snapshot_after,
+            row_sample_before=outcome.row_sample_before,
+            row_sample_after=outcome.row_sample_after,
         )
-        if (
-            outcome.schema_snapshot_before is not None
-            or outcome.schema_snapshot_after is not None
-            or outcome.row_sample_before is not None
-            or outcome.row_sample_after is not None
-        ):
-            await shadow_service.set_schema_snapshot(
-                shadow.id,
-                before=outcome.schema_snapshot_before,
-                after=outcome.schema_snapshot_after,
-                row_sample_before=outcome.row_sample_before,
-                row_sample_after=outcome.row_sample_after,
-            )
 
         # Real CockroachDB Managed MCP investigation — see
         # docs/COCKROACHDB_MCP_INTEGRATION_PLAN.md. Best-effort, additive:

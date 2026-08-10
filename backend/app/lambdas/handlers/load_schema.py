@@ -5,6 +5,8 @@ from __future__ import annotations
 from time import perf_counter
 from typing import Any
 
+from sqlalchemy.ext.asyncio import create_async_engine
+
 from app.core.logging import get_logger
 from app.database.models import ShadowClusterStatus
 from app.lambdas.errors import LambdaHandlerError, LambdaValidationError
@@ -12,6 +14,7 @@ from app.lambdas.helpers import parse_run_id, shadow_secret_name, total_estimate
 from app.lambdas.runtime import get_runtime, run_async, with_session
 from app.repositories.migration_run_repository import MigrationRunRepository
 from app.repositories.shadow_cluster_repository import ShadowClusterRepository
+from app.schema_analysis.connection import normalize_target_database_url
 from app.schema_analysis.models import DatabaseMetadata
 from app.services.shadow_cluster_service import ShadowClusterService
 from app.shadow.models import ScaleTier, select_scale_tier
@@ -79,32 +82,41 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
             )
 
         connection_url = await runtime.secrets.get_string(str(shadow_secret_arn))
-        loader = ShadowSchemaLoader()
-        t0 = perf_counter()
-        report = await loader.load(
-            connection_url,
-            metadata,
-            statement_timeout_ms=int(settings.shadow_seed_timeout_seconds * 1000),
-        )
-        rows_inserted = 0
-        seed_warnings: list[str] = []
-        if getattr(settings, "shadow_seed_synthetic_rows", True):
-            tier = ScaleTier.SMALL
-            if shadow.scale_tier:
-                try:
-                    tier = ScaleTier(str(shadow.scale_tier).lower())
-                except ValueError:
-                    tier = select_scale_tier(total_estimated_rows(metadata))
-            else:
-                tier = select_scale_tier(total_estimated_rows(metadata))
-            seed_report = await ShadowSeeder().seed_rows_only(
+        # One engine for the whole stage: loader + seeder share a single
+        # connection pool instead of each building + disposing its own.
+        normalized = normalize_target_database_url(connection_url, force_cockroach=True)
+        engine = create_async_engine(normalized, pool_pre_ping=True)
+        try:
+            loader = ShadowSchemaLoader()
+            t0 = perf_counter()
+            report = await loader.load(
                 connection_url,
                 metadata,
-                tier,
                 statement_timeout_ms=int(settings.shadow_seed_timeout_seconds * 1000),
+                engine=engine,
             )
-            rows_inserted = seed_report.rows_inserted
-            seed_warnings = list(seed_report.warnings or [])
+            rows_inserted = 0
+            seed_warnings: list[str] = []
+            if getattr(settings, "shadow_seed_synthetic_rows", True):
+                tier = ScaleTier.SMALL
+                if shadow.scale_tier:
+                    try:
+                        tier = ScaleTier(str(shadow.scale_tier).lower())
+                    except ValueError:
+                        tier = select_scale_tier(total_estimated_rows(metadata))
+                else:
+                    tier = select_scale_tier(total_estimated_rows(metadata))
+                seed_report = await ShadowSeeder().seed_rows_only(
+                    connection_url,
+                    metadata,
+                    tier,
+                    statement_timeout_ms=int(settings.shadow_seed_timeout_seconds * 1000),
+                    engine=engine,
+                )
+                rows_inserted = seed_report.rows_inserted
+                seed_warnings = list(seed_report.warnings or [])
+        finally:
+            await engine.dispose()
         await shadow_service.merge_timings(
             shadow.id,
             seed_ms=round((perf_counter() - t0) * 1000.0, 1),

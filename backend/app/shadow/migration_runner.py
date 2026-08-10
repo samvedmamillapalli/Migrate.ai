@@ -18,6 +18,7 @@ from app.shadow.changefeed_watch import (
 from app.shadow.job_progress import run_with_job_progress
 from app.shadow.job_watch import snapshot_schema_jobs
 from app.shadow.schema_snapshot import (
+    ShadowSnapshot,
     build_row_ids_for_matching,
     build_schema_diff,
     capture_shadow_snapshot,
@@ -111,6 +112,70 @@ async def _measure_storage_mb(conn) -> float | None:
         return None
 
 
+async def _post_migration_measure(
+    engine,
+    connection_url: str,
+    referenced_tables: list[str],
+    match_row_ids: dict[str, list[dict[str, Any]]] | None,
+) -> tuple[float | None, list[dict[str, Any]], ShadowSnapshot | None]:
+    """Run the three independent post-migration read-only measurements
+    concurrently on separate pooled connections.
+
+    These are mutually independent (storage span stats, SHOW JOBS snapshot,
+    structural after-snapshot) and all read-only against the disposable
+    shadow cluster. Running them serially multiplied network round-trip
+    latency; the after-snapshot capture alone issues ~8 catalog queries plus
+    exact row counts. Each gets its own connection from the engine's pool
+    (default QueuePool: pool_size=5, max_overflow=10 safely supports 3).
+
+    All three are best-effort enrichment on an already-measured migration:
+    a failure in any one degrades the metrics, never fails the run. Each
+    helper isolates its own failure so ``asyncio.gather`` never sees an
+    exception escape (preserving the original "post-hoc measurement must not
+    fail a run that already worked" guarantee).
+    """
+
+    async def _measure() -> float | None:
+        try:
+            async with engine.connect() as probe:
+                return await _measure_storage_mb(probe)
+        except Exception as exc:  # noqa: BLE001 - best-effort measurement
+            logger.warning(
+                "Post-migration storage measurement failed; reporting "
+                "migration as succeeded with degraded metrics",
+                extra={"error": f"{type(exc).__name__}: {exc}"},
+            )
+            return None
+
+    async def _jobs() -> list[dict[str, Any]]:
+        try:
+            async with engine.connect() as probe:
+                return await snapshot_schema_jobs(probe)
+        except Exception as exc:  # noqa: BLE001 - best-effort measurement
+            logger.warning(
+                "Post-migration job watch failed; reporting migration as "
+                "succeeded with degraded metrics",
+                extra={"error": f"{type(exc).__name__}: {exc}"},
+            )
+            return []
+
+    async def _snapshot() -> ShadowSnapshot | None:
+        # capture_shadow_snapshot handles its own connection acquisition and
+        # retries internally, returning None on total failure — it never
+        # raises, so no extra guard is needed here.
+        return await capture_shadow_snapshot(
+            connection_url,
+            sample_tables=referenced_tables,
+            match_row_ids=match_row_ids,
+            engine=engine,
+        )
+
+    post_mb, jobs, after_snapshot = await asyncio.gather(
+        _measure(), _jobs(), _snapshot()
+    )
+    return post_mb, jobs, after_snapshot
+
+
 async def run_migration(
     connection_url: str,
     migration_sql: str,
@@ -151,7 +216,7 @@ async def run_migration(
         async with engine.connect() as probe:
             baseline_mb = await _measure_storage_mb(probe)
         before_snapshot = await capture_shadow_snapshot(
-            normalized, sample_tables=referenced_tables
+            normalized, sample_tables=referenced_tables, engine=engine
         )
         schema_before = before_snapshot.schema if before_snapshot else None
         row_sample_before = before_snapshot.row_samples if before_snapshot else None
@@ -198,6 +263,7 @@ async def run_migration(
                 normalized,
                 sample_tables=referenced_tables,
                 match_row_ids=match_row_ids,
+                engine=engine,
             )
             schema_after = after_snapshot.schema if after_snapshot else None
             row_sample_after = after_snapshot.row_samples if after_snapshot else None
@@ -230,8 +296,6 @@ async def run_migration(
                 changefeed_tables=referenced_tables if changefeed_enabled else [],
             )
 
-        post_mb: float | None = None
-        jobs = []
         # The migration has already executed successfully by this point — the
         # measured outcome is final. Everything below is post-hoc measurement,
         # so a transient connection failure here must degrade the numbers, not
@@ -239,20 +303,13 @@ async def run_migration(
         # while acquiring or releasing this connection surfaced as a hard
         # "ExecuteMigration failed" with no log line — see the same-day
         # regression on run c1635bcc-d801-4288-9afe-5af932014d5e.)
-        try:
-            async with engine.connect() as probe:
-                post_mb = await _measure_storage_mb(probe)
-                jobs = await snapshot_schema_jobs(probe)
-        except Exception as exc:  # noqa: BLE001 - post-hoc measurement only
-            logger.warning(
-                "Post-migration measurement failed; reporting migration as "
-                "succeeded with degraded metrics",
-                extra={"error": f"{type(exc).__name__}: {exc}"},
-            )
-        after_snapshot = await capture_shadow_snapshot(
+        # The three measurements are independent and read-only, so they run
+        # concurrently on separate pooled connections.
+        post_mb, jobs, after_snapshot = await _post_migration_measure(
+            engine,
             normalized,
-            sample_tables=referenced_tables,
-            match_row_ids=match_row_ids,
+            referenced_tables,
+            match_row_ids,
         )
         schema_after = after_snapshot.schema if after_snapshot else None
         row_sample_after = after_snapshot.row_samples if after_snapshot else None
