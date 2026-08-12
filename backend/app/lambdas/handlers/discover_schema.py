@@ -51,7 +51,19 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
             session=session,
             settings=runtime.settings,
         )
-        run = await repository.get_by_id_or_raise(run_id)
+        # load_children=True, not the default: MigrationRunRepository.get_by_id
+        # always defers `schema_snapshot` when load_children=False (it's the
+        # shared ownership/status-check path used by ~15 routes that never
+        # read that column). This handler's idempotent-skip branch below reads
+        # `run.schema_snapshot` directly — with the default, that access is a
+        # lazy-load outside the request-scoped async context FastAPI routes
+        # get for free, which raises MissingGreenlet in a plain Lambda
+        # handler. Same root cause/fix shape as the 2026-08-10b `get_run`
+        # fix (see docs/backendfix.md Change Log), just never applied here —
+        # this exact idempotent-skip path had never run against a real
+        # deployed Lambda until this session's redeploy (last deploy before
+        # that was 2026-08-02, before the defer optimization even existed).
+        run = await repository.get_by_id_or_raise(run_id, load_children=True)
         if discovery_already_done(run.schema_discovery_status):
             artifact = await _maybe_upload_snapshot(runtime, str(run_id), run.schema_snapshot)
             logger.info(

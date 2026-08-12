@@ -7,7 +7,6 @@ import { useUser } from "@clerk/nextjs"
 import Image from "next/image"
 import migrationOracleLogo from "@/app/migration-oracle-logo.png"
 import {
-  Brain,
   Clock,
   Database,
   LayoutGrid,
@@ -19,7 +18,7 @@ import {
 
 import { SidebarSettingsMenu } from "@/components/sidebar-settings-menu"
 import { WorkspaceSwitcher } from "@/components/workspace-switcher"
-import { listMemories, listRuns } from "@/lib/api/endpoints"
+import { listRuns } from "@/lib/api/endpoints"
 import { getOwnerIdentity } from "@/lib/api/owner"
 import {
   Sidebar,
@@ -89,40 +88,34 @@ function NavSection({ label, items }: { label?: string; items: NavItem[] }) {
 }
 
 /**
- * Live sidebar badges.
+ * Live sidebar badge.
  *
- * The design shows a "1" beside Current Migration and "36" beside Agent
- * Memory. Both are real here: the first is the number of runs actually
- * waiting on a human decision, the second the size of the memory corpus.
- * Either renders nothing when the count is zero or unavailable — a badge is
- * never shown for a number we don't have.
+ * The design shows a "1" beside Current Migration — the number of runs
+ * actually waiting on a human decision. Renders nothing when the count is
+ * zero or unavailable — a badge is never shown for a number we don't have.
+ * (Agent Memory had an equivalent corpus-size badge before it moved from
+ * its own sidebar item into Settings — see Block 10 of
+ * docs/AUG18_FINAL_PUSH_PLAN.md — where the corpus count is already shown
+ * inline by AgentMemoryBrowser itself, so no separate badge is needed.)
  */
 function useSidebarCounts(pathname: string) {
   const [awaiting, setAwaiting] = React.useState<number | null>(null)
-  const [memories, setMemories] = React.useState<number | null>(null)
 
-  // Re-fetch on every navigation. Approving something changes the queue count,
-  // and a grade adds a memory — a badge fetched once at mount goes stale the
-  // moment you act, and the sidebar is exactly where you'd notice.
+  // Re-fetch on every navigation. Approving something changes the queue
+  // count, and a badge fetched once at mount goes stale the moment you act,
+  // and the sidebar is exactly where you'd notice.
   React.useEffect(() => {
     let cancelled = false
     async function load() {
       const owner = getOwnerIdentity()
-      const [queue, corpus] = await Promise.allSettled([
-        listRuns({
-          limit: 1,
-          status: "awaiting_approval",
-          exclude_kinds: "chaos,debug",
-          ...(owner ? { owner_identity: owner } : {}),
-        }),
-        listMemories({
-          limit: 1,
-          ...(owner ? { owner_identity: owner } : {}),
-        }),
-      ])
+      const queue = await listRuns({
+        limit: 1,
+        status: "awaiting_approval",
+        exclude_kinds: "chaos,debug",
+        ...(owner ? { owner_identity: owner } : {}),
+      }).catch(() => null)
       if (cancelled) return
-      if (queue.status === "fulfilled") setAwaiting(queue.value.total)
-      if (corpus.status === "fulfilled") setMemories(corpus.value.total)
+      if (queue) setAwaiting(queue.total)
     }
     void load()
     return () => {
@@ -130,14 +123,14 @@ function useSidebarCounts(pathname: string) {
     }
   }, [pathname])
 
-  return { awaiting, memories }
+  return { awaiting }
 }
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const pathname = usePathname()
   const { toggleSidebar } = useSidebar()
   const { user, isLoaded } = useUser()
-  const { awaiting, memories } = useSidebarCounts(pathname)
+  const { awaiting } = useSidebarCounts(pathname)
 
   // Clerk resolves client-side only, so the server render has no user. Gate on
   // isLoaded rather than rendering a "Not signed in" placeholder the client
@@ -215,18 +208,6 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
               isActive:
                 pathname.startsWith("/dashboard/migrations/history") ||
                 /^\/dashboard\/migrations\/[0-9a-f-]{8,}$/i.test(pathname),
-            },
-          ]}
-        />
-        <NavSection
-          label="Intelligence"
-          items={[
-            {
-              title: "Agent Memory",
-              url: "/dashboard/memory",
-              icon: Brain,
-              isActive: pathname === "/dashboard/memory",
-              badge: memories,
             },
           ]}
         />

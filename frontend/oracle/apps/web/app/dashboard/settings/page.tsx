@@ -1,11 +1,11 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useAuth, useUser } from "@clerk/nextjs"
 import { Moon, Sun } from "lucide-react"
 
+import { AgentMemoryBrowser } from "@/components/agent-memory-browser"
 import { DashboardSignOutButton } from "@/components/dashboard-sign-out-button"
 import {
   getConnectionSecretArn,
@@ -243,6 +243,7 @@ export default function SettingsPage() {
   const [health, setHealth] = React.useState<HealthResponse | null>(null)
   const [healthError, setHealthError] = React.useState<string | null>(null)
   const [corpus, setCorpus] = React.useState<CorpusHealth | null>(null)
+  const [memoryBrowserOpen, setMemoryBrowserOpen] = React.useState(false)
   const [slackStatus, setSlackStatus] =
     React.useState<SlackStatusResponse | null>(null)
   const [slackBanner, setSlackBanner] = React.useState<
@@ -857,13 +858,21 @@ export default function SettingsPage() {
                     ? `${corpus.corpus_ready_count ?? 0} memories indexed`
                     : "Not available"
                 }
+                footer={
+                  memoryBrowserOpen ? (
+                    <div className="pt-1">
+                      <AgentMemoryBrowser />
+                    </div>
+                  ) : null
+                }
               >
-                <Link
-                  href="/dashboard/memory"
+                <button
+                  type="button"
+                  onClick={() => setMemoryBrowserOpen((v) => !v)}
                   className="text-primary shrink-0 text-[13px] font-semibold hover:underline"
                 >
-                  Browse corpus →
-                </Link>
+                  {memoryBrowserOpen ? "Hide corpus" : "Browse corpus →"}
+                </button>
               </Row>
             </div>
           </Panel>

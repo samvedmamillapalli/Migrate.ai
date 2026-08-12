@@ -51,17 +51,27 @@ async function safeGet<T>(fn: () => Promise<T>): Promise<T | null> {
  * Floating live shadow visualization — stays open while browsing the dashboard.
  * Driven entirely by real API polling (not simulated).
  */
-// The dedicated shadow page already renders the full live panel; showing the
-// floating window on top of it duplicates the same steps + comparisons twice
-// on screen at once. Suppress the floating surface there — it stays available
-// (and remembers open/minimized state) everywhere else in the dashboard.
-const DEDICATED_SHADOW_PAGE = "/dashboard/migrations/current/shadow"
+// Both of these pages already render their own live shadow view — the
+// dedicated shadow page (full SSE-driven panel) and Current Migration's own
+// "Shadow" section (fed by that page's own usePolling, current-migration-
+// workspace.tsx around line 1381). Showing + independently polling the
+// floating window on top of either duplicates the same steps/comparisons on
+// screen *and* doubles the live-run request rate (this widget's own 1.5s
+// poll of getRun/syncWorkflow + 4 parallel GETs, stacked on that page's
+// identical poll of the same run) for no visible benefit — the page's own
+// section already shows the same data. Suppress the floating surface on
+// both; it stays available (and remembers open/minimized state) everywhere
+// else in the dashboard.
+const PAGES_WITH_OWN_LIVE_SHADOW_VIEW = new Set([
+  "/dashboard/migrations/current/shadow",
+  "/dashboard/migrations/current",
+])
 
 export function ShadowExecutionWindow() {
   const { runId, open, minimized, closeWatch, toggleMinimized, setMinimized } =
     useShadowWatch()
   const pathname = usePathname()
-  const onDedicatedPage = pathname === DEDICATED_SHADOW_PAGE
+  const onDedicatedPage = PAGES_WITH_OWN_LIVE_SHADOW_VIEW.has(pathname ?? "")
   const [run, setRun] = React.useState<MigrationRun | null>(null)
   const [extras, setExtras] = React.useState<RunExtras>(EMPTY_EXTRAS)
   const [error, setError] = React.useState<string | null>(null)

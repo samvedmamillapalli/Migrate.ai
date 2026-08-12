@@ -123,6 +123,12 @@ class ClerkJwtValidator:
                 token,
                 signing_key.key,
                 algorithms=["RS256"],
+                # Clerk issues these with a 60s TTL, so any clock drift
+                # between this machine and Clerk's servers matters far more
+                # than it would for a longer-lived token — a few seconds of
+                # skew is enough to reject an iat/nbf that's genuinely still
+                # valid. Standard, low-risk tolerance for exactly that.
+                leeway=15,
                 options={
                     "verify_exp": True,
                     "verify_iat": True,

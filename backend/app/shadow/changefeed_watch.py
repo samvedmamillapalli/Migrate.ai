@@ -185,13 +185,41 @@ def parse_changefeed_events(ndjson_blobs: list[bytes]) -> list[dict[str, Any]]:
     return events
 
 
+# The UI ("Live Change Events") only ever renders the first 20 events
+# (frontend/oracle/apps/web/app/dashboard/migrations/[id]/page.tsx). A
+# backfill-heavy migration on a wide, multi-thousand-row table (real example:
+# a computed STORED column on a 4,500-row / ~40-column table) makes the
+# changefeed emit one full-row event per row — persisting all of them into
+# `shadow_clusters.stage_timings`/`event_log` produced a >20 MiB JSONB
+# payload on a single UPDATE, which CockroachDB rejects outright (default
+# `sql.conn.max_read_buffer_message_size` is 16 MiB), failing the *entire*
+# shadow run at the persist step even though the migration itself had
+# already succeeded (run 20ee1287-bffd-4fdf-9e83-3d0bb3c44281, 2026-08-11).
+# Capping here — not just at render time — is the actual fix: it keeps this
+# enrichment's own failure mode from ever reaching the size limit, honoring
+# this module's stated "never fails the migration it's watching" contract.
+#
+# 100, not 200: ShadowClusterService._append_event (shadow_cluster_service.py)
+# embeds a full copy of stage_timings — including this list — into
+# shadow_clusters.event_log on EVERY status transition (ready/seeding/
+# migrating/holding/destroying, ~5-8 per run), so the effective multiplier
+# is per-transition, not one-shot. Halving the cap roughly halves that
+# compounded worst case, for a real, empty-handed cost (the UI still only
+# ever shows 20).
+_MAX_PERSISTED_EVENTS = 100
+
+
 def read_changefeed_events(
     s3_client: "BaseClient",
     *,
     bucket: str,
     run_id: str,
+    max_events: int = _MAX_PERSISTED_EVENTS,
 ) -> list[dict[str, Any]]:
-    """Reads and parses every NDJSON file the changefeed wrote for this run.
+    """Reads and parses NDJSON files the changefeed wrote for this run, capped
+    to ``max_events`` (chronologically first — matching what the UI actually
+    displays) so a large backfill can never balloon this into an oversized
+    JSONB write. See ``_MAX_PERSISTED_EVENTS`` above for why the cap exists.
 
     Best-effort: returns whatever it can read; a missing prefix (changefeed
     was never created, or wrote nothing before cancellation) is an empty
@@ -219,8 +247,18 @@ def read_changefeed_events(
         return []
 
     events = parse_changefeed_events(blobs)
+    total_event_count = len(events)
+    if total_event_count > max_events:
+        events = events[:max_events]
+
     logger.info(
         "Changefeed events read from S3",
-        extra={"run_id": run_id, "file_count": len(blobs), "event_count": len(events)},
+        extra={
+            "run_id": run_id,
+            "file_count": len(blobs),
+            "event_count": len(events),
+            "total_event_count": total_event_count,
+            "truncated": total_event_count > max_events,
+        },
     )
     return events

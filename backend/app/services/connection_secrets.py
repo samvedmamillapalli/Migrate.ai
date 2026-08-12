@@ -9,13 +9,30 @@ connection up through here at use time.
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
-
-from fastapi import Request
 
 from app.core.exceptions import ValidationError
 from app.core.logging import get_logger
 from app.schema_analysis.database_connection import DatabaseConnection, SslMode
+
+if TYPE_CHECKING:
+    # Lambda handlers reach `infer_engine`/`parse_database_url` in this module
+    # (via app.services.schema_discovery_service) without ever calling the
+    # two functions below that actually use a live Request, and Lambda's
+    # package deliberately excludes fastapi (backend/requirements-lambda.txt)
+    # to keep the deployed zip small. A real top-level `from fastapi import
+    # Request` therefore breaks every Lambda whose import chain reaches this
+    # file with `No module named 'fastapi'` — found live 2026-08-11 when
+    # discover-schema/cleanup failed on the first redeploy since 2026-08-02.
+    # `from __future__ import annotations` (above) already makes every
+    # annotation in this file a lazy string, and nothing calls
+    # `typing.get_type_hints()` on `store_connection_url`/`load_connection`
+    # (both are invoked directly with an explicit `request` arg, never used
+    # as a FastAPI route/Depends target), so deferring this import to
+    # type-checking time only is safe at runtime in both places this module
+    # is imported.
+    from fastapi import Request
 
 logger = get_logger(__name__)
 

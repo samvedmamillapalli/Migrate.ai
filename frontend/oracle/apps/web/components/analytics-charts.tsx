@@ -42,8 +42,50 @@ function ChartTheme() {
         --viz-cat-3: #199e70;
         --viz-cat-other: #898781;
       }
+      /* SVG <text> doesn't reliably inherit the app's sans font across
+         browsers (SVG's own UA stylesheet can win) — set it explicitly
+         once here instead of on every <text> element. */
+      .analytics-charts svg text {
+        font-family: var(--font-sans), ui-sans-serif, system-ui, sans-serif;
+      }
     `}</style>
   )
+}
+
+/**
+ * Measures a container's real rendered pixel width so an SVG's viewBox can
+ * match it exactly. Without this, a fixed viewBox width (e.g. 560) rendered
+ * at CSS width:100% into a wider panel stretches the X axis only —
+ * `preserveAspectRatio="none"` allows exactly that non-uniform scale, which
+ * is why a circular dot rendered as an ellipse and a rotated axis label
+ * ("Actual") came out visibly skewed. Falls back to `fallback` until the
+ * first real measurement lands, so there's no 0-width flash.
+ *
+ * A callback ref, not a plain ref + effect-on-mount: the loading/empty
+ * states below return before the measured `<div>` ever renders, so the
+ * effect's one-time mount would fire while `ref.current` is still null and
+ * never re-fire once data arrives and the div finally exists. A callback
+ * ref runs again on every attach, including that later one.
+ */
+function useMeasuredWidth(fallback: number) {
+  const [width, setWidth] = React.useState(fallback)
+  const observerRef = React.useRef<ResizeObserver | null>(null)
+
+  const containerRef = React.useCallback((el: HTMLDivElement | null) => {
+    observerRef.current?.disconnect()
+    observerRef.current = null
+    if (!el) return
+    const measure = () => {
+      const w = el.clientWidth
+      if (w > 0) setWidth(w)
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    observerRef.current = ro
+  }, [])
+
+  return [containerRef, width] as const
 }
 
 const STATUS_DOT: Record<string, Tone> = {
@@ -100,21 +142,27 @@ function ChartSurface({
   children,
   tooltip,
   className,
+  containerRef,
 }: {
   width: number
   height: number
   children: React.ReactNode
   tooltip: TooltipState
   className?: string
+  containerRef?: (el: HTMLDivElement | null) => void
 }) {
   return (
-    <div className={cn("relative", className)}>
+    <div ref={containerRef} className={cn("relative", className)}>
+      {/* viewBox matches the container's real measured width 1:1 (see
+          useMeasuredWidth) — no preserveAspectRatio="none" needed, since
+          there's no mismatch left for it to paper over. That mismatch was
+          exactly what stretched circular dots into ellipses and skewed the
+          rotated "Actual" axis label. */}
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        width="100%"
+        width={width}
         height={height}
-        preserveAspectRatio="none"
-        className="block overflow-visible"
+        className="block max-w-full overflow-visible"
       >
         {children}
       </svg>
@@ -192,10 +240,10 @@ export function AccuracyTrendChart({
   loading: boolean
   height?: number
 }) {
-  const W = 560
   const H = height
   const PAD = { top: 12, right: 8, bottom: 22, left: 30 }
   const [hover, setHover] = React.useState<number | null>(null)
+  const [containerRef, W] = useMeasuredWidth(560)
 
   if (loading) {
     return <SkeletonWave height={H} />
@@ -258,7 +306,7 @@ export function AccuracyTrendChart({
     : null
 
   return (
-    <ChartSurface width={W} height={H} tooltip={tooltip}>
+    <ChartSurface width={W} height={H} tooltip={tooltip} containerRef={containerRef}>
       {gridLines.map((g) => (
         <line
           key={g}
@@ -357,8 +405,8 @@ export function RuntimeScatterChart({
   loading: boolean
   height?: number
 }) {
-  const W = 320
   const H = height
+  const [containerRef, W] = useMeasuredWidth(320)
   const PAD = { top: 10, right: 10, bottom: 24, left: 34 }
   const [hover, setHover] = React.useState<number | null>(null)
 
@@ -416,7 +464,7 @@ export function RuntimeScatterChart({
     : null
 
   return (
-    <ChartSurface width={W} height={H} tooltip={tooltip}>
+    <ChartSurface width={W} height={H} tooltip={tooltip} containerRef={containerRef}>
       {ticks.map((t) => (
         <g key={t}>
           <line x1={sx(t)} x2={sx(t)} y1={PAD.top} y2={H - PAD.bottom} stroke="var(--border)" strokeWidth={1} />
@@ -430,7 +478,9 @@ export function RuntimeScatterChart({
         transform={`translate(${PAD.left - 24} ${PAD.top + innerH / 2}) rotate(-90)`}
         textAnchor="middle"
         fontSize={9}
+        letterSpacing="0.08em"
         fill="var(--muted-foreground)"
+        style={{ textTransform: "uppercase" }}
       >
         Actual
       </text>

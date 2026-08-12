@@ -373,8 +373,16 @@ async def create_debug_demo_with_db(
             ".local_secrets/.judge_ro_database_url."
         )
 
+    # Targets calcom_bookings from test-data/saas_seed/ (real Cal.com schema,
+    # 4,500 rows) — the demo DB this points at (see .local_secrets/
+    # .judge_ro_database_url) was reseeded with 10 real-world tables
+    # (docs/AUG18_FINAL_PUSH_PLAN.md Blocks 2-4); the old `customers` table
+    # this used to target no longer exists there. A computed STORED column
+    # forces a real backfill across every row — same statement verified in
+    # docs/DEMO_MIGRATION.md — rather than an instant metadata-only change.
     run = await service.create_migration_run(
-        "ALTER TABLE customers ADD COLUMN demo_flag STRING NOT NULL DEFAULT 'ok';",
+        'ALTER TABLE calcom_bookings ADD COLUMN "duration_minutes" INT4 '
+        'AS ((extract(epoch FROM ("end_time" - "start_time")) / 60)::INT4) STORED;',
         owner_identity=owner_identity,
         run_kind="debug",
     )
@@ -417,8 +425,13 @@ async def create_debug_fake_migration(
 
 @router.get("/{run_id}", response_model=MigrationRunResponse)
 async def get_run(
-    run: MigrationRun = Depends(get_owned_run),
+    run: MigrationRun = Depends(get_owned_run_with_children),
 ) -> MigrationRunResponse:
+    # MigrationRunResponse serializes schema_snapshot, which get_owned_run
+    # (the lightweight dependency) leaves deferred for every other
+    # route-scoped check — accessing it here after that light a query would
+    # hit a MissingGreenlet lazy-load error outside the session's async
+    # context. get_owned_run_with_children loads it eagerly.
     return MigrationRunResponse.model_validate(run)
 
 

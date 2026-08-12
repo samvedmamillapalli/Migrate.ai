@@ -256,6 +256,386 @@ matches on vocabulary instead of meaning and this beat falls flat.
 
 ## Change Log
 
+### 2026-08-12b — Correction: the real `customer_demo` database exists and now has the 10 tables; `demo_saas_seed` was the wrong target
+
+Direct correction of the entry immediately below. The human pointed out
+`customer_demo` should have the 10 tables — checked `SHOW DATABASES` and
+found a real, pre-existing `customer_demo` database on the cluster that
+the previous entry's own investigation (an Explore-agent sweep) had missed
+entirely, concluding "customer_demo" was just descriptive shorthand for
+whatever `DEMO_READONLY_DATABASE_URL` happened to point at. Wrong — it's
+an actual database, with 2 real tables already in it (`demo_items`,
+`irs_zip_income` — the same ones referenced in this file's 2026-08-07b and
+2026-07-25 entries) and its own dedicated read-only role,
+**`discover_readonly`** (already `GRANT SELECT`-ed on both), clearly the
+role this whole feature was originally built around. `demo_saas_seed`
+(the previous entry's target) was a database *this session* created from
+scratch — not what "customer_demo" refers to.
+
+**Fixed**: loaded the same 10 `test-data/saas_seed/*.sql` files into the
+real `customer_demo` (zero errors, all 10 tables, correct row counts,
+`demo_items`/`irs_zip_income` untouched — now 12 tables total). Set a
+known password on the existing `discover_readonly` role (no password was
+recoverable from anywhere in the repo — it was never checked in) and
+`GRANT SELECT ON ALL TABLES IN SCHEMA public` to it, covering the 10 new
+tables (harmless re-grant on the 2 existing ones). Re-pointed
+`.local_secrets/.judge_ro_database_url` at `customer_demo` with
+`discover_readonly` (not `demo_saas_seed`/`migration_oracle_demo_ro` from
+the previous entry). Confirmed `CREATE`/`INSERT` still rejected for that
+role — genuinely read-only, and `customer_demo`'s `public` schema was
+already hardened (no default `PUBLIC` `CREATE` grant, unlike
+`demo_saas_seed`, which needed that fix explicitly — see Block 4/5 in the
+AUG18 plan entries).
+
+**One more real thing caught while verifying**: right after the bulk
+`INSERT`s, CockroachDB's own table statistics hadn't caught up yet —
+schema discovery showed `lago_invoices` at **0 rows** (really 6,000) and
+`redmine_issues` at 1,000 (really 3,000), a known CockroachDB behavior
+(estimates lag inserts until the next auto-stats collection). Forced it
+immediately with `CREATE STATISTICS <name> FROM <table>;` on all 10 tables
+rather than leaving it to eventually self-correct — re-verified discovery
+afterward shows exact row counts on every table.
+
+Live-verified end to end via the same "Try the demo database" flow as the
+entry below: 12 tables discovered (10 new + demo_items + irs_zip_income),
+correct row/column counts, correct migration SQL. `demo_saas_seed` is
+still a real, working, separately-usable database (Block 4's README/
+`docs/DEMO_MIGRATION.md` still both point at it correctly for the manual
+paste-a-URL flow) — it just isn't what backs the in-app demo button
+anymore; `customer_demo` does.
+
+### 2026-08-12 — Wired the app's built-in "Try the demo database" to the 10-table seed data (target corrected above — see 2026-08-12b)
+
+Follow-up request: put the 10 `test-data/saas_seed/` tables (Block 2-4)
+behind the app's own native demo flow — `POST /runs/debug/demo-with-db` /
+the "Try the demo database" button — instead of requiring a manually
+pasted connection string every time. Asked the human first: that route's
+existing credential (`.local_secrets/.judge_ro_database_url`, previously
+pointed at `migration_oracle`, the app's own control-plane database, via
+`prepare_judge_demo_db.py`'s single `customers` table) vs. reusing the
+already-built, already-separate `demo_saas_seed` database — chose the
+latter (no new risk to control-plane data, already seeded/verified).
+
+**Two changes:**
+1. `.local_secrets/.judge_ro_database_url` now points at `demo_saas_seed`
+   with the `migration_oracle_demo_ro` credential (same one from Block 4/5,
+   already read-only-verified).
+2. `backend/app/api/routes/runs.py`'s `create_debug_demo_with_db` had the
+   old hardcoded sample migration — `ALTER TABLE customers ADD COLUMN
+   demo_flag ...` — which targets a table that doesn't exist in
+   `demo_saas_seed`. Swapped for the same verified `calcom_bookings`
+   computed-column statement from `docs/DEMO_MIGRATION.md`, with a comment
+   explaining why.
+
+**A real, unrelated environment bug found while verifying this**: after
+editing `runs.py`, `uvicorn --reload` did not pick up the change —
+repeated live tests kept returning the *old* hardcoded SQL. Traced to the
+same class of issue already documented in `[[shadow-lambda-deploy]]`-
+adjacent memory (`backend-dev-workflow`): `Get-NetTCPConnection` showed
+port 8003's LISTEN entry owned by a PID that no process actually
+corresponded to (`Get-CimInstance Win32_Process` returned nothing for it),
+and killing the real uvicorn processes didn't free the port — a new,
+equally-orphaned PID took over LISTEN immediately after. Not resolvable
+by killing processes (the "owning" PIDs aren't real, live processes to
+kill). Workaround: moved the backend to a fresh port (**8010**, verified
+free) and updated `frontend/oracle/apps/web/.env.local`'s
+`NEXT_PUBLIC_API_BASE_URL` to match, restarting the frontend too (Next.js
+bakes `NEXT_PUBLIC_*` vars at dev-server start, not hot-reloaded). Verified
+clean afterward: fresh processes only, confirmed via `Get-CimInstance`
+process list and log timestamps, not just a 200 from `/health` (per the
+existing "wait for 'Application startup complete'" rule two entries
+below — a 200 alone doesn't prove which process answered).
+**Note for whoever picks this session's work back up: the locally running
+backend in this environment is on :8010, not the usual :8003, until the
+next clean restart** — check `Get-NetTCPConnection -LocalPort 8003` before
+assuming it's free again.
+
+**Live-verified end to end**: "Try the demo database" (New Migration
+wizard's Demo database tab, same code path as Current Migration's button —
+both call `createDemoWithDb`) now discovers all 10 real tables with
+correct row/column counts, and the created run's `migration_sql` in the
+database is the corrected `calcom_bookings` statement, not the stale
+`customers` one. Backend: 235/235 tests still pass.
+
+### 2026-08-11d — Block 13 dry run, continued: third real bug (MissingGreenlet, deterministic, in 3 handlers) + full green run confirmed
+
+Direct continuation of 2026-08-11c below. After that entry's two fixes
+deployed, a **fresh** run (`d13f3abb-…`, same demo migration) failed
+again — a third, unrelated, pre-existing bug:
+
+**Bug 3 — `discover_schema`'s idempotent-skip path read a deferred column
+outside the async context, `MissingGreenlet`, 100% deterministic.**
+`MigrationRunRepository.get_by_id(load_children=False)` (the default)
+always defers `MigrationRun.schema_snapshot` — a 2026-08-08 perf
+optimization for the ~15 routes that never read that column. But
+`discover_schema.py`'s idempotent branch (hit on every real demo run,
+since the frontend already ran discovery before Approve/Shadow) reads
+`run.schema_snapshot` directly two lines later — a lazy-load with no
+running greenlet in a bare Lambda handler, unlike a FastAPI request which
+gets one for free. Same root-cause *class* as the `get_run` fix from
+2026-08-10b, just never applied to this call site. Grepped every
+`get_by_id_or_raise`/`get_by_id` call across all 7 Lambda handlers and
+found two more instances of the identical pattern — `load_schema.py` and
+`provision_shadow.py`, both reading `run.schema_snapshot` right after an
+unqualified fetch — fixed all three the same way
+(`load_children=True`). `execute_migration.py`'s own call was checked and
+confirmed safe (it only reads `migration_sql`/`explainability`, neither
+deferred).
+
+Before redeploying a third time (each build+deploy cycle costs ~20 min),
+verified the fix directly against the real database using the same
+`with_session`/`run_async` helpers the Lambda itself uses: reproduced
+`MissingGreenlet` on demand (unpatched code path, real DB), then confirmed
+the patched path (`load_children=True`) returns the real
+`schema_snapshot` cleanly, same session, same runtime helpers. Full
+transcript: see the throwaway script used, since deleted.
+
+**Full green run, this time all the way through.** Redeployed (3rd
+build+deploy this session), then ran a completely fresh demo run
+(`2ebc46b6-…`) end to end via the real UI: connect → discover (10 tables,
+correct row/column counts) → predict (Bedrock, `calcom_bookings`, correct)
+→ approve → start shadow. Polled the real Step Functions execution
+directly (`aws stepfunctions describe-execution`) rather than trusting
+frontend polling, since Playwright's own `wait_for` proved unreliable for
+multi-minute waits in this environment — execution went `RUNNING` →
+`SUCCEEDED` in ~8.5 minutes (seed phase alone: 387s, expected for 10 wide
+tables / 41,500 rows onto a fresh shadow clone — a real, known cost of the
+Block 4 seed data, not a bug). Confirmed via direct DB query (not just the
+UI) that `shadow_clusters`, `grades`, and `migration_memories` rows all
+exist for this run. The run-detail page briefly appeared to show "no
+grade"/"no memory" on the very first check — turned out to be this
+session's own testing artifact (checked before the page's async fetch had
+finished, immediately after `browser_navigate` returns, which only waits
+for the initial page load — not a real bug, confirmed by re-checking a few
+seconds later: full grade (`clean_ok`, score 0.667, duration within band —
+predicted 8.2s vs actual 7.0s) and memory (`ready · add_column`) both
+rendered correctly).
+
+**One more thing found and fixed while re-verifying afterward, this
+session's own artifact, not a product bug**: the Block 4/5 read-only demo
+credential (`migration_oracle_demo_ro`) had lost its `SELECT` grant on
+`calcom_bookings` specifically, because an earlier session (Block 5,
+fixing the negative-duration seed-data bug) dropped and reloaded that one
+table without re-running the grant afterward — table grants don't survive
+a `DROP TABLE`/recreate. Caught by a final direct-DB sanity check after
+the dry run, not by the app itself. Fixed:
+`GRANT SELECT ON ALL TABLES IN SCHEMA public TO migration_oracle_demo_ro;`
+re-applied and re-verified (`SELECT` works, `CREATE TABLE` still rejected)
+so the credential documented in `docs/DEMO_MIGRATION.md` is genuinely
+usable for the real Aug 18 recording, not just for the runs already done
+this session.
+
+Backend: 235/235 tests pass after all three fixes combined. Frontend:
+`npx tsc --noEmit` clean (unaffected by this entry — no frontend changes).
+
+### 2026-08-11c — Block 13 dry run: two real, unrelated bugs found and fixed, both needed a Lambda redeploy
+
+Block 13 of `docs/AUG18_FINAL_PUSH_PLAN.md` — a full click-through end to
+end using the real seeded data and the real demo migration (Block 5). Two
+genuine failures surfaced, neither hypothetical:
+
+**Bug 1 — changefeed event volume overflowed CockroachDB's message-size
+limit, failing the shadow run at the very last step.** The Block 5 demo
+migration (a computed `STORED` column backfill on `calcom_bookings`, 4,500
+rows / 39 columns) makes the changefeed emit one full-row event per row.
+`read_changefeed_events` (`app/shadow/changefeed_watch.py`) read all of
+them unbounded, and `ShadowClusterService._append_event`
+(`shadow_cluster_service.py`) additionally embeds a full copy of
+`stage_timings` — including that event list — into the append-only
+`event_log` on every status transition (~5-8 per run: ready/seeding/
+migrating/holding/destroying/…), compounding the size further. Real error,
+run `20ee1287-bffd-4fdf-9e83-3d0bb3c44281`:
+`psycopg.errors.ProtocolViolation: message size 20 MiB bigger than maximum
+allowed message size 16 MiB` on the `UPDATE shadow_clusters SET
+stage_timings=…, event_log=…` — the migration itself had already succeeded
+(confirmed: `ALTER TABLE … ADD COLUMN duration_minutes … STORED` shows
+`succeeded` in `SHOW JOBS`, and the changefeed's own captured `update`
+events are visibly correct), only the *persistence of the enrichment data
+about it* failed, taking the whole run down with it. Fixed: capped
+`read_changefeed_events` to the first 100 events (chronological, matching
+what the UI already does — `[id].../page.tsx` only ever renders the first
+20) via a new `max_events` param, `_MAX_PERSISTED_EVENTS = 100`. Capped at
+the read/persist boundary, not just render time, so this enrichment can
+never again reach the size limit regardless of migration/table width —
+honoring `changefeed_watch.py`'s own stated "never fails the migration it's
+watching" contract, which this bug was silently violating.
+
+**Bug 2 — found immediately after redeploying bug 1's fix: every Lambda
+failed on import with `No module named 'fastapi'`.** Not caused by the
+changefeed fix — a pre-existing latent bug, invisible until this session's
+redeploy because the Lambdas had been stale since 2026-08-02 (see
+[[shadow-lambda-deploy]]) and nothing had reached the broken import path in
+the meantime. Root cause: `app/services/connection_secrets.py` had a
+top-level `from fastapi import Request`, reachable from every Lambda
+handler via `schema_discovery_service.py → connection_secrets.py`, but
+`backend/requirements-lambda.txt` deliberately excludes FastAPI to keep the
+deployed zip small — a design intent the codebase already documented in
+that file's own header comment, just not enforced anywhere. Confirmed the
+exact import chain by reproducing locally (blocked `fastapi` imports via a
+`builtins.__import__` shim, ran each of the 7 handler modules — all 7
+failed the same way before the fix, all 7 clean after). Fixed by moving
+the import under `TYPE_CHECKING`: safe because the file already has `from
+__future__ import annotations` (so the `Request` annotation is a lazy
+string, never evaluated at runtime by this module itself) and grepped every
+caller of the two functions that use it (`store_connection_url`,
+`load_connection` — called from `runs.py`, `workspaces.py`,
+`github_webhook_service.py`) confirmed none of them are FastAPI route/
+`Depends()` targets themselves (`typing.get_type_hints()` never runs on
+them); every caller already has its own real `Request` from its own
+FastAPI-managed parameter and just passes it through explicitly.
+
+Both fixes verified: 235/235 backend tests still pass; all 7 Lambda handler
+modules import cleanly under a simulated fastapi-free environment; SAM
+build + deploy succeeded (`migration-oracle-execute-migration` LastModified
+jumped to 2026-08-12T05:40Z, confirming the redeploy actually took), then a
+**second**, completely fresh shadow run (`28f8f664-…`, same demo migration)
+was driven end to end through the real UI to confirm neither bug recurs —
+see the follow-up entry once that run finishes.
+
+### 2026-08-11b — AUG18_FINAL_PUSH_PLAN Blocks 1-7: sidebar connection bug, 10-table seed dataset, demo migration doc, redundant shadow-poll fix
+
+Executing `docs/AUG18_FINAL_PUSH_PLAN.md`. Blocks 1-5 covered in earlier
+entries this session (workspace-switcher connection fix, `test-data/saas_seed/`
+10-table seed dataset + generator, `docs/DEMO_MIGRATION.md`). This entry
+covers Block 6 (pick a fix) and Block 7 (implement + verify live).
+
+**Block 6 decision.** Two options per the plan: (a) the SSE stream + REST
+poll(s) + globally-mounted `ShadowExecutionWindow` widget all independently
+polling live run data during a shadow execution, or (b) cold-start latency
+audit on the 7 shadow-orchestration Lambdas. Read the actual code for both
+before picking. Confirmed (a) is real and worse than the plan's own
+description suggests: while a shadow run is live, `current-migration-
+workspace.tsx`'s own `usePolling` (`syncWorkflow` + `getShadowCluster` +
+`getExecutionResult`, ~2.5s) and the globally-mounted `ShadowExecutionWindow`
+(`getRun`/`syncWorkflow` + 4 parallel GETs, 1.5s) run **simultaneously**
+whenever a user has the floating widget open while on the Current Migration
+page — `onDedicatedPage` only ever excluded the *other* live-view page
+(`/dashboard/migrations/current/shadow`), never this one, even though this
+page has had its own equivalent "Shadow" section since before that guard
+was written. Picked (a) over (b): demo-visible (judges will see this exact
+page during the live run), a scoped one-file fix, and directly verifiable
+by inspecting real network traffic during a real shadow run — versus (b),
+which needs a Lambda cold-invoke to observe and produces a number with no
+UI-visible effect either way.
+
+**Block 7 fix.** `components/shadow-execution-window.tsx`: renamed the
+single-page `DEDICATED_SHADOW_PAGE` string check to a
+`PAGES_WITH_OWN_LIVE_SHADOW_VIEW` set containing both
+`/dashboard/migrations/current/shadow` and `/dashboard/migrations/current`.
+Same existing suppression mechanism (`onDedicatedPage` early-return +
+poll `enabled` gate), just applied to both pages that already render their
+own live shadow state instead of one. `npx tsc --noEmit` clean.
+
+**Live verification, real shadow run** (not simulated): ran the actual
+Block 5 demo migration (`calcom_bookings` computed-column backfill against
+`demo_saas_seed`) through the real UI via Playwright — connect → discover
+(10 tables) → predict (Bedrock: correctly identified `calcom_bookings`,
+4,500 rows, `ALTER`, low risk, 72% confidence) → approve → start shadow →
+opened "Watch live" (mounts the floating widget) while staying on Current
+Migration page. Inspected real network traffic during the live provision/
+seed phase: exactly one `syncWorkflow`/`getShadowCluster`/
+`getExecutionResult` polling stream, not two — confirming the floating
+widget's own poll stayed suppressed on this page as intended. Shadow
+cluster provisioned (1.4s) and began seeding for real (`ready_ms=8270.6`,
+real event-log timestamps) before verification was stopped (full run
+completion covered separately by Block 13).
+
+**Unplanned bug found and fixed along the way, while building the Block 4/5
+seed data's read-only demo credential**: the app's own `GRANT_HELP_SQL`
+help text (shown in the "How do I create a read-only user?" panel on
+Connect Database) is incomplete. `CREATE USER` + `GRANT SELECT` +
+`REVOKE INSERT/UPDATE/DELETE` + `REVOKE CREATE ON DATABASE` — the exact
+steps it lists — still produces a user the app's own
+`assert_read_only_connection` (`backend/app/schema_analysis/read_only.py`)
+rejects as **not** read-only, because Postgres/CockroachDB both grant
+`CREATE` on the `public` schema to the `PUBLIC` pseudo-role by default,
+independent of anything granted to the specific user. Confirmed live:
+built exactly the credential the help text describes, hit "Database
+credentials allow writes; provide a read-only user" on Discover, diagnosed
+via `has_database_privilege`/`SHOW GRANTS`, fixed by adding
+`REVOKE CREATE ON SCHEMA <schema> FROM PUBLIC;` as a required (not
+optional) step 4, then re-verified the same credential discovers cleanly.
+Added the same step to `GRANT_HELP_SQL` in `current-migration-workspace.tsx`
+so any real user following the in-app instructions doesn't hit the same
+false rejection.
+
+### 2026-08-10b — Frontend/backend connection audit: found and fixed a real bug masquerading as an auth failure; one open item left for next session
+
+Asked to verify every frontend-to-backend connection has zero "failed to
+fetch" errors. Swept every dashboard route live via Playwright MCP
+(Overview, New Migration, Current Migration + its `/memory` and `/shadow`
+sub-pages, Past Migrations, Agent Memory, Settings, and a specific run
+detail page). All clean except one real bug, found on
+`/dashboard/migrations/[id]`.
+
+**Root cause (fixed):** `GET /runs/{id}` (`get_run` in
+`backend/app/api/routes/runs.py`) used the lightweight `get_owned_run`
+dependency and then did `MigrationRunResponse.model_validate(run)` directly.
+`get_owned_run`'s underlying query defers `schema_snapshot` (an earlier
+2026-08-08 performance-optimization session made it do that, verified at the
+time that no *explicit* `.schema_snapshot` read existed on that path — missed
+that `MigrationRunResponse.model_validate()` implicitly touches every
+declared field via Pydantic's ORM-mode introspection, including
+`schema_snapshot`). Accessing the deferred column outside the session's
+async context raised `sqlalchemy.exc.MissingGreenlet`. Fix: `get_run` now
+uses `get_owned_run_with_children` instead (loads `schema_snapshot` eagerly),
+matching every other `response_model=MigrationRunResponse` route in the
+file, which all already re-fetch through a service call rather than
+serializing the injected dependency directly — `get_run` was the only one
+that didn't. Grepped for the same pattern across the whole file to confirm
+no other route has this specific landmine.
+
+**Secondary bug (fixed, independent of the above):** the `MissingGreenlet`
+exception was raised *inside* `SessionAuthMiddleware`'s `try` block, because
+that block wrapped both `verify_clerk_token()` **and** `call_next(request)`
+together. Any downstream exception — not just an actual auth failure — got
+caught, logged as `"Clerk token verification raised"`, and reported to the
+client as a misleading `401 {"detail": "Invalid or expired token"}` instead
+of surfacing as the real error. This is exactly why it took a while to find:
+Clerk auth was succeeding the whole time (confirmed via a temporary debug
+print — verification returned a valid `owner_identity`), the actual failure
+was three call-frames downstream. Fixed in `middleware_auth.py`:
+`call_next(request)` now sits outside the try block, and the Clerk-verify
+exception log was bumped `debug` → `warning` (matching the existing
+justification in `app/auth/clerk.py` for why the same class of log line
+needs to be visible at default log levels, not hidden behind DEBUG).
+
+Both fixes verified: 235/235 backend unit tests pass, `tsc --noEmit` clean,
+and the run-detail page loads with zero console errors against a freshly
+restarted backend.
+
+**Follow-up, 2026-08-11/12 — the `isReady` latch fixed, plus a second,
+unrelated bug found while verifying it:**
+
+Fixed `clerk-token.ts` as diagnosed above: replaced the one-time `isReady`
+latch with a gate keyed on whether `clerkTokenGetter` is *currently*
+registered. `setClerkTokenGetter(null)` now reopens the wait (a fresh
+pending promise) unless `markUnauthenticated()` already fired for this
+cycle, so a request landing in the brief unregister→reregister gap waits
+(bounded, same 5s ceiling) instead of silently going out with no token.
+`isAuthenticated`/`unauthenticated` booleans replace the old single flag.
+
+Verifying this turned up a **second, separate bug**: re-testing right after
+a `dev.py restart` reproduced the exact same symptom (multiple endpoints,
+401, no coherent single cause) even with the fix in place. Root cause: the
+Playwright checks were firing before the backend had actually finished
+starting — `uvicorn --reload`'s watcher/worker handoff has a window where
+`/health` responds before the FastAPI app's own lifespan (`"Application
+startup complete"` in the log) has actually finished, so early requests can
+land on a not-fully-initialized app. Not a token bug at all; a test-timing
+bug in how *this debugging session* was verifying, not in the app. Fixed
+the verification method itself: wait for `"Application startup complete"`
+in the log, not just a 200 from `/health`, before trusting any live check.
+Also added `leeway=15` to the Clerk JWT decode in `backend/app/auth/clerk.py`
+while investigating — Clerk's 60s-TTL tokens make this dev machine's ordinary
+clock drift proportionally much more likely to reject a still-valid token
+than it would for a longer-lived token; low-risk, standard practice, kept
+regardless of whether it was the actual cause here.
+
+Re-verified clean after both fixes: 10 rapid-fire navigations in the same
+browser tab, hitting the previously-broken run-detail page three separate
+times, all 0 console errors, against a properly-confirmed-started backend.
+
 ### 2026-08-08 — GitHub OAuth identity built, closing the last frontend/backend gap
 
 Systematic audit of every function in `lib/api/endpoints.ts` against the
@@ -1727,6 +2107,13 @@ What was NOT fully verified (testing task needs to know)
   `CORS_ORIGINS` when a public URL exists.
 - Orphaned unused auth form components (`login-form.tsx`, `signup-form.tsx`)
   remain on disk but routes redirect away.
+  CORRECTED 2026-08-10 (was stale): no longer orphaned. `login-form.tsx`
+  now renders a real `<SignIn>` from `@clerk/nextjs` (routing="path"
+  path="/login", real appearance/redirect config) and `/login/[[...rest]]`
+  actually mounts it — confirmed live via Playwright, signed in with
+  `docs/TEST_ACCOUNT.md`, landed on `/dashboard` with real data, zero
+  console errors. Don't delete these or "simplify" the route back to a
+  redirect stub.
 - Legacy `/ui` intentionally untouched and still the proven fallback.
 
 Next task should
@@ -1741,7 +2128,7 @@ Next task should
 Anything you hit that needs a human decision. Do not guess and move on.
 
 - Deployed frontend URL for CORS (when known).
-- Whether to delete orphaned login/signup form components after judges never
-  need them (harmless today).
+- RESOLVED 2026-08-10: login/signup form components are the real, live
+  Clerk-wired sign-in flow, not orphaned — do not delete.
 - Exact per-run USD from Cockroach Cloud invoice / BASIC RU pricing for the
   demo script voiceover.

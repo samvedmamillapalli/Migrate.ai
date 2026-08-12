@@ -302,6 +302,7 @@ export default function NewMigrationPage() {
         setDemoReplacedSql(true)
         setSchema(mapSchema(created))
         setStep(2)
+        void syncWorkspaceConnection(created)
         return
       }
 

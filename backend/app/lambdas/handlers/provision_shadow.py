@@ -46,7 +46,13 @@ async def _handle(event: dict[str, Any]) -> dict[str, Any]:
             shadow_repo = ShadowClusterRepository(session)
             shadow_service = ShadowClusterService(repository=shadow_repo, session=session)
 
-            run = await run_repo.get_by_id_or_raise(run_id)
+            # load_children=True: the default query defers schema_snapshot
+            # (it's the shared ownership/status-check path most routes use
+            # without reading that column) — reading it below without this
+            # is a lazy-load outside the async context, MissingGreenlet in a
+            # Lambda. Same fix as discover_schema.py; see
+            # docs/backendfix.md 2026-08-11c.
+            run = await run_repo.get_by_id_or_raise(run_id, load_children=True)
             if not run.schema_snapshot:
                 raise LambdaValidationError(
                     "schema_snapshot is required before provisioning"

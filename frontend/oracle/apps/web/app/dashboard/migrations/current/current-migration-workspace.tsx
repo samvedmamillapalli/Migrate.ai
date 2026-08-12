@@ -49,6 +49,7 @@ import {
   mapShadowChecks,
   mapSchema,
   getActiveWorkspaceId,
+  notifyWorkspacesChanged,
   policyLabel,
   predictRun,
   primaryTableName,
@@ -60,6 +61,7 @@ import {
   startWorkflow,
   statusLabel,
   syncWorkflow,
+  updateWorkspace,
   usePolling,
   type ApprovalDecision,
   type ApprovalResponse,
@@ -314,7 +316,13 @@ GRANT SELECT ON TABLE <schema>.<table> TO migration_oracle_ro;
 
 -- 3. Explicitly deny writes and DDL (defense in depth)
 REVOKE INSERT, UPDATE, DELETE ON TABLE <schema>.<table> FROM migration_oracle_ro;
-REVOKE CREATE ON DATABASE <database> FROM migration_oracle_ro;`
+REVOKE CREATE ON DATABASE <database> FROM migration_oracle_ro;
+
+-- 4. Required, not optional: Postgres/CockroachDB grant CREATE on the
+--    "public" schema to every user by default (the PUBLIC pseudo-role).
+--    Without this, this app's own read-only check will reject the user
+--    above even though you never granted it anything directly.
+REVOKE CREATE ON SCHEMA <schema> FROM PUBLIC;`
 
 /**
  * Shared connect-a-database UI: one primary input (read-only URL), a secondary
@@ -1496,6 +1504,24 @@ export function CurrentMigrationWorkspace() {
     }
   }
 
+  // Persist a just-verified connection onto the run's workspace so the
+  // sidebar switcher (which reads Workspace.connection_label, not any
+  // per-run field) reflects it immediately. Mirrors the wizard's
+  // syncWorkspaceConnection in migrations/new/page.tsx. Best-effort: a
+  // failure here doesn't affect the run, which already connected fine.
+  async function syncWorkspaceConnection(updatedRun: MigrationRun) {
+    const workspaceId = updatedRun.workspace_id ?? getActiveWorkspaceId()
+    if (!workspaceId || !updatedRun.connection_secret_arn) return
+    try {
+      await updateWorkspace(workspaceId, {
+        connection_secret_arn: updatedRun.connection_secret_arn,
+      })
+      notifyWorkspacesChanged()
+    } catch {
+      /* best-effort — the sidebar just won't reflect this connection yet */
+    }
+  }
+
   async function handleDemoWithDb() {
     setError(null)
     try {
@@ -1514,6 +1540,7 @@ export function CurrentMigrationWorkspace() {
           ? "Demo database attached — schema discovered. Run prediction next."
           : "Demo run created but discovery did not succeed — check API logs."
       )
+      void syncWorkspaceConnection(created)
     } catch (err) {
       setError(errorMessage(err))
     } finally {
@@ -1564,6 +1591,9 @@ export function CurrentMigrationWorkspace() {
           ? "Schema discovered. Ready to predict."
           : `Discovery status: ${updated.schema_discovery_status || "unknown"}`
       )
+      if (updated.schema_discovery_status === "succeeded") {
+        void syncWorkspaceConnection(updated)
+      }
     } catch (err) {
       if (err instanceof ApiError) {
         setDiscoverError(discoverErrorHint(err.status, err.message))

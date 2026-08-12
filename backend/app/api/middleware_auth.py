@@ -90,24 +90,27 @@ class SessionAuthMiddleware(BaseHTTPMiddleware):
 
         # Try Clerk JWT verification first (if configured)
         if clerk_configured and token:
+            user_info = None
             try:
                 from app.auth.clerk import verify_clerk_token
 
                 user_info = await verify_clerk_token(token)
-                if user_info and user_info.get("owner_identity"):
-                    request.state.owner_identity = user_info["owner_identity"]
-                    request.state.clerk_user = user_info
-                    request.state.auth_method = "clerk"
-                    return await call_next(request)
             except Exception as exc:
-                # Fall through to custom auth if Clerk verification fails, but
-                # log it — an unexpected failure here (JWKS unreachable, a bad
-                # CLERK_FRONTEND_API_URL, ...) previously vanished silently and
-                # surfaced only as a generic 401 with no way to tell it apart
-                # from an ordinary expired/invalid token.
-                logger.debug(
+                # Narrowly scoped to the verification call only — call_next()
+                # deliberately sits OUTSIDE this try block. It used to be
+                # inside, so any downstream exception (a real 500 — a bad
+                # response-model validation, a DB error, anything) got caught
+                # here too, logged as if it were an auth failure, and
+                # reported to the client as a misleading 401 "Invalid or
+                # expired token" instead of surfacing as the real error.
+                logger.warning(
                     "Clerk token verification raised", extra={"error": str(exc)}
                 )
+            if user_info and user_info.get("owner_identity"):
+                request.state.owner_identity = user_info["owner_identity"]
+                request.state.clerk_user = user_info
+                request.state.auth_method = "clerk"
+                return await call_next(request)
 
         # Try custom HMAC token verification (if configured)
         if custom_auth_enabled:

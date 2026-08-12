@@ -33,9 +33,10 @@ import { cn } from "@workspace/ui/lib/utils"
 /**
  * Why the AI is confident about *this* migration.
  *
- * Distinct from /dashboard/memory, which browses the whole corpus. This page
- * explains one run's confidence score using the memories that were actually
- * retrieved for it and the clamps that were actually applied.
+ * Distinct from the Agent Memory browser in Settings, which browses the
+ * whole corpus. This page explains one run's confidence score using the
+ * memories that were actually retrieved for it and the clamps that were
+ * actually applied.
  *
  * Everything is read from explainability.{confidence,memory}. When a run has
  * not been predicted yet there is nothing to explain, and the page says so

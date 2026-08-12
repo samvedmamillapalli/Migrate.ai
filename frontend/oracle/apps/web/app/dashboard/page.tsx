@@ -324,7 +324,7 @@ export default function DashboardPage() {
           </div>
         ) : null}
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-          <div className="grid min-h-0 flex-1 grid-cols-1 gap-x-6 xl:grid-cols-2">
+          <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-x-6 gap-y-3 overflow-hidden xl:grid-cols-2">
             <div className="flex min-h-0 min-w-0 flex-col">
               <AnalyticsChartHeader>
                 Prediction Accuracy Over Time

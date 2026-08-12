@@ -15,7 +15,9 @@ Usage (from repo root):
 
 Env:
   DEV_HOST   default 127.0.0.1
-  DEV_PORT   default 8000
+  DEV_PORT   default 8003 (must match frontend/oracle/apps/web/.env.local's
+             NEXT_PUBLIC_API_BASE_URL, or the frontend silently talks to a
+             different backend than the one this script started)
   DEV_RELOAD default 1 (set 0 to disable)
   DEV_SKIP_SETUP=1  skip auto-setup on serve
 """
@@ -305,7 +307,7 @@ def cmd_setup(args: argparse.Namespace) -> int:
 
 def cmd_serve(args: argparse.Namespace) -> int:
     host = args.host or os.environ.get("DEV_HOST", "127.0.0.1")
-    port = int(args.port or os.environ.get("DEV_PORT", "8000"))
+    port = int(args.port or os.environ.get("DEV_PORT", "8003"))
     reload = args.reload if args.reload is not None else _env_bool("DEV_RELOAD", True)
 
     if not BACKEND_DIR.is_dir():
@@ -428,7 +430,7 @@ def _clear_stale_dotenv_overrides() -> None:
 def cmd_restart(args: argparse.Namespace) -> int:
     """Stop the local API on DEV_PORT, clear stale env, then start fresh."""
     host = args.host or os.environ.get("DEV_HOST", "127.0.0.1")
-    port = int(args.port or os.environ.get("DEV_PORT", "8000"))
+    port = int(args.port or os.environ.get("DEV_PORT", "8003"))
     print(f"Migration Oracle - fresh restart (port {port})")
     print(f"  Stopping anything listening on {host}:{port} ...")
     _stop_port(port)
