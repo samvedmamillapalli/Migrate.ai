@@ -1,0 +1,13 @@
+node_modules
+**/node_modules
+.next
+**/.next
+.turbo
+**/.turbo
+.env
+.env.*
+!.env.local.example
+.git
+Dockerfile
+.dockerignore
+npm-debug.log*

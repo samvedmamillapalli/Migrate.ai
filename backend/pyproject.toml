@@ -17,6 +17,14 @@ dependencies = [
     "PyYAML>=6.0.0",
     "sse-starlette>=2.1.0",
     "mcp>=2.0.0",
+    # Declared explicitly, not left to transitive resolution through `mcp`.
+    # `app/auth/clerk.py` imports `jwt` at module level and the Slack/GitHub
+    # OAuth services import `cryptography.fernet`; if a future resolver picks a
+    # dependency set without them, Clerk auth fails *silently* — the middleware
+    # catches the ImportError in a broad `except Exception` and returns 401 on
+    # every request rather than surfacing the missing module.
+    "cryptography>=42.0.0",
+    "pyjwt[crypto]>=2.10.0",
 ]
 
 [project.optional-dependencies]
