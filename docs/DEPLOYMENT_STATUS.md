@@ -6,6 +6,14 @@ actually true right now.
 
 **Target:** Amazon Lightsail Containers, us-east-1, **$17/month**.
 
+## Live URLs
+
+| | URL |
+|---|---|
+| **Console** | https://migration-oracle.b8db7agdvksda.us-east-1.cs.amazonlightsail.com |
+| **API** | https://migration-oracle-api.b8db7agdvksda.us-east-1.cs.amazonlightsail.com |
+| Health | https://migration-oracle-api.b8db7agdvksda.us-east-1.cs.amazonlightsail.com/health |
+
 | Service | Power | Cost | Runs |
 |---|---|---|---|
 | `migration-oracle-api` | micro (1 GB) | $10/mo | FastAPI control plane, port 8000 |
@@ -74,11 +82,32 @@ be built until the API URL exists (build-time inlining), and the API's
 
 ---
 
-## 🔴 Blocked on one thing
+## Resolved blockers
 
-`migration-oracle-backend` has **no `lightsail:*` permission**. Everything else
-is ready; `deploy.py status` currently exits with `AccessDenied on
-lightsail:GetContainerServices`.
+**Lightsail IAM** — done. There is no AWS-managed Lightsail policy (only
+`LightsailExportAccess`, a service-linked role), so `lightsail:*` was added as
+an inline policy named `lightsail-deploy` on `migration-oracle-backend`.
+
+**Signed-out deep links 404'd** — fixed, and it was a real bug, not a curl
+artifact. The response headers gave it away:
+
+```
+x-clerk-auth-reason: protect-rewrite, dev-browser-missing
+x-middleware-rewrite: /clerk_1786691660027
+```
+
+On a Clerk *development* instance, a bare `auth.protect()` handling a request
+with no `__clerk_db_jwt` cookie rewrites internally to `/clerk_<timestamp>`
+instead of redirecting, which the visitor sees as a plain 404. Anyone opening
+`/dashboard/...` before signing in hit that dead end. Passing
+`unauthenticatedUrl` explicitly makes the redirect deterministic and
+independent of the dev-browser handshake. Verified: `/dashboard` and
+`/dashboard/migrations/current` now return `307 → /login`; `/` and `/login`
+still 200.
+
+**Lightsail serializes the first service creation** — the region rejects a
+second `CreateContainerService` while the first is provisioning, so `deploy.py`
+now creates them strictly one at a time.
 
 ---
 
