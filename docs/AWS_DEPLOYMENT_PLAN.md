@@ -1,6 +1,26 @@
 # AWS Deployment Plan — Migration Oracle
 
-**Status: planning only. Nothing here has been executed.**
+> ## ⚠️ Superseded in two places — read this box first
+>
+> **1. Hosting target is Amazon Lightsail Containers, not ECS Express Mode.**
+> The brief changed to "cheapest possible." Lightsail Containers is **$17/mo**
+> (api `micro` $10 + web `nano` $7) against **~$54/mo** for two ECS Express Mode
+> services, whose cost is dominated by two Application Load Balancers at
+> ~$16–22 each. Lightsail includes a managed HTTPS endpoint with no ALB, no
+> ACM, and no domain purchase. AWS Amplify was evaluated for the frontend and
+> rejected: it officially supports Next.js only through 15, and this app is on
+> **16.2.6**. Trade-off accepted: the Lightsail URL
+> (`https://<service>.<guid>.us-east-1.cs.amazonlightsail.com`) is uglier than
+> ECS Express Mode's `https://<name>.ecs.us-east-1.on.aws`.
+> Everything in §0.3 about App Runner being closed to new customers still holds.
+>
+> **2. Parts A, B2 and the branch work are DONE.** See
+> [`docs/DEPLOYMENT_STATUS.md`](DEPLOYMENT_STATUS.md) for what actually
+> shipped, what was verified by running it, and the one remaining blocker.
+> Sections below are kept for the reasoning and the audit trail; treat the
+> hosting mechanics in Part C as historical.
+
+**Original status: planning only. Nothing here has been executed.**
 
 Written 2026-08-12 by reading the codebase, querying the live AWS account
 `630434208625`, diffing the deployed Lambda package against local source, and
