@@ -221,9 +221,13 @@ def deploy(service: str, containers: dict, endpoint: dict, env) -> None:
 
 def stage_services(env) -> None:
     print("Creating container services ...")
+    # Strictly serial: Lightsail rejects a second CreateContainerService while
+    # the region's first one is still provisioning ("You cannot create a
+    # container service in this AWS Region while your first container service
+    # is being created"). Each create must reach READY before the next starts.
     ensure_service(API_SERVICE, API_POWER, env)
-    ensure_service(WEB_SERVICE, WEB_POWER, env)
     api_url = wait_ready(API_SERVICE, env)
+    ensure_service(WEB_SERVICE, WEB_POWER, env)
     web_url = wait_ready(WEB_SERVICE, env)
     print(f"\n  API endpoint: {api_url}\n  Web endpoint: {web_url}\n")
     print("Next: python infra/lightsail/deploy.py api")

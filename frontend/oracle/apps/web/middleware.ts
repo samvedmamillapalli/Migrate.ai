@@ -16,7 +16,17 @@ const isPublicRoute = createRouteMatcher([
 
 export default clerkMiddleware(async (auth, req) => {
   if (!isPublicRoute(req)) {
-    await auth.protect()
+    // Send signed-out visitors to our own sign-in page explicitly.
+    //
+    // Without unauthenticatedUrl, a bare auth.protect() on a Clerk *development*
+    // instance answers a cold request (no __clerk_db_jwt cookie yet) with
+    // `x-clerk-auth-reason: protect-rewrite, dev-browser-missing` and an internal
+    // rewrite to /clerk_<timestamp>, which surfaces to the visitor as a bare 404
+    // instead of a sign-in prompt. Anyone opening a deep link such as
+    // /dashboard/migrations/current before signing in hits that dead end.
+    await auth.protect({
+      unauthenticatedUrl: new URL("/login", req.url).toString(),
+    })
   }
 })
 
