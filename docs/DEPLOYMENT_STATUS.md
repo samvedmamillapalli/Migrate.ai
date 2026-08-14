@@ -111,15 +111,37 @@ now creates them strictly one at a time.
 
 ---
 
-## Remaining after that
+## 🟢 Deployed and verified
 
-**Me:** run the four deploy stages, then verify against the deployed stack —
-health, Clerk sign-in, corpus visible in Settings, demo-database button, one
-full closed loop (connect → discover → predict → approve → real shadow cluster
-→ grade → memory write), and the second-migration retrieval beat.
+Both services are `RUNNING` with `ACTIVE` deployments. Verified against the
+live endpoints, not locally:
 
-**You, once the URLs exist** (all three need the real domain, which is why they
-come last):
+| Check | Result |
+|---|---|
+| `GET /health` over HTTPS | `status: healthy`, `database: healthy`, `aws: healthy`, `sfn_ready: true`, `environment: production` |
+| CockroachDB from the container | v26.2.5, 21 tables, alembic at `x7s5p2k6m042` |
+| Corpus in the live DB | 42 memories, **all 42 with embeddings** |
+| Auth enforced on the API | `GET /runs` → **401** without a token |
+| Web routes | `/` 200, `/login` 200, `/dashboard` **307 → /login** |
+| CORS from the real console origin | preflight 200, `allow-origin` echoes the console URL, `allow-credentials: true` |
+| CORS from a foreign origin | `https://evil.example` → **no** allow-origin header |
+| Frontend → API wiring | the two client chunks known to carry the API URL serve 200 from the live site and contain the API host |
+| TLS | managed cert on both `*.cs.amazonlightsail.com` endpoints |
+
+### Not verifiable without a browser
+
+The full closed loop (connect → discover → predict → approve → real shadow
+cluster → grade → memory write) and the memory-retrieval beat both require a
+signed-in Clerk session. There is no browser automation available in this
+environment, so **these have not been exercised against the deployed stack** —
+every dependency they rely on is green, but that is not the same as having run
+them. This is the one gap between "deployed" and "demo-proven," and it needs a
+human to click through once.
+
+## Remaining
+
+**You, now that the URLs exist** (all three need the real domain, which is why
+they come last):
 
 1. **GitHub App** — profile picture → **Settings** → **Developer settings** →
    **GitHub Apps** → **Edit**. Set **Webhook URL** to
