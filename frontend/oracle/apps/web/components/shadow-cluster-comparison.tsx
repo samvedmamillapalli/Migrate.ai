@@ -595,28 +595,6 @@ export function ShadowClusterComparison({
         </div>
       ) : null}
 
-      <p className="text-muted-foreground text-[11px] leading-relaxed">
-        {view.shadow ? (
-          <>
-            Both sides are the disposable shadow cluster, captured immediately
-            before and immediately after your migration ran — so every
-            difference above is a migration effect, not a difference between two
-            databases. Table and column shape changes are real and match what
-            would happen to production. Row counts on the shadow side are
-            tier-capped synthetic rows, not your production volume.
-          </>
-        ) : (
-          <>
-            The source side is your own database exactly as discovered — real
-            tables, real columns, real index and row counts. The shadow side
-            fills in once a shadow test runs your migration against a
-            throwaway copy.
-          </>
-        )}{" "}
-        Per-table storage is not readable on the CockroachDB Cloud BASIC plan
-        these clusters run on, so this shows row counts instead; total storage
-        delta is measured separately.
-      </p>
     </div>
   )
 }

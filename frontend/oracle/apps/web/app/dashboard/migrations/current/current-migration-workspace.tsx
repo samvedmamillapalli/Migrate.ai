@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useLoadingWord } from "@/lib/loading-words"
 import Link from "next/link"
 import { motion } from "motion/react"
 import { AlertTriangle, Check, ClipboardCheck, X } from "lucide-react"
@@ -1273,6 +1274,7 @@ export function CurrentMigrationWorkspace() {
   const [creating, setCreating] = React.useState(false)
   const [discovering, setDiscovering] = React.useState(false)
   const [predicting, setPredicting] = React.useState(false)
+  const loadingWord = useLoadingWord()
   const predictAbortRef = React.useRef<AbortController | null>(null)
   const [approving, setApproving] = React.useState<ApprovalDecision | null>(null)
   const [startingShadow, setStartingShadow] = React.useState(false)
@@ -2028,7 +2030,7 @@ export function CurrentMigrationWorkspace() {
                     />
                   </div>
                   <p className="text-muted-foreground font-mono text-[11px] tracking-tight">
-                    {discoverProgress?.message || "Connecting…"}
+                    {loadingWord}…
                   </p>
                 </div>
               ) : null}
@@ -2148,7 +2150,9 @@ export function CurrentMigrationWorkspace() {
                         text — model ids and stage names that meant nothing to
                         the person waiting. The bar already conveys progress. */}
                     <p className="text-muted-foreground text-[11px]">
-                      Analyzing your migration…
+                      Prediction running
+                      <span className="text-muted-foreground/40 mx-1.5">·</span>
+                      {loadingWord}…
                       <span className="text-muted-foreground/40 mx-1.5">·</span>
                       {Math.round(progress?.percent ?? 0)}%
                     </p>

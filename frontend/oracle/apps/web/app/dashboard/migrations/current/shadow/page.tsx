@@ -19,6 +19,7 @@ import { cn } from "@workspace/ui/lib/utils"
 import { ShadowClusterComparison } from "@/components/shadow-cluster-comparison"
 import { ShadowLiveView } from "@/components/shadow-live-view"
 import { ShadowTeardownControl } from "@/components/shadow-teardown-control"
+import { GradeRunAction } from "@/components/grade-run-action"
 import { useShadowWatch } from "@/components/shadow-watch-context"
 import {
   ApiError,
@@ -322,13 +323,6 @@ export default function ShadowExecutionPage() {
         title="Shadow Execution"
         subtitle={
           <>
-            {run ? (
-              <span className="font-mono text-xs tracking-tight">
-                run {run.id.slice(0, 8)}
-                <span className="text-muted-foreground/50 mx-2">·</span>
-                created {formatRelativeTime(run.created_at)}
-              </span>
-            ) : null}
             {statusMessage ? (
               <span className="mt-1 block max-w-2xl text-sm leading-relaxed">
                 {statusMessage}
@@ -390,6 +384,15 @@ export default function ShadowExecutionPage() {
           </Section>
 
           <Section title="Controls">
+            <GradeRunAction
+              run={run}
+              grade={extras.grade}
+              onGraded={(updated) => {
+                setRun(updated)
+                void refreshExtras(updated)
+              }}
+              className="mb-4"
+            />
             {run.status === "awaiting_approval" ? (
               <p className="text-muted-foreground text-sm">
                 Approve on Current Migration first, then return here.

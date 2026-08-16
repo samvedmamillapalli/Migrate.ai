@@ -225,10 +225,6 @@ function ThemeModeField() {
           </button>
         ))}
       </div>
-      <p className="text-muted-foreground mt-2 text-[12px] leading-snug">
-        Tied to your account — applies everywhere, and doesn&apos;t affect other
-        users on this browser.
-      </p>
     </div>
   )
 }
@@ -525,11 +521,6 @@ export default function SettingsPage() {
             <div className="border-border mt-4 border-t pt-4">
               <ThemeModeField />
             </div>
-            {hasSession ? (
-              <div className="border-border mt-4 border-t pt-4">
-                <DashboardSignOutButton />
-              </div>
-            ) : null}
           </Panel>
 
           {/* Execution — the live policy this environment runs under.
@@ -552,20 +543,6 @@ export default function SettingsPage() {
                 />
               </Row>
               <Row
-                title="AI prediction"
-                detail={
-                  predictionModelLabel
-                    ? `Model: ${predictionModelLabel}`
-                    : "No prediction model configured."
-                }
-              >
-                <StatePill
-                  on={bedrockReady}
-                  onLabel="ENABLED"
-                  offLabel="NOT CONFIGURED"
-                />
-              </Row>
-              <Row
                 title="Manual approval"
                 detail="Always required before a shadow run starts."
               >
@@ -574,11 +551,6 @@ export default function SettingsPage() {
               <Row title="Shadow provider" detail="Verification cluster provisioner.">
                 <span className="text-foreground shrink-0 text-[13px] font-semibold">
                   {formatShadowProvider(integrations?.shadow_provider)}
-                </span>
-              </Row>
-              <Row title="Environment" detail="Server deployment environment.">
-                <span className="text-foreground shrink-0 text-[13px] font-semibold">
-                  {formatEnvironment(integrations?.environment)}
                 </span>
               </Row>
             </div>
@@ -876,6 +848,21 @@ export default function SettingsPage() {
               </Row>
             </div>
           </Panel>
+
+          {/* Sign out lives here, at the bottom of Settings, rather than in the
+              sidebar nav — a destructive account action should not sit one
+              stray click away from the page links. */}
+          {hasSession ? (
+            <Panel className="px-6 py-5">
+              <Label className="mb-2">Account</Label>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-muted-foreground text-[12.5px]">
+                  Sign out of Migration Oracle on this device.
+                </p>
+                <DashboardSignOutButton />
+              </div>
+            </Panel>
+          ) : null}
         </div>
       </div>
     </div>

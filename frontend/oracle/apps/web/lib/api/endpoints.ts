@@ -304,6 +304,11 @@ export function verifyLocal(runId: string) {
   })
 }
 
+/** Run the grading pipeline for a finished shadow run. */
+export function runGrade(runId: string) {
+  return api<MigrationRun>(`/runs/${runId}/grade`, { method: "POST" })
+}
+
 export function getGrade(runId: string) {
   return api<Grade>(`/runs/${runId}/grade`)
 }

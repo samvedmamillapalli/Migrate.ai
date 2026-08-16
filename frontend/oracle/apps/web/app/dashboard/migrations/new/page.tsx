@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useLoadingWord } from "@/lib/loading-words"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { AnimatePresence, motion } from "motion/react"
@@ -183,6 +184,7 @@ export default function NewMigrationPage() {
     null | "connect" | "submit" | "discard"
   >(null)
   const [progress, setProgress] = React.useState<PipelineProgress | null>(null)
+  const loadingWord = useLoadingWord()
   const [error, setError] = React.useState<string | null>(null)
   const [showGrantHelp, setShowGrantHelp] = React.useState(false)
   const [grantCopied, setGrantCopied] = React.useState(false)
@@ -799,8 +801,8 @@ export default function NewMigrationPage() {
                             }}
                           />
                         </div>
-                        <p className="text-muted-foreground font-mono text-[11px]">
-                          {progress?.message ?? "Connecting…"}
+                        <p className="text-muted-foreground text-[11px]">
+                          {loadingWord}…
                         </p>
                       </div>
                     ) : !canConnect ? (
@@ -1035,8 +1037,11 @@ export default function NewMigrationPage() {
                             }}
                           />
                         </div>
-                        <p className="text-muted-foreground font-mono text-[11px]">
-                          {progress?.message ?? "Working…"} ·{" "}
+                        <p className="text-muted-foreground text-[11px]">
+                          Prediction running
+                          <span className="text-muted-foreground/40 mx-1.5">·</span>
+                          {loadingWord}…
+                          <span className="text-muted-foreground/40 mx-1.5">·</span>
                           {Math.round(progress?.percent ?? 0)}%
                         </p>
                       </div>

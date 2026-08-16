@@ -66,7 +66,7 @@ export function ShadowTeardownControl({
     return (
       <div className={cn("space-y-1.5 text-[13px]", className)}>
         <p className="text-foreground">
-          Cluster destroyed — {shadow.cluster_name || "the shadow cluster"} no
+          Cluster destroyed — your shadow cluster no
           longer exists.
         </p>
         {shadow.destroyed_at ? (
@@ -81,7 +81,7 @@ export function ShadowTeardownControl({
   if (status === "destroying") {
     return (
       <p className={cn("text-muted-foreground text-[13px]", className)}>
-        Tearing down {shadow.cluster_name || "the shadow cluster"}…
+        Tearing down your shadow cluster…
       </p>
     )
   }
@@ -106,7 +106,7 @@ export function ShadowTeardownControl({
   return (
     <div className={cn("space-y-2.5 text-[13px]", className)}>
       <p className="text-foreground">
-        {shadow.cluster_name || "The shadow cluster"} is live
+        Your shadow cluster is live
         {isHolding ? " — held for inspection." : "."}
       </p>
       <p className="text-muted-foreground">

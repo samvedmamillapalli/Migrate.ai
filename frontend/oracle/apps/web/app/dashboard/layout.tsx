@@ -29,7 +29,11 @@ export default async function DashboardLayout({
             <AppSidebar />
             <SidebarInset className="bg-background min-h-0 overflow-hidden">
               <DashboardHeader />
-              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+              {/* DashboardHeader is md:hidden, so on desktop there is no chrome
+                  above the content and every page title sat flush against the
+                  top of the viewport. This is the breathing room that header
+                  would otherwise have provided. */}
+              <div className="flex min-h-0 flex-1 flex-col overflow-y-auto pt-5 md:pt-7">
                 {children}
               </div>
             </SidebarInset>

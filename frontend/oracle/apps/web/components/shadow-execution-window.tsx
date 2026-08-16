@@ -10,6 +10,7 @@ import { toneText } from "@workspace/ui/components/ui-kit"
 import { cn } from "@workspace/ui/lib/utils"
 
 import { ShadowLiveView } from "@/components/shadow-live-view"
+import { GradeRunAction } from "@/components/grade-run-action"
 import { useShadowWatch } from "@/components/shadow-watch-context"
 import {
   ApiError,
@@ -200,7 +201,7 @@ export function ShadowExecutionWindow() {
                     ? "Failed — expand for detail"
                     : extras.execution
                       ? "Finished — expand for results"
-                      : `run ${runId.slice(0, 8)}`}
+                      : "Shadow run"}
               </div>
               {extras.shadow || durationLabel ? (
                 <div className="text-background/70 mt-2 space-y-1 font-mono text-[11px]">
@@ -259,12 +260,9 @@ export function ShadowExecutionWindow() {
       <header className="flex shrink-0 items-start justify-between gap-2 border-b border-border/60 px-4 py-3">
         <div className="min-w-0 space-y-0.5">
           <p className="section-label">Shadow visualization</p>
-          <p className="truncate font-mono text-xs text-foreground/85">
-            run {runId.slice(0, 8)}
-            {isLive ? (
-              <span className={cn("ml-2", toneText("warn"))}>· live</span>
-            ) : null}
-          </p>
+          {isLive ? (
+            <p className={cn("truncate text-xs", toneText("warn"))}>· live</p>
+          ) : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           <Button
@@ -313,11 +311,27 @@ export function ShadowExecutionWindow() {
               ) : null}
             </section>
 
+            <GradeRunAction
+              run={run}
+              grade={extras.grade}
+              compact
+              onGraded={(updated) => {
+                setRun(updated)
+                void refreshExtras(updated)
+              }}
+              className="mb-3"
+            />
+
             <ShadowLiveView
               run={run}
               extras={extras}
               comparisons={comparisons}
               isLive={isLive}
+              /* This panel is a glance view floating over another page.
+                 Prediction-vs-actual and the event log belong on the full
+                 shadow page, which is one click away in the footer. */
+              showComparisons={false}
+              showEventLog={false}
               awaitingStart={
                 run.status === "running" &&
                 !hasRealSfnArn(run) &&

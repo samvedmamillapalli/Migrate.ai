@@ -215,7 +215,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
 
       <SidebarFooter className="gap-0 p-0">
         <div className="px-3 pb-3 group-data-[collapsible=icon]:hidden">
-          <div className="section-label px-3 pb-2">Owner Identity</div>
+          <div className="section-label px-3 pb-2">User</div>
           <div className="bg-muted rounded-lg px-3 py-2.5">
             <div className="text-foreground truncate text-sm font-semibold">
               {ownerName ?? " "}

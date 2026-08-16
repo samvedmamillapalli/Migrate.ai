@@ -74,11 +74,11 @@ export function WorkspaceMembersPanel({
       <Label className="mb-4">
         Members{workspace ? ` — ${workspace.name}` : ""}
       </Label>
-      <p className="text-muted-foreground mb-4 text-[13px] leading-relaxed">
-        {workspace
-          ? "Everyone with access to this workspace's runs and settings."
-          : "Create or select a workspace to see who has access to it."}
-      </p>
+      {workspace ? null : (
+        <p className="text-muted-foreground mb-4 text-[13px] leading-relaxed">
+          Create or select a workspace to see who has access to it.
+        </p>
+      )}
 
       {actionError ? (
         <p className="mb-3 text-[12px] leading-snug text-destructive">

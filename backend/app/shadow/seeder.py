@@ -50,6 +50,19 @@ def _rows_per_batch(column_count: int) -> int:
     return max(1, min(_INSERT_BATCH_MAX, _MAX_BIND_PARAMS // column_count))
 
 
+def _quote_ident(name: str) -> str:
+    """Quote a SQL identifier, doubling any embedded quote.
+
+    Identifiers here come from a *customer's* discovered schema and are
+    interpolated into generated DDL/DML. Wrapping in double quotes without
+    escaping means a table or column literally named `foo"; DROP TABLE bar; --`
+    breaks out of the quoting. The blast radius is small - the generated SQL
+    only ever runs against a disposable shadow cluster, never the customer's
+    own database - but the fix costs one function.
+    """
+    return '"' + str(name).replace('"', '""') + '"'
+
+
 class ShadowSeeder:
     """Recreate a customer's schema *shape* on the shadow and load synthetic rows.
 
@@ -98,7 +111,7 @@ class ShadowSeeder:
                         continue
                     if schema.name != "public":
                         await conn.execute(
-                            text(f'CREATE SCHEMA IF NOT EXISTS "{schema.name}"')
+                            text(f'CREATE SCHEMA IF NOT EXISTS {_quote_ident(schema.name)}')
                         )
                     for table in schema.tables:
                         await self._create_table(conn, table)
@@ -215,7 +228,7 @@ class ShadowSeeder:
         col_defs: list[str] = []
         for column in sorted(table.columns, key=lambda c: c.ordinal_position):
             col_defs.append(self._column_ddl(column))
-        pk = [f'"{c}"' for c in table.primary_key]
+        pk = [_quote_ident(c) for c in table.primary_key]
         if pk:
             col_defs.append(f"PRIMARY KEY ({', '.join(pk)})")
         ddl = f"CREATE TABLE IF NOT EXISTS {qualified} (\n  " + ",\n  ".join(col_defs) + "\n)"
@@ -229,14 +242,14 @@ class ShadowSeeder:
                 continue  # PK already created inline
             if not index.columns:
                 continue
-            cols = ", ".join(f'"{c}"' for c in index.columns)
+            cols = ", ".join(_quote_ident(c) for c in index.columns)
             unique = "UNIQUE " if index.is_unique else ""
             idx_name = self._safe_index_name(table, index)
             try:
                 await conn.execute(
                     text(
                         f"CREATE {unique}INDEX IF NOT EXISTS "
-                        f'"{idx_name}" ON {qualified} ({cols})'
+                        f"{_quote_ident(idx_name)} ON {qualified} ({cols})"
                     )
                 )
                 created += 1
@@ -271,7 +284,7 @@ class ShadowSeeder:
             if expr is None:
                 return None
             exprs.append(expr)
-        col_names = ", ".join(f'"{c.name}"' for c in columns)
+        col_names = ", ".join(_quote_ident(c.name) for c in columns)
         return (
             f"INSERT INTO {self._qualified(table)} ({col_names}) "
             f"SELECT {', '.join(exprs)} FROM generate_series(1, {int(target)}) AS g"
@@ -342,7 +355,7 @@ class ShadowSeeder:
 
         columns = sorted(table.columns, key=lambda c: c.ordinal_position)
         pk_set = set(table.primary_key)
-        col_names = ", ".join(f'"{c.name}"' for c in columns)
+        col_names = ", ".join(_quote_ident(c.name) for c in columns)
         qualified = self._qualified(table)
         per_batch = _rows_per_batch(len(columns))
         # Resolve each column's type family and PK-ness once per table rather
@@ -428,13 +441,13 @@ class ShadowSeeder:
     @staticmethod
     def _qualified(table: TableMetadata) -> str:
         if table.schema_name and table.schema_name != "public":
-            return f'"{table.schema_name}"."{table.name}"'
-        return f'"{table.name}"'
+            return f"{_quote_ident(table.schema_name)}.{_quote_ident(table.name)}"
+        return _quote_ident(table.name)
 
     def _column_ddl(self, column: ColumnMetadata) -> str:
         col_type = _map_type(column)
         nullable = "" if column.is_nullable else " NOT NULL"
-        return f'"{column.name}" {col_type}{nullable}'
+        return f"{_quote_ident(column.name)} {col_type}{nullable}"
 
     @staticmethod
     def _safe_index_name(table: TableMetadata, index: IndexMetadata) -> str:

@@ -42,6 +42,7 @@ import { cn } from "@workspace/ui/lib/utils"
 
 import { SqlCodePanel } from "../current/sql-panel"
 import { ShadowLiveView } from "@/components/shadow-live-view"
+import { GradeRunAction } from "@/components/grade-run-action"
 import {
   hasRealSfnArn,
   mapComparisons,
@@ -87,6 +88,50 @@ function Section({
         {action}
       </div>
       {children}
+    </Panel>
+  )
+}
+
+/**
+ * A Section that starts closed. Used for the reference material at the bottom
+ * of a run — grade detail, memory, model traces — which is worth keeping but
+ * should not be the first thing competing for attention on the page.
+ */
+function CollapsedSection({
+  title,
+  summary,
+  children,
+}: {
+  title: string
+  summary?: React.ReactNode
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = React.useState(false)
+  return (
+    <Panel aria-label={title} className="flex w-full flex-col px-6 py-5">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="flex w-full items-center gap-2 text-left"
+      >
+        <span
+          aria-hidden
+          className={cn(
+            "text-muted-foreground text-[10px] transition-transform duration-150",
+            open ? "rotate-90" : "rotate-0"
+          )}
+        >
+          ▶
+        </span>
+        <Label>{title}</Label>
+        {summary ? (
+          <span className="text-muted-foreground ml-auto text-[12px]">
+            {summary}
+          </span>
+        ) : null}
+      </button>
+      {open ? <div className="mt-4">{children}</div> : null}
     </Panel>
   )
 }
@@ -172,11 +217,6 @@ function LifecycleTimeline({ stages }: { stages: LifecycleStage[] }) {
                 ) : null}
               </span>
             </div>
-            {stage.outcome ? (
-              <p className="text-muted-foreground/70 mt-0.5 font-mono text-[11px] tracking-tight">
-                {stage.outcome}
-              </p>
-            ) : null}
             {stage.error ? (
               <p className="text-[var(--oracle-risk)] mt-0.5 text-xs leading-relaxed">
                 {stage.error}
@@ -479,8 +519,6 @@ export default function MigrationRunDetailPage() {
   const comparisons = run
     ? mapComparisons(run, { grade, memory, shadow, execution })
     : []
-
-  const dimensionDetails = grade ? asRecord(grade.dimension_details) : null
   const stageTimings = shadow ? asRecord(shadow.stage_timings) : null
   const jobWatchRows = Array.isArray(stageTimings?.job_watch)
     ? (stageTimings.job_watch as unknown[]).filter(
@@ -520,7 +558,7 @@ export default function MigrationRunDetailPage() {
 
   if (loading && !run) {
     return (
-      <div className="flex flex-1 flex-col gap-5 px-4 pb-8 md:px-6">
+      <div className="flex flex-1 flex-col gap-5 px-4 pb-8 md:px-6 lg:px-10">
         <p className="text-muted-foreground text-sm">Loading migration run…</p>
       </div>
     )
@@ -528,7 +566,7 @@ export default function MigrationRunDetailPage() {
 
   if (error && !run) {
     return (
-      <div className="flex flex-1 flex-col gap-5 px-4 pb-8 md:px-6">
+      <div className="flex flex-1 flex-col gap-5 px-4 pb-8 md:px-6 lg:px-10">
         <Link
           href="/dashboard/migrations/history"
           className="text-muted-foreground hover:text-foreground font-mono text-[11px] tracking-tight transition-colors"
@@ -547,7 +585,7 @@ export default function MigrationRunDetailPage() {
   const isFailed = run.status === "failed"
 
   return (
-    <div className="flex flex-1 flex-col gap-5 px-4 pb-8 md:px-6">
+    <div className="flex flex-1 flex-col gap-5 px-4 pb-8 md:px-6 lg:px-10">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <Link
           href="/dashboard/migrations/history"
@@ -627,132 +665,9 @@ export default function MigrationRunDetailPage() {
           comparisons={comparisons}
           isLive={isLiveShadow}
         />
-        {timingEntries.length > 0 ? (
-          <div className="border-border/60 mt-4 space-y-1.5 border-t pt-3">
-            <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-              Raw stage timings
-            </p>
-            <dl className="grid grid-cols-2 gap-1.5 sm:grid-cols-3">
-              {timingEntries.map(([key, value]) => (
-                <div key={key} className="flex items-baseline justify-between gap-2">
-                  <dt className="text-muted-foreground/60 font-mono text-[10px] tracking-tight">
-                    {key}
-                  </dt>
-                  <dd className="text-foreground/80 font-mono text-[11px] tracking-tight">
-                    {formatStageTiming(value, key) ?? String(value)}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </div>
-        ) : null}
       </Section>
 
-      {jobWatchRows.length > 0 ||
-      (typeof stageTimings?.cockroachdb_tools === "string" &&
-        stageTimings.cockroachdb_tools) ? (
-        <Section title="Jobs observed">
-          <p className="text-muted-foreground mb-3 max-w-2xl text-sm leading-relaxed">
-            Live{" "}
-            <span className="text-foreground/85 font-mono text-xs">
-              SHOW JOBS
-            </span>{" "}
-            on the shadow cluster during ExecuteMigration, plus — separately
-            — a real CockroachDB Managed MCP investigation with its own live
-            tool calls (see Model Traces below for the full call log).
-          </p>
-          {typeof stageTimings?.cockroachdb_tools === "string" ? (
-            <p className="text-muted-foreground/70 mb-3 text-xs leading-relaxed">
-              {stageTimings.cockroachdb_tools}
-            </p>
-          ) : null}
-          {jobWatchRows.length > 0 ? (
-            <ul className="divide-border/60 divide-y rounded-md border border-border/60">
-              {jobWatchRows.slice(0, 8).map((row, idx) => (
-                <li
-                  key={String(row.job_id ?? idx)}
-                  className="grid gap-1 px-3 py-2 font-mono text-[11px] tracking-tight sm:grid-cols-[7rem_1fr_6rem]"
-                >
-                  <span className="text-muted-foreground/70">
-                    {String(row.job_type ?? "job")}
-                  </span>
-                  <span className="text-foreground/85 truncate">
-                    {String(row.description ?? row.job_id ?? "—")}
-                  </span>
-                  <span className="text-muted-foreground/70 sm:text-right">
-                    {String(row.status ?? "—")}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-muted-foreground text-sm">
-              No schema-change jobs were visible for this run (DDL may have
-              finished instantly).
-            </p>
-          )}
-        </Section>
-      ) : null}
 
-      {changefeedEventRows.length > 0 ? (
-        <Section title="Live Change Events">
-          <p className="text-muted-foreground mb-3 max-w-2xl text-sm leading-relaxed">
-            A real CockroachDB Changefeed watching{" "}
-            {changefeedTables.length > 0 ? (
-              <span className="text-foreground/85 font-mono text-xs">
-                {changefeedTables.join(", ")}
-              </span>
-            ) : (
-              "the migration's target table"
-            )}{" "}
-            during ExecuteMigration — row-level change events streamed out via
-            CockroachDB's Enterprise changefeed (S3 sink), not polling. This
-            augments the job status above; migrations that don't rewrite the
-            base table (e.g. a plain{" "}
-            <span className="text-foreground/85 font-mono text-xs">
-              CREATE INDEX
-            </span>
-            ) may show nothing here even though the migration itself
-            succeeded — that's expected, not a failure.
-          </p>
-          <ul className="divide-border/60 divide-y rounded-md border border-border/60">
-            {changefeedEventRows.slice(0, 20).map((row, idx) => {
-              const after = row.after as Record<string, unknown> | null | undefined
-              const isDelete = after === null
-              return (
-                <li
-                  key={idx}
-                  className="grid gap-1 px-3 py-2 font-mono text-[11px] tracking-tight sm:grid-cols-[6rem_1fr]"
-                >
-                  <span
-                    className={cn(
-                      "shrink-0",
-                      isDelete
-                        ? "text-[var(--oracle-risk)]"
-                        : "text-[var(--oracle-verified)]"
-                    )}
-                  >
-                    {isDelete ? "delete" : "update"}
-                  </span>
-                  <span className="text-foreground/80 truncate">
-                    {after
-                      ? Object.entries(after)
-                          .slice(0, 4)
-                          .map(([k, v]) => `${k}=${String(v)}`)
-                          .join(" · ")
-                      : String(row.key ?? "—")}
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-          {changefeedEventRows.length > 20 ? (
-            <p className="text-muted-foreground/60 mt-2 font-mono text-[10px] tracking-tight">
-              +{changefeedEventRows.length - 20} more events (showing first 20)
-            </p>
-          ) : null}
-        </Section>
-      ) : null}
 
       {shadow && shadow.ccloud_audit_trail.length > 0 ? (
         <Section title="CockroachDB Cloud Audit Trail">
@@ -817,7 +732,25 @@ export default function MigrationRunDetailPage() {
         </Section>
       ) : null}
 
-      <Section title="Grade">
+      {!grade ? (
+        <Section title="Result">
+          <GradeRunAction
+            run={run}
+            grade={grade}
+            onGraded={(updated) => {
+              setRun(updated)
+              void fetchOrNull(() => getGrade(updated.id)).then((g) => {
+                if (g) setGrade(g)
+              })
+            }}
+          />
+        </Section>
+      ) : null}
+
+      <CollapsedSection
+        title="Grade"
+        summary={grade ? grade.outcome_class : "not graded yet"}
+      >
         {!grade ? (
           <p className="text-muted-foreground text-sm">
             No grade recorded for this run yet.
@@ -865,32 +798,19 @@ export default function MigrationRunDetailPage() {
                 tone={grade.rollback_consistent ? "verified" : "risk"}
               />
             </div>
-            <p className="text-foreground/80 border-t border-border/60 pt-3 text-sm leading-relaxed">
-              {grade.lessons_learned}
-            </p>
-            {grade.surprise_notes ? (
-              <p className="text-muted-foreground text-sm leading-relaxed">
-                {grade.surprise_notes}
+            {grade.lessons_learned ? (
+              <p className="text-foreground/80 border-t border-border/60 pt-3 text-sm leading-relaxed">
+                {grade.lessons_learned}
               </p>
-            ) : null}
-            {grade.prose_error ? (
-              <p className="text-[var(--oracle-risk)] text-xs leading-relaxed">
-                Prose generation error: {grade.prose_error}
-              </p>
-            ) : null}
-            {dimensionDetails ? (
-              <div className="border-border/60 space-y-1.5 border-t pt-3">
-                <p className="text-muted-foreground/60 font-mono text-[10px] tracking-[0.12em] uppercase">
-                  Dimension details
-                </p>
-                <PreBlock text={JSON.stringify(dimensionDetails, null, 2)} />
-              </div>
             ) : null}
           </div>
         )}
-      </Section>
+      </CollapsedSection>
 
-      <Section title="Memory">
+      <CollapsedSection
+        title="Memory"
+        summary={memory ? "stored" : "none yet"}
+      >
         {!memory ? (
           <p className="text-muted-foreground text-sm">
             No memory was written for this run yet.
@@ -934,9 +854,9 @@ export default function MigrationRunDetailPage() {
             </div>
           </div>
         )}
-      </Section>
+      </CollapsedSection>
 
-      <Section title="Model Traces">
+      <CollapsedSection title="Model Traces">
         {!predictionTrace && !recommendationTrace && !investigationTrace ? (
           <p className="text-muted-foreground text-sm">
             No Bedrock model traces recorded for this run.
@@ -963,7 +883,7 @@ export default function MigrationRunDetailPage() {
             ) : null}
           </div>
         )}
-      </Section>
+      </CollapsedSection>
     </div>
   )
 }

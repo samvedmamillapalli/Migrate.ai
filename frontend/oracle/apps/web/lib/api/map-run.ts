@@ -1585,6 +1585,22 @@ export type ShadowEventLogLine = { at: string; text: string }
  * observations, not a simulated ticker. Never stops producing output as long
  * as new events keep landing, which is what keeps a stage from feeling frozen.
  */
+/** Human phrasing for a shadow lifecycle status. */
+function eventLogPhrase(status: string): string {
+  switch (status) {
+    case "provisioning": return "Creating the shadow cluster"
+    case "ready": return "Shadow cluster ready"
+    case "seeding": return "Loading your schema and sample rows"
+    case "migrating": return "Running your migration"
+    case "measuring": return "Measuring results"
+    case "holding": return "Holding the cluster so you can inspect it"
+    case "destroying": return "Tearing down the shadow cluster"
+    case "destroyed": return "Shadow cluster destroyed"
+    case "failed": return "Shadow run failed"
+    default: return status ? status.replace(/_/g, " ") : "Updated"
+  }
+}
+
 export function mapShadowEventLog(shadow: ShadowCluster | null): ShadowEventLogLine[] {
   const entries = Array.isArray(shadow?.event_log)
     ? (shadow!.event_log as unknown[])
@@ -1593,18 +1609,10 @@ export function mapShadowEventLog(shadow: ShadowCluster | null): ShadowEventLogL
     const r = asRecord(e) || {}
     const at = String(r.at ?? "")
     const status = String(r.status ?? "")
-    const st = asRecord(r.stage_timings) || {}
-    const keys = Object.keys(st).filter(
-      (k) => k !== "job_progress" && k !== "job_watch"
-    )
-    const parts = keys.slice(0, 4).map((k) => {
-      const v = st[k]
-      return `${k}=${typeof v === "object" ? JSON.stringify(v).slice(0, 40) : v}`
-    })
-    return {
-      at,
-      text: `status → ${status}${parts.length ? " · " + parts.join(", ") : ""}`,
-    }
+    // Just what happened. The trailing `provision_ms=…, ready_ms=…,
+    // changefeed_events=[{...}]` dump was internal telemetry rendered at the
+    // user; the same numbers are already shown as stage durations on the rail.
+    return { at, text: eventLogPhrase(status) }
   })
 }
 

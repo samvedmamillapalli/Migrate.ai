@@ -113,12 +113,8 @@ function StagePanel({
   if (currentStageId === "provision") {
     return (
       <div className="space-y-1.5 text-[13px]">
-        <p className="text-foreground font-mono">
-          {shadow.cluster_name || "Provisioning cluster identity…"}
-        </p>
-        <p className="text-muted-foreground font-mono text-[12px]">
-          region: {shadow.region || "…"} · tier: {shadow.scale_tier || "…"} ·
-          provider: {shadow.provider || "…"}
+        <p className="text-foreground">
+          Creating a disposable shadow cluster to test your migration on…
         </p>
       </div>
     )
@@ -128,7 +124,7 @@ function StagePanel({
     return (
       <div className="space-y-1.5 text-[13px]">
         <p className="text-foreground">
-          Seeding tables from your discovered schema onto {shadow.cluster_name || "the shadow cluster"}…
+          Seeding tables from your discovered schema onto your newly created shadow cluster…
         </p>
         <p className="text-muted-foreground text-[12px] leading-relaxed">
           Rows are synthetic and tier-capped — this measures schema-load
@@ -219,8 +215,8 @@ function StagePanel({
     <div className="space-y-1.5 text-[13px]">
       <p className="text-foreground">
         {isDone
-          ? `Cluster destroyed — ${shadow.cluster_name || "the shadow cluster"} no longer exists.`
-          : `Tearing down ${shadow.cluster_name || "the shadow cluster"}…`}
+          ? "Cluster destroyed — your shadow cluster no longer exists."
+          : "Tearing down your shadow cluster…"}
       </p>
       {isDone && shadow.destroyed_at ? (
         <p className="text-muted-foreground">
@@ -281,7 +277,7 @@ function HoldingPanel({
   return (
     <div className="space-y-2.5 text-[13px]">
       <p className="text-foreground">
-        {shadow.cluster_name || "The shadow cluster"} is still live — held for
+        Your shadow cluster is still live — held for
         inspection.
       </p>
       <p className="text-muted-foreground">
