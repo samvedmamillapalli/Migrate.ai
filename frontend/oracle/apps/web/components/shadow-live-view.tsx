@@ -311,6 +311,69 @@ function HoldingPanel({
 /** Band 3 — append-only event log. Never stops producing output. */
 /** Exported for reuse by `ShadowClusterComparison`'s "Event log" accordion on
  * the standalone Shadow Execution page. */
+/** True once at least one comparison row has a measured value, not a placeholder. */
+function comparisonsHaveActuals(rows: ComparisonRow[]): boolean {
+  return rows.some(
+    (r) =>
+      Boolean(r.actual) &&
+      !/^(measuring|pending|—|-|n\/a)\b/i.test(r.actual.trim())
+  )
+}
+
+function hasEvents(shadow: RunExtras["shadow"]): boolean {
+  return mapShadowEventLog(shadow).length > 0
+}
+
+/**
+ * Collapsed-by-default section with a summary row that stays readable when
+ * shut. Deliberately not the shared Collapsible primitive: this needs to
+ * re-open itself when `defaultOpen` flips true mid-run (results arriving),
+ * which an uncontrolled component cannot do.
+ */
+function Disclosure({
+  label,
+  defaultOpen,
+  children,
+}: {
+  label: string
+  defaultOpen: boolean
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = React.useState(defaultOpen)
+  const wasAuto = React.useRef(defaultOpen)
+  React.useEffect(() => {
+    // Auto-open once when real data arrives; never auto-close afterwards, so a
+    // deliberate collapse by the user is respected.
+    if (defaultOpen && !wasAuto.current) {
+      wasAuto.current = true
+      setOpen(true)
+    }
+  }, [defaultOpen])
+
+  return (
+    <div className="border-border border-t pt-4">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        className="text-muted-foreground hover:text-foreground flex w-full items-center gap-1.5 text-left transition-colors"
+      >
+        <span
+          aria-hidden
+          className={cn(
+            "text-[10px] transition-transform duration-150",
+            open ? "rotate-90" : "rotate-0"
+          )}
+        >
+          ▶
+        </span>
+        <Label>{label}</Label>
+      </button>
+      {open ? <div className="mt-2.5">{children}</div> : null}
+    </div>
+  )
+}
+
 export function EventLog({ shadow }: { shadow: RunExtras["shadow"] }) {
   const lines = mapShadowEventLog(shadow)
   if (lines.length === 0) {
@@ -512,17 +575,22 @@ export function ShadowLiveView({
       ) : null}
 
       {showComparisons ? (
-        <div className="border-border space-y-2.5 border-t pt-4">
-          <Label>Pred → actual</Label>
+        <Disclosure
+          label="Prediction vs actual"
+          /* While a run is mid-flight every row reads "measuring…", which is
+             pure noise at the exact moment the user is watching the stages.
+             Collapsed until real numbers land, then opened automatically so the
+             payoff moment is never hidden behind a click. */
+          defaultOpen={comparisonsHaveActuals(comparisons)}
+        >
           <ComparisonsBlock rows={comparisons} />
-        </div>
+        </Disclosure>
       ) : null}
 
       {showEventLog ? (
-        <div className="border-border space-y-2.5 border-t pt-4">
-          <Label>Event log</Label>
+        <Disclosure label="Event log" defaultOpen={hasEvents(shadow)}>
           <EventLog shadow={shadow} />
-        </div>
+        </Disclosure>
       ) : null}
 
       {children}

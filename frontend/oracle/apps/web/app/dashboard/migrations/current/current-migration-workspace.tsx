@@ -2144,8 +2144,11 @@ export function CurrentMigrationWorkspace() {
                         }}
                       />
                     </div>
-                    <p className="text-muted-foreground font-mono text-[11px] tracking-tight">
-                      {progress?.message || "Working…"}
+                    {/* Was `progress.message`, the backend's internal pipeline
+                        text — model ids and stage names that meant nothing to
+                        the person waiting. The bar already conveys progress. */}
+                    <p className="text-muted-foreground text-[11px]">
+                      Analyzing your migration…
                       <span className="text-muted-foreground/40 mx-1.5">·</span>
                       {Math.round(progress?.percent ?? 0)}%
                     </p>
@@ -2316,13 +2319,10 @@ export function CurrentMigrationWorkspace() {
                     >
                       {startingShadow ? "Starting…" : "Start shadow test"}
                     </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      onClick={() => openWatch(run.id)}
-                    >
-                      Watch live
-                    </Button>
+                    {/* "Watch live" removed: this page is in
+                        PAGES_WITH_OWN_LIVE_SHADOW_VIEW, so ShadowExecutionWindow
+                        returns null here and the click did nothing at all. The
+                        live view is already rendered inline below. */}
                     <Link
                       href="/dashboard/migrations/current/shadow"
                       className={cn(
@@ -2347,13 +2347,9 @@ export function CurrentMigrationWorkspace() {
                   awaitingStart={canStartShadow}
                 >
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      onClick={() => openWatch(run.id)}
-                    >
-                      Watch live
-                    </Button>
+                    {/* "Watch live" removed here for the same reason as above —
+                        the floating window is suppressed on this page, so the
+                        button was a guaranteed no-op. */}
                     <Link
                       href="/dashboard/migrations/current/shadow"
                       className={cn(

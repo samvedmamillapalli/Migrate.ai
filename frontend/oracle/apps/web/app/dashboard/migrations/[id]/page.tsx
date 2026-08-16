@@ -23,9 +23,8 @@ import {
   formatDuration,
   formatRelativeTime,
   mapLifecycle,
-  sqlFilename,
+  primaryTableName,
   statusLabel,
-  workflowLabel,
   type LifecycleStage,
 } from "@/lib/api/map-run"
 import { setCurrentRunId } from "@/lib/api/owner"
@@ -571,9 +570,6 @@ export default function MigrationRunDetailPage() {
             <h1 className="text-foreground text-2xl font-medium tracking-tight">
               Migration Run
             </h1>
-            <p className="text-muted-foreground font-mono text-xs tracking-tight">
-              {run.id}
-            </p>
           </div>
           <div className="flex flex-col items-start gap-1 sm:items-end">
             <div className="flex items-center gap-2">
@@ -601,18 +597,21 @@ export default function MigrationRunDetailPage() {
                 {statusLabel(run.status)}
               </span>
             </div>
-            <p className="text-muted-foreground/55 font-mono text-[10px] tracking-tight">
-              {workflowLabel(run.workflow_status)}
-              <span className="mx-1.5">·</span>
-              owner: {run.owner_identity}
-            </p>
+            {run.status === "awaiting_approval" ? (
+              <p className="text-muted-foreground/70 text-[11px]">
+                Needs approval — open it as your current migration to continue.
+              </p>
+            ) : null}
           </div>
         </div>
       </header>
 
       <Section title="Migration SQL">
         <SqlCodePanel
-          filename={sqlFilename(run.migration_sql, run.id)}
+          // The affected table, not `migration_<uuid8>.sql` — the run's UUID
+          // told the reader nothing and was the same noise removed from the
+          // header above.
+          filename={primaryTableName(run.migration_sql) ?? "migration.sql"}
           sql={run.migration_sql}
         />
       </Section>

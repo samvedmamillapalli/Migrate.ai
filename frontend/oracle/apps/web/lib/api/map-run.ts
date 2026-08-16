@@ -1666,7 +1666,11 @@ export function mapLifecycle(
     },
     {
       id: "approved",
-      label: "Approved",
+      // Label follows the state. A stage sitting at "current" has NOT happened
+      // yet, so calling it "Approved" while the header badge correctly reads
+      // "Awaiting approval" made the two halves of the page contradict each
+      // other — the timeline was the misleading one, not the badge.
+      label: approved ? "Approved" : "Awaiting approval",
       state: approved
         ? "complete"
         : run.status === "awaiting_approval"
@@ -1909,6 +1913,42 @@ export function primaryTableName(sql: string | null | undefined): string | null 
     )
   if (!match) return null
   return (match[2] || match[1] || "").toLowerCase() || null
+}
+
+/**
+ * Plain-English name for what a migration does, e.g. "Add column".
+ *
+ * Used wherever a list previously showed raw SQL: a row reading
+ * "Add column · demo_items" is scannable in a way that
+ * `ALTER TABLE demo_items ADD COLUMN d…` truncated mid-statement is not. The
+ * full SQL is still one click away on the run detail page.
+ */
+export function migrationKindLabel(sql: string | null | undefined): string {
+  const s = (sql || "").trim().toUpperCase()
+  if (!s) return "Migration"
+  if (/^ALTER\s+TABLE[\s\S]*\bADD\s+COLUMN\b/.test(s)) return "Add column"
+  if (/^ALTER\s+TABLE[\s\S]*\bDROP\s+COLUMN\b/.test(s)) return "Drop column"
+  if (/^ALTER\s+TABLE[\s\S]*\bRENAME\b/.test(s)) return "Rename"
+  if (/^ALTER\s+TABLE[\s\S]*\bALTER\s+COLUMN\b/.test(s)) return "Alter column"
+  if (/^ALTER\s+TABLE[\s\S]*\bADD\s+CONSTRAINT\b/.test(s)) return "Add constraint"
+  if (/^ALTER\s+TABLE\b/.test(s)) return "Alter table"
+  if (/^CREATE\s+(UNIQUE\s+)?INDEX\b/.test(s)) return "Create index"
+  if (/^DROP\s+INDEX\b/.test(s)) return "Drop index"
+  if (/^CREATE\s+TABLE\b/.test(s)) return "Create table"
+  if (/^DROP\s+TABLE\b/.test(s)) return "Drop table"
+  if (/^CREATE\s+(MATERIALIZED\s+)?VIEW\b/.test(s)) return "Create view"
+  if (/^TRUNCATE\b/.test(s)) return "Truncate"
+  if (/^UPDATE\b/.test(s)) return "Update rows"
+  if (/^DELETE\b/.test(s)) return "Delete rows"
+  if (/^INSERT\b/.test(s)) return "Insert rows"
+  return "Migration"
+}
+
+/** "Add column · demo_items" — the one-line summary used in every list view. */
+export function migrationSummaryLabel(sql: string | null | undefined): string {
+  const kind = migrationKindLabel(sql)
+  const table = primaryTableName(sql)
+  return table ? `${kind} · ${table}` : kind
 }
 
 export type RunListItem = ReturnType<typeof mapRunListItem>

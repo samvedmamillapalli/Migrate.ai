@@ -21,10 +21,9 @@ import {
   type RunVolume,
   getAccuracyMetrics,
   getRunVolume,
-  listApprovers,
   listRuns,
 } from "@/lib/api/endpoints"
-import { mapRunListItem, type RunListItem } from "@/lib/api/map-run"
+import { migrationKindLabel, mapRunListItem, type RunListItem } from "@/lib/api/map-run"
 import { getActiveWorkspaceId, getOwnerIdentity, setCurrentRunId } from "@/lib/api/owner"
 import {
   EmptyNote,
@@ -130,17 +129,14 @@ function TableSkeleton({ rows }: { rows: number }) {
 }
 
 /** "2026-07-30" + "14:07" — stable in a table, unlike a relative label. */
-function executedAt(iso: string | null | undefined): {
-  date: string
-  time: string
-} {
-  if (!iso) return { date: "—", time: "" }
+/** Date only — the time of day was noise in a list scanned by day. */
+function executedAt(iso: string | null | undefined): { date: string } {
+  if (!iso) return { date: "—" }
   const t = Date.parse(iso)
-  if (Number.isNaN(t)) return { date: "—", time: "" }
+  if (Number.isNaN(t)) return { date: "—" }
   const d = new Date(t)
   return {
-    date: d.toISOString().slice(0, 10),
-    time: d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    date: d.toLocaleDateString([], { month: "short", day: "numeric" }),
   }
 }
 
@@ -154,12 +150,10 @@ export default function PastMigrationsPage() {
   const [query, setQuery] = React.useState("")
   const [risk, setRisk] = React.useState("all")
   const [outcome, setOutcome] = React.useState("all")
-  const [approver, setApprover] = React.useState("all")
   const [perPage, setPerPage] = React.useState(8)
   const [page, setPage] = React.useState(1)
   const [sortKey, setSortKey] = React.useState<RunSortKey>("created_at")
   const [sortDir, setSortDir] = React.useState<"asc" | "desc">("desc")
-  const [approvers, setApprovers] = React.useState<string[]>([])
   const [volume, setVolume] = React.useState<RunVolume | null>(null)
   const [reloadKey, setReloadKey] = React.useState(0)
 
@@ -171,7 +165,7 @@ export default function PastMigrationsPage() {
   // now two-page result set.
   React.useEffect(() => {
     setPage(1)
-  }, [debouncedQuery, risk, outcome, approver, perPage, sortKey, sortDir])
+  }, [debouncedQuery, risk, outcome, perPage, sortKey, sortDir])
 
   React.useEffect(() => {
     let cancelled = false
@@ -184,7 +178,7 @@ export default function PastMigrationsPage() {
           ...(owner ? { owner_identity: owner } : {}),
           ...(workspaceId ? { workspace_id: workspaceId } : {}),
         }
-        const [runsRes, metricsRes, approverRes, volumeRes] =
+        const [runsRes, metricsRes, volumeRes] =
           await Promise.allSettled([
             listRuns({
               limit: perPage,
@@ -199,14 +193,12 @@ export default function PastMigrationsPage() {
               ...(outcome !== "all"
                 ? { decision: outcome as ApprovalDecisionFilter }
                 : {}),
-              ...(approver !== "all" ? { approver } : {}),
               ...scope,
             }),
             getAccuracyMetrics({
               owner_identity: owner || undefined,
               workspace_id: workspaceId || undefined,
             }),
-            listApprovers(scope),
             getRunVolume({ days: 7, ...scope }),
           ])
         if (cancelled) return
@@ -218,8 +210,6 @@ export default function PastMigrationsPage() {
           throw runsRes.reason
         }
         if (metricsRes.status === "fulfilled") setMetrics(metricsRes.value)
-        if (approverRes.status === "fulfilled")
-          setApprovers(approverRes.value.approvers)
         if (volumeRes.status === "fulfilled") setVolume(volumeRes.value)
       } catch (err) {
         if (cancelled) return
@@ -244,7 +234,6 @@ export default function PastMigrationsPage() {
     debouncedQuery,
     risk,
     outcome,
-    approver,
     sortKey,
     sortDir,
     reloadKey,
@@ -282,13 +271,11 @@ export default function PastMigrationsPage() {
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.35fr)]">
         <Panel className="px-6 py-5">
           <Label className="mb-4">Accuracy Summary</Label>
-          <div className="grid grid-cols-2 gap-5 sm:grid-cols-4">
+          {/* Two headline numbers instead of four equal-weight blocks. Graded
+              and Cancelled are supporting detail, not headlines, so they read
+              as one quiet caption underneath. */}
+          <div className="grid grid-cols-2 gap-5">
             <Stat label="Total Migrations" value={total} sub="all time" />
-            <Stat
-              label="Graded"
-              value={trend.length}
-              sub="eligible for scoring"
-            />
             <Stat
               label="Shadow Pass Rate"
               value={passRate == null ? "—" : `${passRate}%`}
@@ -299,17 +286,18 @@ export default function PastMigrationsPage() {
               }
               valueClassName={passRate == null ? undefined : toneText("pass")}
             />
-            <Stat
-              label="Cancelled"
-              value={Number(approvals?.cancel ?? 0)}
-              sub="rejected runs"
-              valueClassName={
-                Number(approvals?.cancel ?? 0) > 0
-                  ? toneText("fail")
-                  : undefined
-              }
-            />
           </div>
+          <p className="text-muted-foreground mt-4 text-[12px]">
+            {trend.length} graded
+            <span className="text-muted-foreground/40 mx-1.5">·</span>
+            <span
+              className={
+                Number(approvals?.cancel ?? 0) > 0 ? toneText("fail") : undefined
+              }
+            >
+              {Number(approvals?.cancel ?? 0)} cancelled
+            </span>
+          </p>
         </Panel>
 
         <Panel className="px-6 py-5" delay={0.05}>
@@ -382,7 +370,7 @@ export default function PastMigrationsPage() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search SQL or table…"
+            placeholder="Search migrations…"
             className="border-border bg-card placeholder:text-muted-foreground focus:border-primary h-10 w-full rounded-lg border pr-3 pl-9 text-sm outline-none transition-colors"
           />
         </div>
@@ -408,19 +396,6 @@ export default function PastMigrationsPage() {
           <option value="accept_recommended">Accepted plan</option>
           <option value="cancel">Cancelled</option>
           <option value="none">No decision yet</option>
-        </select>
-        <select
-          value={approver}
-          onChange={(e) => setApprover(e.target.value)}
-          className={selectCls}
-          aria-label="Filter by approver"
-        >
-          <option value="all">All approvers</option>
-          {approvers.map((a) => (
-            <option key={a} value={a}>
-              {a}
-            </option>
-          ))}
         </select>
       </div>
 
@@ -461,14 +436,13 @@ export default function PastMigrationsPage() {
                 <tr className="border-border bg-muted/50 border-b">
                   {(
                     [
-                      ["SQL / Table", null],
+                      ["Migration", null],
                       ["Executed", "created_at"],
                       ["Duration", null],
                       ["Risk", "compatibility_risk"],
                       ["Confidence", null],
                       ["Shadow", null],
                       ["Outcome", "status"],
-                      ["Approver", null],
                       ["Graded", null],
                     ] as Array<[string, RunSortKey | null]>
                   ).map(([label, key]) => (
@@ -524,8 +498,8 @@ export default function PastMigrationsPage() {
                         onClick={() => setCurrentRunId(m.id)}
                         className="block"
                       >
-                        <div className="text-foreground truncate font-mono text-[12.5px]">
-                          {m.sqlSnippet}
+                        <div className="text-foreground truncate text-[13px] font-medium">
+                          {migrationKindLabel(m.migrationSql)}
                         </div>
                         <div className="text-muted-foreground mt-0.5 font-mono text-[11.5px]">
                           {m.tableName ?? "—"}
@@ -534,9 +508,6 @@ export default function PastMigrationsPage() {
                     </td>
                     <td className="text-foreground py-4 pr-4 font-mono text-[12.5px] whitespace-nowrap">
                       <div>{executedAt(m.createdAt).date}</div>
-                      <div className="text-muted-foreground">
-                        {executedAt(m.createdAt).time}
-                      </div>
                     </td>
                     <td className="text-foreground py-4 pr-4 font-mono text-[12.5px]">
                       {m.durationLabel ?? (
@@ -586,11 +557,6 @@ export default function PastMigrationsPage() {
                     </td>
                     <td className="py-4 pr-4">
                       <OutcomePill item={m} />
-                    </td>
-                    <td className="text-foreground max-w-[160px] truncate py-4 pr-4 text-[13px]">
-                      {m.approverIdentity ?? (
-                        <span className="text-muted-foreground/50">—</span>
-                      )}
                     </td>
                     <td className="py-4 pr-6">
                       <span

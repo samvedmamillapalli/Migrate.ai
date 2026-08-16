@@ -11,12 +11,16 @@ from fastapi import APIRouter, Depends, Query, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.tenancy import (
-    assert_run_access,
     auth_enforced,
+    require_session_owner,
     resolve_owner_identity,
     session_owner,
 )
-from app.core.exceptions import NotFoundError, ValidationError
+from app.core.exceptions import (
+    NotFoundError,
+    UnauthorizedError,
+    ValidationError,
+)
 from app.core.logging import get_logger
 from app.core.ttl_cache import cached
 from app.database.models import MigrationRun, MigrationRunStatus
@@ -75,14 +79,48 @@ def _run_secret_name(run_id: uuid.UUID) -> str:
 # leak being the default.
 
 
+async def assert_run_access_or_member(
+    request: Request,
+    run: MigrationRun,
+    session: AsyncSession,
+) -> None:
+    """Owner of the run, or a member of the workspace the run belongs to.
+
+    Widens the previous owner-only rule so that accepting a workspace invite
+    is not a dead end — before this, an invited teammate joined the roster and
+    then saw an entirely empty app, because every run-scoped route compared
+    ``run.owner_identity`` against the caller and nothing else.
+
+    The widening is deliberately narrow: it only applies to runs that were
+    explicitly placed in a workspace. A run with ``workspace_id IS NULL``
+    remains readable by its owner alone, so nothing becomes visible that the
+    owner did not put in a shared space.
+    """
+    if not auth_enforced():
+        return
+    owner = require_session_owner(request)
+    if (run.owner_identity or "") == owner:
+        return
+    if run.workspace_id is not None:
+        from app.repositories.workspace_repository import WorkspaceRepository
+
+        workspace = await WorkspaceRepository(session).get_accessible(
+            run.workspace_id, owner
+        )
+        if workspace is not None:
+            return
+    raise UnauthorizedError("Not allowed to access this migration run")
+
+
 async def get_owned_run(
     run_id: uuid.UUID,
     request: Request,
     service: MigrationRunSvc,
+    session: AsyncSession = Depends(get_db_session),
 ) -> MigrationRun:
-    """Fetch a run and enforce tenant ownership. No relationships loaded."""
+    """Fetch a run and enforce tenant access. No relationships loaded."""
     run = await service.get_migration_run(run_id)
-    assert_run_access(request, run)
+    await assert_run_access_or_member(request, run, session)
     return run
 
 
@@ -90,12 +128,13 @@ async def get_owned_run_with_children(
     run_id: uuid.UUID,
     request: Request,
     service: MigrationRunSvc,
+    session: AsyncSession = Depends(get_db_session),
 ) -> MigrationRun:
     """Same as ``get_owned_run``, with related rows eager-loaded — for
     routes that read approval / grade / memory / shadow_cluster /
     execution_result / explainability off the returned run."""
     run = await service.get_migration_run(run_id, load_children=True)
-    assert_run_access(request, run)
+    await assert_run_access_or_member(request, run, session)
     return run
 
 

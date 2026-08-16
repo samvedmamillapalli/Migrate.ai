@@ -1,9 +1,20 @@
+import type { Metadata } from "next"
 import { Bodoni_Moda, Geist, Geist_Mono } from "next/font/google"
 import { ClerkProvider } from "@clerk/nextjs"
 
 import "@workspace/ui/globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { cn } from "@workspace/ui/lib/utils";
+
+// Without this the browser tab falls back to the raw deployment hostname
+// (migration-oracle.b8db7agdvksda.us-east-1.cs.amazonlightsail.com), and the
+// icon falls back to the stock Next.js mark. The favicon itself comes from
+// app/icon.png, which Next serves automatically.
+export const metadata: Metadata = {
+  title: "Migration Oracle",
+  description:
+    "Predict, verify, grade and remember database migrations before they reach production.",
+}
 
 const geist = Geist({ subsets: ['latin'], variable: '--font-sans' })
 

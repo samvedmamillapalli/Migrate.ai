@@ -12,7 +12,7 @@ import {
   getActivityFeed,
   listRuns,
 } from "@/lib/api/endpoints"
-import { mapRunListItem } from "@/lib/api/map-run"
+import { mapRunListItem, migrationSummaryLabel } from "@/lib/api/map-run"
 import {
   getActiveWorkspaceId,
   getOwnerIdentity,
@@ -38,7 +38,6 @@ import {
   PageHeader,
   Panel,
   SkeletonLines,
-  SqlBlock,
   StatusPill,
   ToneDot,
   type Tone,
@@ -144,7 +143,6 @@ export default function DashboardPage() {
   }, [])
 
   const latest = runs && runs.length > 0 ? mapRunListItem(runs[0]!) : null
-  const rest = runs && runs.length > 1 ? runs.slice(1).map(mapRunListItem) : []
 
   const approvals = asRecord(metrics?.approval_breakdown)
 
@@ -232,8 +230,10 @@ export default function DashboardPage() {
               </EmptyNote>
             ) : (
               <>
-                <div className="bg-muted/70 rounded-lg px-3 py-2">
-                  <SqlBlock>{latest.sqlSnippet}</SqlBlock>
+                {/* Plain-English summary instead of a truncated SQL statement —
+                    the full SQL is one click away on the run detail page. */}
+                <div className="text-foreground text-[14px] font-medium">
+                  {migrationSummaryLabel(latest.migrationSql)}
                 </div>
                 <div className="text-muted-foreground mt-1.5 text-[12px]">
                   {latest.createdAgo}
@@ -256,25 +256,10 @@ export default function DashboardPage() {
               </>
             )}
           </div>
-          {rest.length > 0 ? (
-            <div className="border-border border-t px-4 py-3 sm:px-5">
-              <Label className="mb-2">Recent</Label>
-              <div className="space-y-2">
-                {rest.slice(0, 3).map((m) => (
-                  <Link
-                    key={m.id}
-                    href={`/dashboard/migrations/${m.id}`}
-                    className="flex items-center justify-between gap-3"
-                  >
-                    <SqlBlock className="min-w-0 flex-1 truncate text-[12px]">
-                      {m.sqlSnippet}
-                    </SqlBlock>
-                    <StatusPill status={m.status} />
-                  </Link>
-                ))}
-              </div>
-            </div>
-          ) : null}
+          {/* The "Recent" list was removed — it repeated the Past Migrations
+              page in a narrower column and showed raw SQL. "Recent Activity"
+              below is a different panel (a timeline of what happened) and
+              stays. */}
         </Panel>
 
         <Panel className="px-4 py-3 sm:px-5" delay={0.06}>
