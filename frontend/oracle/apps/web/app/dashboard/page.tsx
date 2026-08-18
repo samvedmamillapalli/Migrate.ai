@@ -221,7 +221,7 @@ export default function DashboardPage() {
       />
 
       <div className="grid shrink-0 grid-cols-1 items-start gap-3 xl:grid-cols-2">
-        <Panel delay={0.04}>
+        <Panel className="self-start" delay={0.04}>
           <div className="px-4 py-3 sm:px-5">
             <div className="mb-2 flex items-center justify-between gap-3">
               <Label>Latest Migration</Label>
@@ -269,7 +269,7 @@ export default function DashboardPage() {
               stays. */}
         </Panel>
 
-        <Panel className="px-4 py-3 sm:px-5" delay={0.06}>
+        <Panel className="self-start px-4 py-3 sm:px-5" delay={0.06}>
           <Label className="mb-2">Recent Activity</Label>
           {activityError ? (
             <ErrorNote>{activityError}</ErrorNote>
@@ -278,8 +278,13 @@ export default function DashboardPage() {
           ) : !activity || activity.length === 0 ? (
             <EmptyNote>No activity recorded yet.</EmptyNote>
           ) : (
-            <div className="space-y-2.5">
-              {activity.slice(0, 5).map((a, i) => (
+            // Capped + scrollable rather than growing with however many
+            // events there are -- this card sits next to "Latest Migration"
+            // in the same row, and an unbounded activity list was making it
+            // grow much taller than its neighbor, leaving a visible gap
+            // between that row and the analytics panel below it.
+            <div className="max-h-[130px] space-y-2 overflow-y-auto pr-1">
+              {activity.slice(0, 4).map((a, i) => (
                 <div
                   key={`${a.migration_run_id}-${a.kind}-${a.at}-${i}`}
                   className="flex gap-3 text-[12.5px]"
@@ -316,7 +321,7 @@ export default function DashboardPage() {
           </div>
         ) : null}
         <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden">
-          <div className="grid min-h-0 flex-1 auto-rows-min grid-cols-1 gap-x-6 gap-y-3 overflow-hidden xl:grid-cols-2">
+          <div className="grid min-h-0 flex-1 grid-cols-1 gap-x-6 gap-y-3 overflow-hidden xl:grid-cols-2">
             <div className="flex min-h-0 min-w-0 flex-col">
               <AnalyticsChartHeader>
                 Prediction Accuracy Over Time
@@ -333,12 +338,18 @@ export default function DashboardPage() {
               <AnalyticsChartHeader>
                 Predicted vs. Actual Runtime
               </AnalyticsChartHeader>
-              <div className="min-h-0 flex-1">
-                <RuntimeScatterChart
-                  points={scatterPoints}
-                  loading={loading}
-                  height={CHART_H}
-                />
+              {/* flex-col, not a bare flex-1 div: the chart grows to fill
+                  whatever space the grid row actually has (varies by
+                  viewport height), while the legend below it keeps its own
+                  natural size instead of being squeezed to make room. */}
+              <div className="flex min-h-0 flex-1 flex-col">
+                <div className="min-h-0 flex-1">
+                  <RuntimeScatterChart
+                    points={scatterPoints}
+                    loading={loading}
+                    height={CHART_H}
+                  />
+                </div>
                 {!loading && scatterPoints.length > 0 ? (
                   <RuntimeScatterLegend />
                 ) : null}

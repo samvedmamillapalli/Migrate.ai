@@ -67,25 +67,38 @@ function ChartTheme() {
  * never re-fire once data arrives and the div finally exists. A callback
  * ref runs again on every attach, including that later one.
  */
-function useMeasuredWidth(fallback: number) {
-  const [width, setWidth] = React.useState(fallback)
+/**
+ * Same as useMeasuredWidth but also tracks height, clamped to
+ * [fallbackHeight, maxHeight]. Used by the two top charts so they grow to
+ * fill whatever vertical space the dashboard grid actually gives them
+ * (which varies by viewport height) instead of rendering at a fixed pixel
+ * height that leaves dead space below on any taller screen.
+ */
+function useMeasuredSize(fallbackWidth: number, fallbackHeight: number, maxHeight = 340) {
+  const [width, setWidth] = React.useState(fallbackWidth)
+  const [height, setHeight] = React.useState(fallbackHeight)
   const observerRef = React.useRef<ResizeObserver | null>(null)
 
-  const containerRef = React.useCallback((el: HTMLDivElement | null) => {
-    observerRef.current?.disconnect()
-    observerRef.current = null
-    if (!el) return
-    const measure = () => {
-      const w = el.clientWidth
-      if (w > 0) setWidth(w)
-    }
-    measure()
-    const ro = new ResizeObserver(measure)
-    ro.observe(el)
-    observerRef.current = ro
-  }, [])
+  const containerRef = React.useCallback(
+    (el: HTMLDivElement | null) => {
+      observerRef.current?.disconnect()
+      observerRef.current = null
+      if (!el) return
+      const measure = () => {
+        const w = el.clientWidth
+        const h = el.clientHeight
+        if (w > 0) setWidth(w)
+        if (h > 0) setHeight(Math.min(Math.max(h, fallbackHeight), maxHeight))
+      }
+      measure()
+      const ro = new ResizeObserver(measure)
+      ro.observe(el)
+      observerRef.current = ro
+    },
+    [fallbackHeight, maxHeight]
+  )
 
-  return [containerRef, width] as const
+  return [containerRef, width, height] as const
 }
 
 const STATUS_DOT: Record<string, Tone> = {
@@ -142,17 +155,15 @@ function ChartSurface({
   children,
   tooltip,
   className,
-  containerRef,
 }: {
   width: number
   height: number
   children: React.ReactNode
   tooltip: TooltipState
   className?: string
-  containerRef?: (el: HTMLDivElement | null) => void
 }) {
   return (
-    <div ref={containerRef} className={cn("relative", className)}>
+    <div className={cn("relative", className)}>
       {/* viewBox matches the container's real measured width 1:1 (see
           useMeasuredWidth) — no preserveAspectRatio="none" needed, since
           there's no mismatch left for it to paper over. That mismatch was
@@ -240,31 +251,36 @@ export function AccuracyTrendChart({
   loading: boolean
   height?: number
 }) {
-  const H = height
   const PAD = { top: 12, right: 8, bottom: 22, left: 30 }
   const [hover, setHover] = React.useState<number | null>(null)
-  const [containerRef, W] = useMeasuredWidth(560)
+  const [containerRef, W, H] = useMeasuredSize(560, height, 340)
 
   if (loading) {
-    return <SkeletonWave height={H} />
+    return (
+      <div ref={containerRef} className="h-full w-full">
+        <SkeletonWave height={H} />
+      </div>
+    )
   }
   if (points.length === 0) {
     return (
-      <ChartEmpty
-        height={H}
-        message="No graded runs yet. Accuracy will appear after your first migration is graded."
-        icon={
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-            <path
-              d="M3 17l5-5 4 4 8-9"
-              stroke="currentColor"
-              strokeWidth={1.6}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        }
-      />
+      <div ref={containerRef} className="h-full w-full">
+        <ChartEmpty
+          height={H}
+          message="No graded runs yet. Accuracy will appear after your first migration is graded."
+          icon={
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M3 17l5-5 4 4 8-9"
+                stroke="currentColor"
+                strokeWidth={1.6}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          }
+        />
+      </div>
     )
   }
 
@@ -306,7 +322,8 @@ export function AccuracyTrendChart({
     : null
 
   return (
-    <ChartSurface width={W} height={H} tooltip={tooltip} containerRef={containerRef}>
+    <div ref={containerRef} className="h-full w-full">
+      <ChartSurface width={W} height={H} tooltip={tooltip}>
       {gridLines.map((g) => (
         <line
           key={g}
@@ -381,7 +398,8 @@ export function AccuracyTrendChart({
       >
         {clockDate(points[points.length - 1]!.createdAt)}
       </text>
-    </ChartSurface>
+      </ChartSurface>
+    </div>
   )
 }
 
@@ -405,27 +423,34 @@ export function RuntimeScatterChart({
   loading: boolean
   height?: number
 }) {
-  const H = height
-  const [containerRef, W] = useMeasuredWidth(320)
+  const [containerRef, W, H] = useMeasuredSize(320, height, 340)
   const PAD = { top: 10, right: 10, bottom: 24, left: 34 }
   const [hover, setHover] = React.useState<number | null>(null)
 
-  if (loading) return <SkeletonWave height={H} />
+  if (loading) {
+    return (
+      <div ref={containerRef} className="h-full w-full">
+        <SkeletonWave height={H} />
+      </div>
+    )
+  }
   if (points.length === 0) {
     return (
-      <ChartEmpty
-        height={H}
-        message="No shadow-tested migrations yet. Runtime accuracy will appear after your first shadow run completes."
-        icon={
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
-            <circle cx="6" cy="17" r="1.6" fill="currentColor" />
-            <circle cx="11" cy="11" r="1.6" fill="currentColor" />
-            <circle cx="16" cy="14" r="1.6" fill="currentColor" />
-            <circle cx="19" cy="6" r="1.6" fill="currentColor" />
-            <path d="M3 20L20 3" stroke="currentColor" strokeWidth={1.2} strokeDasharray="2 2" />
-          </svg>
-        }
-      />
+      <div ref={containerRef} className="h-full w-full">
+        <ChartEmpty
+          height={H}
+          message="No shadow-tested migrations yet. Runtime accuracy will appear after your first shadow run completes."
+          icon={
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none">
+              <circle cx="6" cy="17" r="1.6" fill="currentColor" />
+              <circle cx="11" cy="11" r="1.6" fill="currentColor" />
+              <circle cx="16" cy="14" r="1.6" fill="currentColor" />
+              <circle cx="19" cy="6" r="1.6" fill="currentColor" />
+              <path d="M3 20L20 3" stroke="currentColor" strokeWidth={1.2} strokeDasharray="2 2" />
+            </svg>
+          }
+        />
+      </div>
     )
   }
 
@@ -464,7 +489,8 @@ export function RuntimeScatterChart({
     : null
 
   return (
-    <ChartSurface width={W} height={H} tooltip={tooltip} containerRef={containerRef}>
+    <div ref={containerRef} className="h-full w-full">
+      <ChartSurface width={W} height={H} tooltip={tooltip}>
       {ticks.map((t) => (
         <g key={t}>
           <line x1={sx(t)} x2={sx(t)} y1={PAD.top} y2={H - PAD.bottom} stroke="var(--border)" strokeWidth={1} />
@@ -512,7 +538,8 @@ export function RuntimeScatterChart({
           />
         )
       })}
-    </ChartSurface>
+      </ChartSurface>
+    </div>
   )
 }
 
