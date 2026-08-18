@@ -67,6 +67,16 @@ export function InviteMembersDialog({
   const [sendError, setSendError] = React.useState<string | null>(null)
   const [sentNotice, setSentNotice] = React.useState<string | null>(null)
 
+  // Set after creating an email invite SES couldn't deliver, or any GitHub
+  // invite (GitHub has no API to message an arbitrary user — there is no
+  // "sent" state for that method, only a link the owner shares themselves).
+  const [manualShareInvite, setManualShareInvite] =
+    React.useState<WorkspaceInvite | null>(null)
+  const [manualCopied, setManualCopied] = React.useState(false)
+  const manualShareUrl = manualShareInvite?.token
+    ? `${typeof window !== "undefined" ? window.location.origin : ""}/invite/${manualShareInvite.token}`
+    : ""
+
   const [linkInvite, setLinkInvite] = React.useState<WorkspaceInvite | null>(
     null
   )
@@ -107,6 +117,8 @@ export function InviteMembersDialog({
     setGithubStatus("idle")
     setLinkInvite(null)
     setCopied(false)
+    setManualShareInvite(null)
+    setManualCopied(false)
     setSending(false)
     setSendError(null)
     setSentNotice(null)
@@ -215,13 +227,20 @@ export function InviteMembersDialog({
     setSending(true)
     setSendError(null)
     setSentNotice(null)
+    setManualShareInvite(null)
     try {
-      await createWorkspaceInvite(workspace.id, {
+      const created = await createWorkspaceInvite(workspace.id, {
         method: "email",
         email: target,
       })
       setEmail("")
-      setSentNotice(`Invite sent to ${target}.`)
+      if (created.email_delivered) {
+        setSentNotice(`Invite emailed to ${target}.`)
+      } else {
+        // The invite row exists either way — SES just didn't (or couldn't)
+        // deliver it. Never claim "sent" when nothing went out.
+        setManualShareInvite(created)
+      }
       await refreshInvites()
     } catch (err) {
       setSendError(
@@ -249,15 +268,19 @@ export function InviteMembersDialog({
     setSending(true)
     setSendError(null)
     setSentNotice(null)
+    setManualShareInvite(null)
     try {
-      await createWorkspaceInvite(workspace.id, {
+      // GitHub has no API to message an arbitrary user, so this only ever
+      // records the invite — it never delivers anything by itself. Show the
+      // link to share instead of claiming it was "sent".
+      const created = await createWorkspaceInvite(workspace.id, {
         method: "github",
         github_username: username,
       })
       setGithubUsername("")
       setGithubUser(null)
       setGithubStatus("idle")
-      setSentNotice(`Invite sent to @${username}.`)
+      setManualShareInvite(created)
       await refreshInvites()
     } catch (err) {
       setSendError(
@@ -265,6 +288,17 @@ export function InviteMembersDialog({
       )
     } finally {
       setSending(false)
+    }
+  }
+
+  async function handleCopyManual() {
+    if (!manualShareUrl) return
+    try {
+      await navigator.clipboard.writeText(manualShareUrl)
+      setManualCopied(true)
+      window.setTimeout(() => setManualCopied(false), 2000)
+    } catch {
+      setSendError("Could not copy — select the link and copy it manually.")
     }
   }
 
@@ -349,6 +383,9 @@ export function InviteMembersDialog({
                 type="button"
                 onClick={() => {
                   setSendError(null)
+                  setSentNotice(null)
+                  setManualShareInvite(null)
+                  setManualCopied(false)
                   setTab(value)
                 }}
                 aria-pressed={tab === value}
@@ -448,6 +485,35 @@ export function InviteMembersDialog({
                 {sending ? "Sending…" : "Send invite"}
               </Button>
             </form>
+          ) : null}
+
+          {manualShareInvite && (tab === "email" || tab === "github") ? (
+            <div className="border-border bg-muted/30 space-y-2 rounded-lg border px-3 py-2.5">
+              <p className="text-muted-foreground text-[12px] leading-snug">
+                {manualShareInvite.method === "github"
+                  ? `Invite created for @${manualShareInvite.github_username}. GitHub has no way for us to message someone automatically — copy this link and send it to them yourself.`
+                  : `Could not email this invite automatically. Copy this link and send it to ${manualShareInvite.email} yourself.`}
+              </p>
+              <div className="flex items-center gap-2">
+                <Input
+                  readOnly
+                  value={manualShareUrl}
+                  className="h-9 flex-1 font-mono text-xs"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleCopyManual()}
+                >
+                  {manualCopied ? (
+                    <Check className="size-3.5" />
+                  ) : (
+                    <Copy className="size-3.5" />
+                  )}
+                  {manualCopied ? "Copied" : "Copy"}
+                </Button>
+              </div>
+            </div>
           ) : null}
 
           {tab === "link" ? (

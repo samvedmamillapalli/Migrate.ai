@@ -38,3 +38,9 @@ debug-*.log
 # vendored content lives in .agents/skills/ (committed); regenerate the
 # symlinks locally with `npx skills add cockroachlabs/cockroachdb-skills`.
 .claude/
+
+# Original hero-video export (54MB gif + 17MB mp4) — the compressed,
+# web-ready derivative lives in frontend/oracle/apps/web/public/hero-demo.mp4
+# and is what actually ships. Keep the source out of git; too large.
+/Untitled design (8).gif
+/Untitled design (8).mp4

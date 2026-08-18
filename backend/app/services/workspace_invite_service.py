@@ -69,7 +69,12 @@ class WorkspaceInviteService:
         method: WorkspaceInviteMethod,
         email: str | None = None,
         github_username: str | None = None,
-    ) -> WorkspaceInvite:
+    ) -> tuple[WorkspaceInvite, bool | None]:
+        """Returns (invite, email_delivered). email_delivered is None for
+        every method except EMAIL, where it reports whether SES actually
+        accepted the send — the invite row is never rolled back on a
+        delivery failure, but the caller needs to know so the UI can stop
+        claiming "sent" when nothing went out."""
         workspace = await self._workspaces.get_owned_workspace(
             workspace_id, owner_identity
         )
@@ -109,18 +114,23 @@ class WorkspaceInviteService:
             },
         )
 
-        if method == WorkspaceInviteMethod.EMAIL and self._email is not None:
+        email_delivered: bool | None = None
+        if method == WorkspaceInviteMethod.EMAIL:
             # Best-effort, same posture as Slack/GitHub notifications
             # elsewhere in this app — a delivery failure must never undo or
             # block the invite record that already exists.
-            await self._email.send_workspace_invite(
-                to_email=created.email or "",
-                inviter_identity=owner_identity,
-                workspace_name=workspace.name,
-                token=token,
+            email_delivered = (
+                await self._email.send_workspace_invite(
+                    to_email=created.email or "",
+                    inviter_identity=owner_identity,
+                    workspace_name=workspace.name,
+                    token=token,
+                )
+                if self._email is not None
+                else False
             )
 
-        return created
+        return created, email_delivered
 
     async def list_invites(
         self, workspace_id: uuid.UUID, owner_identity: str

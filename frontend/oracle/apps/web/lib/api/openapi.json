@@ -6241,6 +6241,17 @@
               }
             ],
             "title": "Accepted By"
+          },
+          "email_delivered": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email Delivered"
           }
         },
         "type": "object",

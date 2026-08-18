@@ -80,6 +80,7 @@ API_PASSTHROUGH = [
     "GITHUB_API_BASE_URL",
     "GITHUB_OAUTH_CLIENT_ID", "GITHUB_OAUTH_CLIENT_SECRET",
     "GITHUB_OAUTH_STATE_SECRET", "GITHUB_OAUTH_TOKEN_ENCRYPTION_KEY",
+    "SES_SENDER_EMAIL",
 ]
 
 
@@ -170,6 +171,17 @@ def ensure_service(name: str, power: str, env) -> None:
         "--power", power, "--scale", "1", "--output", "json", env=env)
 
 
+# Lightsail's container-service `state` field only ever reports "READY" for
+# a brand-new service before its first deployment. Once a service has been
+# deployed at least once, its steady-state name is "RUNNING" instead --
+# "READY" never reappears. A prior version of this function only accepted
+# "READY", so every *re*deploy of an already-running service (the common
+# case) looped for the full timeout and raised SystemExit without ever
+# reaching the build/push/deploy calls below it -- a silent no-op that
+# looked like a real deploy in the terminal output.
+_SERVICE_READY_STATES = {"READY", "RUNNING"}
+
+
 def wait_ready(name: str, env, timeout: int = 900) -> str:
     deadline = time.time() + timeout
     last = None
@@ -180,7 +192,7 @@ def wait_ready(name: str, env, timeout: int = 900) -> str:
             if state != last:
                 print(f"  {name}: {state}")
                 last = state
-            if state == "READY":
+            if state in _SERVICE_READY_STATES:
                 return url
             if state in {"FAILED", "DISABLED"}:
                 raise SystemExit(f"{name} entered {state}")
@@ -213,6 +225,37 @@ def deploy(service: str, containers: dict, endpoint: dict, env) -> None:
         "--containers", json.dumps(containers),
         "--public-endpoint", json.dumps(endpoint),
         "--output", "json", env=env)
+
+
+def wait_deployment_active(
+    service: str, container_name: str, expected_image: str, env, timeout: int = 900
+) -> None:
+    """Poll until `currentDeployment` is the one we just pushed and it's
+    ACTIVE -- not just "the service state looks fine", which during a
+    rollout is also true of the *old*, still-serving deployment. Checking
+    the exact image ref (not just ACTIVE) rules out reading a stale
+    currentDeployment in the window between triggering the deploy and
+    Lightsail actually starting the rollout."""
+    deadline = time.time() + timeout
+    last = None
+    while time.time() < deadline:
+        out = aws("lightsail", "get-container-services", "--service-name", service,
+                   "--output", "json", env=env)
+        svcs = json.loads(out).get("containerServices", [])
+        if svcs:
+            cur = svcs[0].get("currentDeployment") or {}
+            state = cur.get("state")
+            image = (cur.get("containers", {}).get(container_name) or {}).get("image")
+            label = f"{state} ({image})"
+            if label != last:
+                print(f"  {service}: {label}")
+                last = label
+            if state == "ACTIVE" and image == expected_image:
+                return
+            if state == "FAILED":
+                raise SystemExit(f"{service} deployment FAILED")
+        time.sleep(15)
+    raise SystemExit(f"timed out waiting for {service} deployment to go ACTIVE")
 
 
 # --------------------------------------------------------------------------
@@ -264,7 +307,7 @@ def stage_api(env) -> None:
     }
     print("Deploying API ...")
     deploy(API_SERVICE, containers, endpoint, env)
-    wait_ready(API_SERVICE, env)
+    wait_deployment_active(API_SERVICE, "api", ref, env)
     print(f"\n  API live: {api_url}/health\n")
     print("Next: python infra/lightsail/deploy.py web")
 
@@ -314,7 +357,8 @@ def stage_web(env) -> None:
     }
     print("Deploying web console ...")
     deploy(WEB_SERVICE, containers, endpoint, env)
-    web_url = wait_ready(WEB_SERVICE, env)
+    wait_deployment_active(WEB_SERVICE, "web", ref, env)
+    _, web_url = service_state(WEB_SERVICE, env) or ("", "")
     print(f"\n  Web live: {web_url}\n")
     print("Next: python infra/lightsail/deploy.py finalize")
 

@@ -2348,6 +2348,8 @@ export interface components {
             accepted_at?: string | null;
             /** Accepted By */
             accepted_by?: string | null;
+            /** Email Delivered */
+            email_delivered?: boolean | null;
         };
         /** WorkspaceListResponse */
         WorkspaceListResponse: {

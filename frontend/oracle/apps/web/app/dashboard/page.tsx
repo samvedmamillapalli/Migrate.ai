@@ -197,7 +197,14 @@ export default function DashboardPage() {
     }))
 
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-[1500px] flex-col overflow-hidden px-6 py-4 lg:px-10 lg:py-5">
+    <div
+      // No top padding here on purpose — DashboardLayout's wrapper already
+      // supplies pt-5/md:pt-7 for every dashboard page. This page used to
+      // carry its own top padding too (from back when the layout had none),
+      // which double-stacked into a visibly larger gap above "Overview"
+      // than every other dashboard page has above its own title.
+      className="mx-auto flex h-full min-h-0 w-full max-w-[1500px] flex-col overflow-hidden px-6 pb-4 lg:px-10 lg:pb-5"
+    >
       <PageHeader
         compact
         title="Overview"

@@ -1,11 +1,14 @@
 "use client"
 
-import { ApiAuthBootstrap } from "@/components/api-auth-bootstrap"
 import { ClerkOwnerSync } from "@/components/clerk-owner-sync"
 
 /**
- * Registers the Clerk token bridge and owner-identity sync above the
- * dashboard content.
+ * Registers owner-identity sync above the dashboard content. The Clerk
+ * token bridge (`ApiAuthBootstrap`) now lives in the root layout — every
+ * route needs it, not just the dashboard (the invite-acceptance page at
+ * `/invite/[token]` is the reason: it makes authenticated API calls while
+ * living outside `/dashboard`, and silently shipped every request with no
+ * Authorization header until this moved up).
  *
  * This must never branch the rendered tree on Clerk's `isLoaded`/`isSignedIn`
  * state: those are `false` during SSR (Clerk only resolves client-side) but
@@ -25,7 +28,6 @@ export function DashboardProviders({
 }) {
   return (
     <>
-      <ApiAuthBootstrap />
       <ClerkOwnerSync />
       {children}
     </>

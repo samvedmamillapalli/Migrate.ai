@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Request, status
 
+from app.auth.clerk_profile import get_display_name
 from app.auth.tenancy import resolve_owner_identity
 from app.dependencies import WorkspaceInviteSvc
 from app.schemas.workspace_invite import InviteAcceptResponse, InvitePreviewResponse
@@ -30,9 +31,10 @@ async def get_invite_preview(
     return InvitePreviewResponse(
         workspace_name=workspace.name,
         inviter_identity=invite.inviter_identity,
-        # No profile-data source (no users table) — the frontend already
-        # falls back to inviter_identity when this is null.
-        inviter_display_name=None,
+        # There is no local users table, so this comes from the Clerk
+        # Backend API (app/auth/clerk_profile.py). Best-effort: the frontend
+        # still falls back to inviter_identity when this is null.
+        inviter_display_name=await get_display_name(invite.inviter_identity),
         method=invite.method.value,
         status=effective_status,
         expires_at=invite.expires_at,

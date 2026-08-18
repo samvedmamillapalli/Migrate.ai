@@ -3,6 +3,7 @@ import { Bodoni_Moda, Geist, Geist_Mono } from "next/font/google"
 import { ClerkProvider } from "@clerk/nextjs"
 
 import "@workspace/ui/globals.css"
+import { ApiAuthBootstrap } from "@/components/api-auth-bootstrap"
 import { ThemeProvider } from "@/components/theme-provider"
 import { cn } from "@workspace/ui/lib/utils";
 
@@ -57,6 +58,7 @@ export default function RootLayout({
         )}
       >
         <body>
+          <ApiAuthBootstrap />
           <ThemeProvider>{children}</ThemeProvider>
         </body>
       </html>

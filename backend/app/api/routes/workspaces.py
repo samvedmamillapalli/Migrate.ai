@@ -7,10 +7,12 @@ everywhere, same tenancy pattern as ``app/api/routes/runs.py``.
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 from fastapi import APIRouter, Query, Request, status
 
+from app.auth.clerk_profile import get_display_name
 from app.auth.tenancy import auth_enforced, resolve_owner_identity, session_owner
 from app.dependencies import WorkspaceInviteSvc, WorkspaceSvc
 from app.schemas.workspace import (
@@ -198,7 +200,15 @@ async def list_workspace_members(
 ) -> WorkspaceMemberListResponse:
     owner = resolve_owner_identity(request, None)
     members = await service.list_members(workspace_id, owner)
-    items = [WorkspaceMemberResponse.from_member(m) for m in members]
+    # Same Clerk Backend API lookup as the invite preview (there is no local
+    # users table) — resolved in parallel since a roster can be N members.
+    display_names = await asyncio.gather(
+        *(get_display_name(m.user_identity) for m in members)
+    )
+    items = [
+        WorkspaceMemberResponse.from_member(m, display_name=name)
+        for m, name in zip(members, display_names)
+    ]
     return WorkspaceMemberListResponse(items=items, total=len(items))
 
 
@@ -233,7 +243,7 @@ async def create_workspace_invite(
     from app.database.models import WorkspaceInviteMethod
 
     owner = resolve_owner_identity(request, None)
-    invite = await service.create_invite(
+    invite, email_delivered = await service.create_invite(
         workspace_id,
         owner,
         method=WorkspaceInviteMethod(payload.method),
@@ -241,7 +251,9 @@ async def create_workspace_invite(
         github_username=payload.github_username,
     )
     return WorkspaceInviteResponse.from_invite(
-        invite, effective_status=_effective_status(invite)
+        invite,
+        effective_status=_effective_status(invite),
+        email_delivered=email_delivered,
     )
 
 

@@ -43,13 +43,6 @@ export const PIPELINE_STEPS = [
   },
 ] as const
 
-export const TECHNOLOGIES = [
-  "CockroachDB",
-  "Amazon Bedrock",
-  "Amazon Titan",
-  "AWS Step Functions",
-  "Amazon EventBridge",
-] as const
 export const JOURNAL_ENTRIES = [
   {
     date: "Jul 2026",

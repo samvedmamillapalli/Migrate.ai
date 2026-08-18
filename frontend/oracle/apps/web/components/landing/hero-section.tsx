@@ -13,7 +13,7 @@ export function HeroSection({ compact = false }: { compact?: boolean }) {
         "mx-auto w-full max-w-[1180px] shrink-0 px-6 text-center",
         compact
           ? "pt-3 pb-2 sm:pt-4 lg:pt-5"
-          : "pt-16 pb-8 sm:pt-24"
+          : "pt-8 pb-8 sm:pt-10 lg:pt-12"
       )}
     >
       <h1

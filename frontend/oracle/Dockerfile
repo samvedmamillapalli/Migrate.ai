@@ -48,9 +48,14 @@ ENV NODE_ENV=production \
 RUN addgroup -g 1001 -S nodejs && adduser -S nextjs -u 1001
 
 # standalone/ carries its own minimal node_modules and the monorepo directory
-# shape (apps/web/server.js). static/ is deliberately not bundled into it.
+# shape (apps/web/server.js). static/ and public/ are both deliberately not
+# bundled into it by Next.js's standalone output — copying them is a
+# required manual step, not optional. Without the public/ copy, anything
+# under apps/web/public/ (e.g. the landing page's hero video) 404s in the
+# deployed image despite working in every local build/dev check.
 COPY --from=builder --chown=nextjs:nodejs /repo/apps/web/.next/standalone ./
 COPY --from=builder --chown=nextjs:nodejs /repo/apps/web/.next/static ./apps/web/.next/static
+COPY --from=builder --chown=nextjs:nodejs /repo/apps/web/public ./apps/web/public
 
 USER nextjs
 EXPOSE 3000

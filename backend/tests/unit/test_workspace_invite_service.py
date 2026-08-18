@@ -141,10 +141,11 @@ async def test_create_invite_link_needs_no_extra_fields(
     created = _invite(workspace_id=workspace.id, method=WorkspaceInviteMethod.LINK)
     repository.create.return_value = created
 
-    result = await service.create_invite(
+    result, email_delivered = await service.create_invite(
         workspace.id, workspace.owner_identity, method=WorkspaceInviteMethod.LINK
     )
     assert result is created
+    assert email_delivered is None
 
 
 @pytest.mark.asyncio
@@ -179,7 +180,7 @@ async def test_create_invite_generates_a_real_token_and_expiry(
     workspace_service.get_owned_workspace.return_value = workspace
     repository.create.side_effect = lambda entity: entity  # echo back what was built
 
-    result = await service.create_invite(
+    result, _email_delivered = await service.create_invite(
         workspace.id, workspace.owner_identity, method=WorkspaceInviteMethod.LINK
     )
     assert result.token and len(result.token) > 20
@@ -208,13 +209,44 @@ async def test_create_invite_sends_email_best_effort_when_email_method(
     )
     repository.create.return_value = created
 
-    await service.create_invite(
+    _invite_result, email_delivered = await service.create_invite(
         workspace.id,
         workspace.owner_identity,
         method=WorkspaceInviteMethod.EMAIL,
         email="teammate@example.com",
     )
     email_service.send_workspace_invite.assert_awaited_once()
+    assert email_delivered is True
+
+
+@pytest.mark.asyncio
+async def test_create_invite_email_delivered_false_when_no_email_service(
+    workspace_service: AsyncMock, repository: AsyncMock, session: AsyncMock
+) -> None:
+    """No SES wiring (AWS disabled locally, or SES_SENDER_EMAIL unset) must
+    not look identical to a real send — the caller needs email_delivered to
+    be False, not None, so the UI stops saying "Invite sent"."""
+    service = WorkspaceInviteService(
+        repository=repository,
+        workspace_service=workspace_service,
+        session=session,
+        email_service=None,
+    )
+    workspace = _workspace()
+    workspace_service.get_owned_workspace.return_value = workspace
+    repository.create.return_value = _invite(
+        workspace_id=workspace.id,
+        method=WorkspaceInviteMethod.EMAIL,
+        email="teammate@example.com",
+    )
+
+    _invite_result, email_delivered = await service.create_invite(
+        workspace.id,
+        workspace.owner_identity,
+        method=WorkspaceInviteMethod.EMAIL,
+        email="teammate@example.com",
+    )
+    assert email_delivered is False
 
 
 @pytest.mark.asyncio
