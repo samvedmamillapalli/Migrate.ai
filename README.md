@@ -16,6 +16,10 @@ Built for the [CockroachDB × AWS Hackathon](https://cockroachdb-ai.devpost.com/
 
 Most migration tools stop at a warning. We run the SQL somewhere safe first, score ourselves, and write the outcome back into memory.
 
+<p align="center">
+  <img src="docs/diagrams/migration-oracle-lifecycle.png" alt="Migration Oracle lifecycle: create, discover, predict, approve, shadow, investigate, grade and remember" width="640" />
+</p>
+
 | Step | What happens |
 | --- | --- |
 | **Predict** | Read only schema discovery, policy check, retrieval from a CockroachDB vector index, then Bedrock Claude (duration, storage, rollback, confidence). |
