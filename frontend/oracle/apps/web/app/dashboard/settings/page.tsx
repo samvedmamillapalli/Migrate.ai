@@ -33,6 +33,7 @@ import {
   type SlackStatusResponse,
 } from "@/lib/api/endpoints"
 import { ApiError } from "@/lib/api/client"
+import { AUTH_READY_EVENT } from "@/lib/api/clerk-token"
 import { OwnerIdentityField } from "@/components/owner-identity-field"
 import { useThemePreference } from "@/components/theme-provider"
 import { WorkspaceSettingsPanel } from "@/components/workspace-settings-panel"
@@ -317,8 +318,20 @@ export default function SettingsPage() {
     void refreshSlackStatus()
     void refreshGithubStatus()
     void refreshSharingStatus()
+    // See lib/api/clerk-token.ts (AUTH_READY_EVENT): on a ticket/magic-link
+    // sign-in these can all fire before Clerk's auth state is actually
+    // usable, so a real 401 gets rendered as "not connected"/"not
+    // configured" instead of the true status — retry once auth catches up.
+    function retryAll() {
+      void load()
+      void refreshSlackStatus()
+      void refreshGithubStatus()
+      void refreshSharingStatus()
+    }
+    window.addEventListener(AUTH_READY_EVENT, retryAll)
     return () => {
       cancelled = true
+      window.removeEventListener(AUTH_READY_EVENT, retryAll)
     }
   }, [refreshSlackStatus, refreshGithubStatus, refreshSharingStatus])
 

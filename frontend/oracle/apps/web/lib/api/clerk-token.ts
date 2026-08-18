@@ -40,11 +40,25 @@ function reopenGate(): void {
   })
 }
 
+/** Fired whenever a real (signed-in) token getter is registered — including
+ * every re-registration, not just the first. Data-fetching effects that ran
+ * once on mount and lost the race against ApiAuthBootstrap (got a null/401
+ * before this resolved) have no other way to know it's now safe to retry;
+ * they get one real 401, render it, and sit there until something else
+ * causes a refetch. This is most visible right after a ticket/magic-link
+ * sign-in, where the whole Clerk handshake — not just component mount order
+ * — happens during that first render, unlike a normal login that arrives
+ * here from an already-hydrated /login page. */
+export const AUTH_READY_EVENT = "oracle:auth-ready"
+
 export function setClerkTokenGetter(getter: TokenGetter | null): void {
   clerkTokenGetter = getter
   if (getter) {
     unauthenticated = false
     markReady()
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(new Event(AUTH_READY_EVENT))
+    }
   } else if (!unauthenticated) {
     reopenGate()
   }
@@ -69,11 +83,27 @@ export async function resolveAuthToken(): Promise<string | null> {
   }
 
   if (clerkTokenGetter) {
-    try {
-      const clerkToken = await clerkTokenGetter()
-      if (clerkToken) return clerkToken
-    } catch {
-      /* fall through */
+    // Immediately after a fresh sign-in (notably a ticket/magic-link
+    // redirect, which lands here mid-handshake rather than after a full
+    // page navigation from an already-hydrated /login), Clerk can report
+    // isSignedIn=true and hand back a getToken() that still resolves to
+    // null for a beat before the session token is actually mintable. The
+    // ready-gate above only waits for a getter to be *registered*, not for
+    // it to *work* — so a single null here previously shipped a real,
+    // permanent 401 to whatever fetched first, with nothing to make it
+    // retry once the token became available moments later. Three attempts
+    // over ~600ms absorbs that window without meaningfully delaying the
+    // normal case, where the first call already succeeds.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        const clerkToken = await clerkTokenGetter()
+        if (clerkToken) return clerkToken
+      } catch {
+        /* try again */
+      }
+      if (attempt < 2) {
+        await new Promise((resolve) => setTimeout(resolve, 200 * (attempt + 1)))
+      }
     }
   }
   const legacy = getAccessToken()

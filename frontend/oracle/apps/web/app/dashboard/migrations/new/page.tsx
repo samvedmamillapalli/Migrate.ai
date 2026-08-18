@@ -33,6 +33,7 @@ import {
   getRun,
   mapSchema,
   notifyWorkspacesChanged,
+  resolveActiveWorkspaceId,
   predictRun,
   requireOwnerIdentity,
   setConnectionSecretArn,
@@ -289,7 +290,7 @@ export default function NewMigrationPage() {
       const owner = requireOwnerIdentity()
 
       if (tab === "demo") {
-        const created = await createDemoWithDb(owner)
+        const created = await createDemoWithDb(owner, await resolveActiveWorkspaceId())
         setRun(created)
         setCurrentRunId(created.id)
         if (created.connection_secret_arn) {
@@ -332,7 +333,7 @@ export default function NewMigrationPage() {
       const created = run ?? (await createRun({
         migration_sql: trimmedSql,
         owner_identity: owner,
-        workspace_id: getActiveWorkspaceId() || null,
+        workspace_id: await resolveActiveWorkspaceId(),
       }))
       setRun(created)
       setCurrentRunId(created.id)

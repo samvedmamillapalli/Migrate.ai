@@ -75,6 +75,38 @@ export function setActiveWorkspaceId(id: string | null): void {
   window.localStorage.setItem(ACTIVE_WORKSPACE_KEY, id)
 }
 
+/** Same "does the stored id still exist? else is_default, else first" fallback
+ * as WorkspaceSwitcher's own load() — extracted so every call site that
+ * needs a workspace id to CREATE something (a run, in particular) resolves
+ * and persists the same validated value instead of trusting a bare
+ * getActiveWorkspaceId() read. A stale/missing localStorage value (first
+ * visit on a device, or the switcher's own fetch not resolved yet on a deep
+ * link straight to /dashboard/migrations/new) previously fell through to
+ * `|| null`, silently creating a run with no workspace at all — invisible
+ * in that workspace's history and disconnected from any linked GitHub repo,
+ * even though the migration itself ran fine. Returns null only when the
+ * owner truly has zero workspaces.
+ */
+export async function resolveActiveWorkspaceId(): Promise<string | null> {
+  const { listWorkspaces } = await import("./endpoints")
+  const owner = getOwnerIdentity()
+  let items: { id: string; is_default?: boolean }[]
+  try {
+    items = (await listWorkspaces(owner || undefined)).items
+  } catch {
+    // Can't validate right now — fall back to whatever's stored rather than
+    // wiping a perfectly good selection over a transient network blip.
+    return getActiveWorkspaceId() || null
+  }
+  const stored = getActiveWorkspaceId()
+  if (stored && items.some((w) => w.id === stored)) {
+    return stored
+  }
+  const fallback = items.find((w) => w.is_default) ?? items[0]
+  setActiveWorkspaceId(fallback?.id ?? null)
+  return fallback?.id ?? null
+}
+
 /** Fired whenever a workspace's persisted state (e.g. its stored connection)
  * changes somewhere other than the sidebar switcher itself — the switcher
  * listens and re-fetches, so it reflects the change without a full page

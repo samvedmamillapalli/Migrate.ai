@@ -386,8 +386,10 @@ async def get_activity_feed(
 async def create_debug_demo_with_db(
     service: MigrationRunSvc,
     discovery: SchemaDiscoverySvc,
+    workspace_service: WorkspaceSvc,
     request: Request,
     owner_identity: str = Query(default="demo", min_length=1, max_length=256),
+    workspace_id: uuid.UUID | None = Query(default=None),
 ) -> MigrationRunResponse:
     """Developer helper: real customer_demo RO DB + sample migration SQL.
 
@@ -396,11 +398,27 @@ async def create_debug_demo_with_db(
     run, stores a connection secret, and runs schema discovery so
     predict/shadow can proceed.
 
+    ``workspace_id`` is optional and, when given, must already belong to
+    ``owner_identity`` — the frontend's "Demo database" tab passes the
+    active workspace here so the resulting run actually shows up in that
+    workspace's history. Previously it never attached one at all: the
+    caller only pushed the demo run's connection secret onto the workspace
+    afterward (``PATCH /workspaces/{id}``), which pointed the workspace at
+    the right database but left the run itself with ``workspace_id: NULL``
+    forever — invisible in that workspace's own run list and, for a
+    GitHub-linked workspace, disconnected from the repo link it needed.
+
     Easy to remove: delete this route + the frontend Developer mode button.
     """
     import os
 
     from app.demo_secrets import JUDGE_RO_DATABASE_URL_FILE, read_demo_secret
+
+    if workspace_id is not None:
+        # Raises NotFoundError (404) if it doesn't exist or belongs to a
+        # different owner — same check create_run does, never trust a
+        # caller-supplied workspace_id without it.
+        await workspace_service.get_owned_workspace(workspace_id, owner_identity)
 
     url = (os.environ.get("DEMO_READONLY_DATABASE_URL") or "").strip()
     if not url:
@@ -423,6 +441,7 @@ async def create_debug_demo_with_db(
         'ALTER TABLE calcom_bookings ADD COLUMN "duration_minutes" INT4 '
         'AS ((extract(epoch FROM ("end_time" - "start_time")) / 60)::INT4) STORED;',
         owner_identity=owner_identity,
+        workspace_id=workspace_id,
         run_kind="debug",
     )
     secret_arn = await store_connection_url(request, _run_secret_name(run.id), url)

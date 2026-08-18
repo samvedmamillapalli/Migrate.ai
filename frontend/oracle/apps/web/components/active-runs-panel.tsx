@@ -7,6 +7,7 @@ import { motion } from "motion/react"
 import { listRuns } from "@/lib/api/endpoints"
 import { mapRunListItem } from "@/lib/api/map-run"
 import { getActiveWorkspaceId, getOwnerIdentity } from "@/lib/api/owner"
+import { AUTH_READY_EVENT } from "@/lib/api/clerk-token"
 import {
   EmptyNote,
   Label,
@@ -65,8 +66,13 @@ export function ActiveRunsPanel({
       }
     }
     void load()
+    // See lib/api/clerk-token.ts (AUTH_READY_EVENT) — a ticket/magic-link
+    // sign-in can resolve Clerk's auth state after this first load() already
+    // lost the race and swallowed a 401 into the empty/null-items state.
+    window.addEventListener(AUTH_READY_EVENT, load)
     return () => {
       cancelled = true
+      window.removeEventListener(AUTH_READY_EVENT, load)
     }
   }, [])
 

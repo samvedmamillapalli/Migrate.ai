@@ -7,8 +7,8 @@ import { Bug, ClipboardPaste, FileCode2 } from "lucide-react"
 import { ApiError } from "@/lib/api/client"
 import { createFakeMigration, createRun } from "@/lib/api/endpoints"
 import {
-  getActiveWorkspaceId,
   requireOwnerIdentity,
+  resolveActiveWorkspaceId,
   setCurrentRunId,
 } from "@/lib/api/owner"
 import { Button } from "@workspace/ui/components/button"
@@ -99,7 +99,7 @@ export function NewMigrationDialog() {
       const run = await createRun({
         migration_sql: sqlText,
         owner_identity: owner,
-        workspace_id: getActiveWorkspaceId() || null,
+        workspace_id: await resolveActiveWorkspaceId(),
       })
       setCurrentRunId(run.id)
       setOpen(false)

@@ -55,6 +55,7 @@ import {
   predictRun,
   primaryTableName,
   requireOwnerIdentity,
+  resolveActiveWorkspaceId,
   riskTone,
   setConnectionSecretArn,
   setCurrentRunId,
@@ -1464,7 +1465,7 @@ export function CurrentMigrationWorkspace() {
       const created = await createRun({
         migration_sql: sql,
         owner_identity: ownerIdentity,
-        workspace_id: getActiveWorkspaceId() || null,
+        workspace_id: await resolveActiveWorkspaceId(),
       })
       setCurrentRunId(created.id)
       setRun(created)
@@ -1530,7 +1531,7 @@ export function CurrentMigrationWorkspace() {
       const ownerIdentity = getOwnerIdentity() || "demo"
       setCreating(true)
       setStatusMessage("Connecting the demo database and discovering schema…")
-      const created = await createDemoWithDb(ownerIdentity)
+      const created = await createDemoWithDb(ownerIdentity, await resolveActiveWorkspaceId())
       setCurrentRunId(created.id)
       setRun(created)
       setExtras(EMPTY_EXTRAS)

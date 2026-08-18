@@ -230,12 +230,19 @@ def deploy(service: str, containers: dict, endpoint: dict, env) -> None:
 def wait_deployment_active(
     service: str, container_name: str, expected_image: str, env, timeout: int = 900
 ) -> None:
-    """Poll until `currentDeployment` is the one we just pushed and it's
-    ACTIVE -- not just "the service state looks fine", which during a
-    rollout is also true of the *old*, still-serving deployment. Checking
-    the exact image ref (not just ACTIVE) rules out reading a stale
-    currentDeployment in the window between triggering the deploy and
-    Lightsail actually starting the rollout."""
+    """Poll until the deployment we just pushed is fully rolled out and live.
+
+    Checking only `currentDeployment` is not enough: while a new deployment
+    is rolling out, Lightsail reports it under `nextDeployment` (state
+    ACTIVATING) and `currentDeployment` still reflects the *previous*,
+    still-serving one. If the image tag happens to be unchanged from the
+    previous deploy (true whenever only environment variables changed, not
+    app code -- e.g. rotating a credential), `currentDeployment` can match
+    `expected_image` immediately even though the real, new deployment
+    (carrying the new environment) is still activating. Confirmed: this
+    exact scenario returned "success" while the container was still serving
+    the previous DATABASE_URL. Only trust `currentDeployment` once
+    `nextDeployment` is gone."""
     deadline = time.time() + timeout
     last = None
     while time.time() < deadline:
@@ -244,15 +251,23 @@ def wait_deployment_active(
         svcs = json.loads(out).get("containerServices", [])
         if svcs:
             cur = svcs[0].get("currentDeployment") or {}
+            nxt = svcs[0].get("nextDeployment")
             state = cur.get("state")
             image = (cur.get("containers", {}).get(container_name) or {}).get("image")
-            label = f"{state} ({image})"
+            next_label = f"next={nxt.get('state')}(v{nxt.get('version')})" if nxt else "next=none"
+            label = f"{state} ({image}) {next_label}"
             if label != last:
                 print(f"  {service}: {label}")
                 last = label
-            if state == "ACTIVE" and image == expected_image:
+            if nxt is not None:
+                nxt_state = nxt.get("state")
+                if nxt_state == "FAILED":
+                    raise SystemExit(f"{service} deployment FAILED")
+                # still rolling out -- keep waiting even if currentDeployment
+                # already looks like a match
+            elif state == "ACTIVE" and image == expected_image:
                 return
-            if state == "FAILED":
+            elif state == "FAILED":
                 raise SystemExit(f"{service} deployment FAILED")
         time.sleep(15)
     raise SystemExit(f"timed out waiting for {service} deployment to go ACTIVE")

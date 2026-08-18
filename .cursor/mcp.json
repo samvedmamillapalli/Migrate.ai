@@ -3,7 +3,7 @@
       "cockroachdb-cloud": {
         "url": "https://cockroachlabs.cloud/mcp",
         "headers": {
-          "mcp-cluster-id": "d44d1dfa-cdb2-4d37-95fa-b36e5654647f"
+          "mcp-cluster-id": "d2041eac-86b7-4950-850e-88b50b415bde"
         }
       }
     }

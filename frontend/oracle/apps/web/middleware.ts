@@ -24,8 +24,18 @@ export default clerkMiddleware(async (auth, req) => {
     // rewrite to /clerk_<timestamp>, which surfaces to the visitor as a bare 404
     // instead of a sign-in prompt. Anyone opening a deep link such as
     // /dashboard/migrations/current before signing in hits that dead end.
+    // A Clerk sign-in-token magic link (?__clerk_ticket=...) must survive this
+    // redirect verbatim — clerk-js only detects and consumes the ticket once
+    // it's mounted client-side on /login, and a request carrying it is by
+    // definition unauthenticated (no session cookie yet), so it always lands
+    // here first. Dropping the param here silently breaks every magic link.
+    const unauthenticatedUrl = new URL("/login", req.url)
+    const ticket = req.nextUrl.searchParams.get("__clerk_ticket")
+    if (ticket) {
+      unauthenticatedUrl.searchParams.set("__clerk_ticket", ticket)
+    }
     await auth.protect({
-      unauthenticatedUrl: new URL("/login", req.url).toString(),
+      unauthenticatedUrl: unauthenticatedUrl.toString(),
     })
   }
 })

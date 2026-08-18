@@ -16,6 +16,7 @@ import {
   setActiveWorkspaceId,
   WORKSPACES_CHANGED_EVENT,
 } from "@/lib/api/owner"
+import { AUTH_READY_EVENT } from "@/lib/api/clerk-token"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -94,7 +95,17 @@ export function WorkspaceSwitcher() {
   React.useEffect(() => {
     const handler = () => void load()
     window.addEventListener(WORKSPACES_CHANGED_EVENT, handler)
-    return () => window.removeEventListener(WORKSPACES_CHANGED_EVENT, handler)
+    // Same reasoning as the dashboard's own listener (lib/api/clerk-token.ts):
+    // this component's first load() can fire before Clerk's auth state is
+    // actually usable on a fresh ticket/magic-link sign-in, silently
+    // swallowing the resulting 401 into an empty workspace list via the
+    // catch block below — indistinguishable from "this owner really has no
+    // workspaces" without this retry.
+    window.addEventListener(AUTH_READY_EVENT, handler)
+    return () => {
+      window.removeEventListener(WORKSPACES_CHANGED_EVENT, handler)
+      window.removeEventListener(AUTH_READY_EVENT, handler)
+    }
   }, [load])
 
   function selectWorkspace(id: string) {

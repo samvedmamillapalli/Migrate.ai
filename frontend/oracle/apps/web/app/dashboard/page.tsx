@@ -18,6 +18,7 @@ import {
   getOwnerIdentity,
   setCurrentRunId,
 } from "@/lib/api/owner"
+import { AUTH_READY_EVENT } from "@/lib/api/clerk-token"
 import {
   type AccuracyTrendPoint,
   AnalyticsChartHeader,
@@ -137,8 +138,17 @@ export default function DashboardPage() {
       setLoading(false)
     }
     void load()
+    // A ticket/magic-link sign-in resolves Clerk's auth state mid-render
+    // rather than before this page ever mounts, so the very first `load()`
+    // above can lose the race and land with no bearer token — a real,
+    // permanent 401 with nothing to make it retry. Re-running once auth
+    // actually comes online recovers that case for free without touching
+    // the normal-login path, where the getter is already registered by
+    // the time this effect runs and this listener just never fires again.
+    window.addEventListener(AUTH_READY_EVENT, load)
     return () => {
       cancelled = true
+      window.removeEventListener(AUTH_READY_EVENT, load)
     }
   }, [])
 

@@ -236,8 +236,9 @@ export function createFakeMigration(ownerIdentity: string) {
 }
 
 /** Developer mode: real RO demo DB + sample SQL + discover. Easy to remove. */
-export function createDemoWithDb(ownerIdentity: string) {
+export function createDemoWithDb(ownerIdentity: string, workspaceId?: string | null) {
   const q = new URLSearchParams({ owner_identity: ownerIdentity })
+  if (workspaceId) q.set("workspace_id", workspaceId)
   return api<MigrationRun>(`/runs/debug/demo-with-db?${q}`, {
     method: "POST",
   })
